@@ -1,4 +1,4 @@
-"""Legacy footprint imports must not fill courtyard holes silently."""
+"""Core-backed footprint imports preserve courtyard rings."""
 
 import json
 
@@ -18,14 +18,15 @@ def courtyard_polygon():
     )
 
 
-def test_from_shapely_rejects_courtyard(courtyard_polygon):
+def test_from_shapely_preserves_courtyard(courtyard_polygon):
     assert courtyard_polygon.area == 300.0
-    with pytest.raises(ValueError, match="courtyard|interior ring"):
-        BuildingGeometry.from_shapely(courtyard_polygon)
+    geometry = BuildingGeometry.from_shapely(courtyard_polygon, num_floors=2, floor_height=3)
+    assert geometry.footprint_area == 300.0
+    assert len(geometry.shapely_polygon.interiors) == 1
 
 
 @pytest.mark.parametrize("source_kind", ["dict", "file"])
-def test_from_geojson_rejects_courtyard(courtyard_polygon, source_kind, tmp_path):
+def test_from_geojson_preserves_courtyard(courtyard_polygon, source_kind, tmp_path):
     feature = {
         "type": "Feature",
         "properties": {},
@@ -36,26 +37,31 @@ def test_from_geojson_rejects_courtyard(courtyard_polygon, source_kind, tmp_path
         source = tmp_path / "courtyard.geojson"
         source.write_text(json.dumps(feature))
 
-    with pytest.raises(ValueError, match="courtyard|interior ring"):
-        FootprintImporter.from_geojson(source, crs="EPSG:3006")
+    geometry = FootprintImporter.from_geojson(
+        source, crs="EPSG:3006", num_floors=2, floor_height=3,
+    )
+    assert geometry.footprint_area == 300.0
+    assert geometry.shapely_polygon.interiors[0].bounds == (-5.0, -5.0, 5.0, 5.0)
 
 
-def test_from_geojson_multi_reports_unsupported_courtyard(courtyard_polygon, caplog):
+def test_from_geojson_multi_preserves_courtyard(courtyard_polygon):
     features = {
         "type": "FeatureCollection",
         "features": [
             {"type": "Feature", "properties": {}, "geometry": mapping(courtyard_polygon)}
         ],
     }
-    assert FootprintImporter.from_geojson_multi(features, crs="EPSG:3006") == []
-    assert "Skipping feature 0" in caplog.text
-    assert "interior ring" in caplog.text
+    geometries = FootprintImporter.from_geojson_multi(
+        features, crs="EPSG:3006", num_floors=2, floor_height=3,
+    )
+    assert len(geometries) == 1
+    assert geometries[0].footprint_area == 300.0
 
 
 def test_simple_polygon_imports_preserve_metric_area():
     pytest.importorskip("pyproj")
     polygon = Polygon([(0, 0), (20, 0), (20, 20), (0, 20)])
-    assert BuildingGeometry.from_shapely(polygon).footprint_area == 400.0
+    assert BuildingGeometry.from_shapely(polygon, num_floors=2, floor_height=3).footprint_area == 400.0
     feature = {"type": "Feature", "properties": {}, "geometry": mapping(polygon)}
     assert FootprintImporter.from_geojson(
         feature, crs="EPSG:3006", num_floors=2, floor_height=2.5,

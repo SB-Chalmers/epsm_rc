@@ -16,10 +16,10 @@ Three entry-points, one return type:
 
 All methods return BuildingGeometry (or list thereof) in a local metric
 coordinate system with the centroid shifted to the origin.
-Polygons with interior rings (courtyards) are unsupported: single imports
-raise ValueError; batch imports skip them with a warning.
-Multipart geometry is rejected with the same policy. OSM relations must contain
-exactly one explicitly identified, closed outer way.
+Polygon holes and MultiPolygon components are preserved in Core geometry,
+with one coordinate transformation shared by every ring and component.
+OSM relations still require exactly one explicitly identified, closed outer way;
+unsupported relation assembly raises an actionable error.
 Height inputs have no defaults: supply explicit assumptions when source levels
 or height are missing. Returned height_evidence records source fields and choices.
 
@@ -39,8 +39,8 @@ from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 from shapely.geometry import Polygon as ShapelyPolygon
+from shapely.geometry import MultiPolygon as ShapelyMultiPolygon
 from shapely.geometry import shape as shapely_shape
-from shapely.ops import orient
 
 from .building_geometry import BuildingGeometry
 
@@ -184,35 +184,36 @@ def _resolve_height(
 
 
 def _polygon_to_geometry(
-    poly: ShapelyPolygon,
+    poly: ShapelyPolygon | ShapelyMultiPolygon,
     source_crs: Optional[str],
     num_floors: int | None,
     floor_height: float | None,
     properties: dict | None = None,
 ) -> BuildingGeometry:
-    """Convert a polygon without interior rings, with CRS handling.
-
-    Raises ValueError for courtyards before extracting the exterior, because
-    the legacy BuildingGeometry cannot represent holes.
-    """
-    if poly.geom_type != "Polygon":
+    """Convert every ring/component in one common frame into Core geometry."""
+    if poly.geom_type not in {"Polygon", "MultiPolygon"}:
         raise ValueError(
-            f"BuildingGeometry requires a single Polygon; {poly.geom_type} "
-            "is unsupported and its components cannot be discarded."
+            f"Core geometry requires Polygon or MultiPolygon, got {poly.geom_type}"
         )
-    if poly.interiors:
-        raise ValueError(
-            "BuildingGeometry does not support interior rings (courtyards); "
-            "the footprint cannot be imported without losing its holes."
-        )
+    if poly.has_z:
+        raise ValueError("GIS footprints must be two-dimensional (2-D); supply heights separately")
     num_floors, floor_height, evidence = _resolve_height(
         properties or {}, num_floors, floor_height,
     )
-    oriented = orient(poly, sign=1.0)  # CCW
-    coords = list(oriented.exterior.coords)[:-1]  # Drop closing vertex
-    local = _to_local_metres(coords, source_crs=source_crs)
-    geometry = BuildingGeometry.from_polygon(
-        vertices=local,
+    polygons = [poly] if poly.geom_type == "Polygon" else list(poly.geoms)
+    rings = [
+        [list(ring.coords)[:-1] for ring in (polygon.exterior, *polygon.interiors)]
+        for polygon in polygons
+    ]
+    coordinates = [coordinate for part in rings for ring in part for coordinate in ring]
+    local = iter(_to_local_metres(coordinates, source_crs=source_crs))
+    converted = []
+    for part in rings:
+        converted_rings = [[next(local) for _ in ring] for ring in part]
+        converted.append(ShapelyPolygon(converted_rings[0], converted_rings[1:]))
+    local_shape = converted[0] if len(converted) == 1 else ShapelyMultiPolygon(converted)
+    geometry = BuildingGeometry.from_shapely(
+        local_shape,
         num_floors=num_floors,
         floor_height=floor_height,
     )
@@ -301,8 +302,8 @@ class FootprintImporter:
                     )
                 ):
                     raise ValueError(
-                        "BuildingGeometry does not support interior rings (courtyards); "
-                        "the OSM relation cannot be imported without losing its holes."
+                            "OSM relation courtyard/interior ring assembly is unsupported; "
+                            "supply a complete Polygon through from_geojson or from_shapely."
                     )
 
         target_way_id = element_id
@@ -427,10 +428,9 @@ class FootprintImporter:
             raise ValueError(f"Unsupported GeoJSON type: {data.get('type')}")
 
         geom_obj = shapely_shape(feature["geometry"])
-        if geom_obj.geom_type != "Polygon":
+        if geom_obj.geom_type not in {"Polygon", "MultiPolygon"}:
             raise ValueError(
-                f"Expected a single Polygon, got unsupported {geom_obj.geom_type}; "
-                "components cannot be discarded."
+                f"Expected Polygon or MultiPolygon, got unsupported {geom_obj.geom_type}"
             )
 
         props = feature.get("properties", {}) or {}
