@@ -88,7 +88,7 @@ __all__ = [
     "get_5r1c_params",
 ]
 
-__version__ = "0.2.0.dev0"
+__version__ = "0.2.0"
 
 # Platform integration imports Core only when explicitly requested.
 def __getattr__(name):
