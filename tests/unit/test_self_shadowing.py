@@ -47,7 +47,7 @@ def test_affected_geometry_rejected_before_solver(case, weather, monkeypatch):
     def forbidden(*args, **kwargs):
         pytest.fail("Affected geometry reached solver without an omission policy")
 
-    monkeypatch.setattr(platform, "_Platform5R1C", forbidden)
+    monkeypatch.setattr(platform, "Building5R1C", forbidden)
     with pytest.raises(ValueError, match="self.shadow|self_shadowing_policy"):
         simulate_building(
             building, weather=weather,

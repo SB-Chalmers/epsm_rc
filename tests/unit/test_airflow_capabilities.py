@@ -28,7 +28,7 @@ def test_unsupported_airflow_rejected_before_solver(core_inputs, monkeypatch, pa
     def forbidden_solver(*args, **kwargs):
         pytest.fail("Unsupported controls entered the solver")
 
-    monkeypatch.setattr(platform, "_Platform5R1C", forbidden_solver)
+    monkeypatch.setattr(platform, "Building5R1C", forbidden_solver)
     with pytest.raises(ValueError, match=field):
         simulate_building(building, weather=weather, settings=RCSettings())
 

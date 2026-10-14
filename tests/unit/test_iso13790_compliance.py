@@ -1,7 +1,7 @@
 """ISO 13790:2008 Compliance Tests.
 
 Tests for strict ISO 13790 compliance features including:
-    1. Supply air temperature with heat recovery (Section 9.3)
+    1. Sensible recovery in reduced ventilation conductance (Section 9.3)
     2. Heat flow distribution - strict ISO C.1-C.3 equations
     3. Intermittent heating/setback (Section 13.2.3)
     4. Detailed shading factors (Section 11.3.3)
@@ -40,7 +40,7 @@ class TestSupplyAirTemperature:
         assert t_supply == t_out
 
     def test_full_heat_recovery(self):
-        """With η_hr=1.0, supply temperature equals indoor temperature."""
+        """Full mechanical recovery leaves the reduced driving temperature outdoors."""
         b = Building5R1C(
             floor_area_m2=100,
             heat_recovery_efficiency=1.0,
@@ -49,8 +49,8 @@ class TestSupplyAirTemperature:
         t_out = -10.0
         
         t_supply = b.calc_supply_air_temperature(t_out)
-        # θ_sup = θ_e + η_hr × (θ_air - θ_e) = -10 + 1.0 × (21 - (-10)) = 21
-        assert abs(t_supply - 21.0) < 0.01
+        assert t_supply == t_out
+        assert b._h_ve == pytest.approx(1200 * b._building_vol * b.ach_infiltration / 3600)
 
     def test_partial_heat_recovery(self):
         """Test partial heat recovery efficiency calculation."""
@@ -62,9 +62,9 @@ class TestSupplyAirTemperature:
         t_out = 0.0
         
         t_supply = b.calc_supply_air_temperature(t_out)
-        # θ_sup = 0 + 0.7 × (20 - 0) = 14°C
-        expected = 0.0 + 0.7 * (20.0 - 0.0)
-        assert abs(t_supply - expected) < 0.01
+        assert t_supply == t_out
+        expected_ach = b.ach_infiltration + b.ach_ventilation * (1 - 0.7)
+        assert b._h_ve == pytest.approx(1200 * b._building_vol * expected_ach / 3600)
 
     def test_windows_open_bypasses_hr(self):
         """When windows are open, heat recovery is bypassed."""
@@ -80,8 +80,8 @@ class TestSupplyAirTemperature:
         # Windows open → no HR → θ_sup = θ_e
         assert t_supply == t_out
 
-    def test_cold_outdoor_significant_preheating(self):
-        """In cold weather, HR provides significant preheating."""
+    def test_cold_outdoor_recovery_is_in_conductance(self):
+        """Cold-weather recovery reduces conductance without warming the driving node."""
         b = Building5R1C(
             floor_area_m2=100,
             heat_recovery_efficiency=0.85,
@@ -90,11 +90,11 @@ class TestSupplyAirTemperature:
         t_out = -20.0
         
         t_supply = b.calc_supply_air_temperature(t_out)
-        # θ_sup = -20 + 0.85 × (21 - (-20)) = -20 + 0.85 × 41 = 14.85°C
-        expected = -20.0 + 0.85 * 41.0
-        assert abs(t_supply - expected) < 0.01
-        # Supply should be much warmer than outdoor
-        assert t_supply > t_out + 30
+        assert t_supply == t_out
+        expected_ach = b.ach_infiltration + b.ach_ventilation * (1 - 0.85)
+        assert b._h_ve * (b.t_air - t_supply) == pytest.approx(
+            1200 * b._building_vol * expected_ach / 3600 * 41,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -474,8 +474,8 @@ class TestSupplyAirIntegration:
             phi_m=100,
         )
         
-        # Check that _t_supply was calculated with HR
-        expected_t_supply = t_out + 0.75 * (21.0 - t_out)
+        # The reduced driving temperature remains outdoors; H_ve contains HR.
+        expected_t_supply = t_out  # Mechanical conductance already contains recovery.
         assert abs(b._t_supply - expected_t_supply) < 0.1
 
     def test_hr_reduces_heating_demand(self):
