@@ -1,0 +1,17 @@
+.DS_Store
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+output/
+outputs/
+examples/output/
+.ipynb_checkpoints/
+references/iso13790.MD
+references/iso13790_pymupdf.md

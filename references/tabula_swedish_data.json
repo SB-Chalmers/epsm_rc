@@ -1,0 +1,272 @@
+{
+  "SE.N.SFH.01.Gen.ReEx.001": {
+    "building_type": "SFH",
+    "period": "...1960",
+    "code": "SE.N.SFH.01.Gen.ReEx.001",
+    "areas": {
+      "roof": 125.0,
+      "wall": 100.0,
+      "basement_wall": 100.0,
+      "floor": 125.0,
+      "window": 22.0,
+      "door": 2.0
+    },
+    "u_values": {
+      "roof": 0.29,
+      "wall": 0.6,
+      "basement_wall": 0.0,
+      "floor": 0.28,
+      "window": 2.34,
+      "door": 3.0
+    },
+    "construction_types": {
+      "roof": "horisontellt vindsbjälklag",
+      "wall": "Murblock i lättbetong (gasbetong)",
+      "basement_wall": null,
+      "floor": "platta på mark"
+    }
+  },
+  "SE.N.SFH.02.Gen.ReEx.001": {
+    "building_type": "SFH",
+    "period": "1961-1975",
+    "code": "SE.N.SFH.02.Gen.ReEx.001",
+    "areas": {
+      "roof": 125.0,
+      "wall": 100.0,
+      "basement_wall": 100.0,
+      "floor": 125.0,
+      "window": 22.0,
+      "door": 2.0
+    },
+    "u_values": {
+      "roof": 0.21,
+      "wall": 0.31,
+      "basement_wall": 0.0,
+      "floor": 0.32,
+      "window": 2.3,
+      "door": 2.8
+    },
+    "construction_types": {
+      "roof": "horisontellt vindsbjälklag",
+      "wall": "Yttervägg småhus 1961-1975",
+      "basement_wall": null,
+      "floor": "platta på mark"
+    }
+  },
+  "SE.N.SFH.03.Gen.ReEx.001": {
+    "building_type": "SFH",
+    "period": "1976-1985",
+    "code": "SE.N.SFH.03.Gen.ReEx.001",
+    "areas": {
+      "roof": 125.0,
+      "wall": 100.0,
+      "basement_wall": 100.0,
+      "floor": 125.0,
+      "window": 22.0,
+      "door": 2.0
+    },
+    "u_values": {
+      "roof": 0.15,
+      "wall": 0.21,
+      "basement_wall": 0.0,
+      "floor": 0.27,
+      "window": 2.01,
+      "door": 2.8
+    },
+    "construction_types": {
+      "roof": "horisontellt vindsbjälklag",
+      "wall": "Yttervägg småhus 1976- 1985",
+      "basement_wall": null,
+      "floor": "platta på mark"
+    }
+  },
+  "SE.N.SFH.04.Gen.ReEx.001": {
+    "building_type": "SFH",
+    "period": "1986-1995",
+    "code": "SE.N.SFH.04.Gen.ReEx.001",
+    "areas": {
+      "roof": 125.0,
+      "wall": 100.0,
+      "basement_wall": 100.0,
+      "floor": 125.0,
+      "window": 22.0,
+      "door": 2.0
+    },
+    "u_values": {
+      "roof": 0.12,
+      "wall": 0.17,
+      "basement_wall": 0.0,
+      "floor": 0.24,
+      "window": 1.94,
+      "door": 2.8
+    },
+    "construction_types": {
+      "roof": "horisontellt vindsbjälklag",
+      "wall": "Yttervägg småhus 1986-1995",
+      "basement_wall": null,
+      "floor": "platta på mark"
+    }
+  },
+  "SE.N.SFH.05.Gen.ReEx.001": {
+    "building_type": "SFH",
+    "period": "1996-2005",
+    "code": "SE.N.SFH.05.Gen.ReEx.001",
+    "areas": {
+      "roof": 125.0,
+      "wall": 100.0,
+      "basement_wall": 100.0,
+      "floor": 125.0,
+      "window": 22.0,
+      "door": 2.0
+    },
+    "u_values": {
+      "roof": 0.12,
+      "wall": 0.2,
+      "basement_wall": 0.0,
+      "floor": 0.18,
+      "window": 1.87,
+      "door": 1.5
+    },
+    "construction_types": {
+      "roof": "horisontellt vindsbjälklag",
+      "wall": "Yttervägg småhus1996-2005",
+      "basement_wall": null,
+      "floor": "platta på mark"
+    }
+  },
+  "SE.N.MFH.01.Gen.ReEx.001": {
+    "building_type": "MFH",
+    "period": "...1960",
+    "code": "SE.N.MFH.01.Gen.ReEx.001",
+    "areas": {
+      "roof": 470.0,
+      "wall": 560.0,
+      "basement_wall": 240.0,
+      "floor": 470.0,
+      "window": 180.0,
+      "door": 10.0
+    },
+    "u_values": {
+      "roof": 0.36,
+      "wall": 0.58,
+      "basement_wall": 0.702446724546172,
+      "floor": 0.324909747292419,
+      "window": 2.22,
+      "door": 3.0
+    },
+    "construction_types": {
+      "roof": "horisontellt vindsbjälklag",
+      "wall": "Yttervägg flerbostadshus …1960",
+      "basement_wall": "Källarvägg under mark",
+      "floor": "platta på mark"
+    }
+  },
+  "SE.N.MFH.02.Gen.ReEx.001": {
+    "building_type": "MFH",
+    "period": "1961-1975",
+    "code": "SE.N.MFH.02.Gen.ReEx.001",
+    "areas": {
+      "roof": 470.0,
+      "wall": 560.0,
+      "basement_wall": 240.0,
+      "floor": 470.0,
+      "window": 180.0,
+      "door": 10.0
+    },
+    "u_values": {
+      "roof": 0.2,
+      "wall": 0.41,
+      "basement_wall": 0.702446724546172,
+      "floor": 0.25830258302583,
+      "window": 2.22,
+      "door": 2.8
+    },
+    "construction_types": {
+      "roof": "horisontellt vindsbjälklag",
+      "wall": "Yttervägg flerbostadshus 1961-1975",
+      "basement_wall": "Källarvägg under mark",
+      "floor": "platta på mark"
+    }
+  },
+  "SE.N.MFH.03.Gen.ReEx.001": {
+    "building_type": "MFH",
+    "period": "1976-1985",
+    "code": "SE.N.MFH.03.Gen.ReEx.001",
+    "areas": {
+      "roof": 470.0,
+      "wall": 560.0,
+      "basement_wall": 240.0,
+      "floor": 470.0,
+      "window": 180.0,
+      "door": 10.0
+    },
+    "u_values": {
+      "roof": 0.17,
+      "wall": 0.33,
+      "basement_wall": 0.702446724546172,
+      "floor": 0.266789328426863,
+      "window": 2.04,
+      "door": 2.8
+    },
+    "construction_types": {
+      "roof": "horisontellt vindsbjälklag",
+      "wall": "Yttervägg flerbostadshus 1976- 1985",
+      "basement_wall": "Källarvägg under mark",
+      "floor": "platta på mark"
+    }
+  },
+  "SE.N.MFH.04.Gen.ReEx.001": {
+    "building_type": "MFH",
+    "period": "1986-1995",
+    "code": "SE.N.MFH.04.Gen.ReEx.001",
+    "areas": {
+      "roof": 470.0,
+      "wall": 560.0,
+      "basement_wall": 240.0,
+      "floor": 470.0,
+      "window": 180.0,
+      "door": 10.0
+    },
+    "u_values": {
+      "roof": 0.15,
+      "wall": 0.22,
+      "basement_wall": 0.702446724546172,
+      "floor": 0.241187384044527,
+      "window": 1.8,
+      "door": 2.8
+    },
+    "construction_types": {
+      "roof": "horisontellt vindsbjälklag",
+      "wall": "Yttervägg flerbostadshus 1986-1995",
+      "basement_wall": "Källarvägg under mark",
+      "floor": "platta på mark"
+    }
+  },
+  "SE.N.MFH.05.Gen.ReEx.001": {
+    "building_type": "MFH",
+    "period": "1996-2005",
+    "code": "SE.N.MFH.05.Gen.ReEx.001",
+    "areas": {
+      "roof": 470.0,
+      "wall": 560.0,
+      "basement_wall": 240.0,
+      "floor": 470.0,
+      "window": 180.0,
+      "door": 10.0
+    },
+    "u_values": {
+      "roof": 0.13,
+      "wall": 0.2,
+      "basement_wall": 0.702446724546172,
+      "floor": 0.206378986866792,
+      "window": 1.97,
+      "door": 1.5
+    },
+    "construction_types": {
+      "roof": "horisontellt vindsbjälklag",
+      "wall": "Yttervägg flerbostadshus 1996-2005",
+      "basement_wall": "Källarvägg under mark",
+      "floor": "platta på mark"
+    }
+  }
+}
