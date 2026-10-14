@@ -42,7 +42,7 @@ def test_actual_building_calls_start_fresh_and_preserve_common_delivery(tmp_path
     building = core.Building()
     before = building.snapshot().sha256
     weather = core.Weather.from_epw(files("epsm_rc").joinpath("data/epw/goteborg.epw"))
-    settings = RCSettings(airflow_policy="sensible_only_unlimited_supply")
+    settings = RCSettings(airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier")
     first = simulate_building(building, weather=weather, directory=tmp_path / "first", settings=settings)
     second = simulate_building(building, weather=weather, settings=settings)
     assert building.snapshot().sha256 == before
@@ -96,12 +96,12 @@ def test_changed_reduction_settings_get_distinct_calculation_identity():
     weather = core.Weather.from_epw(files("epsm_rc").joinpath("data/epw/goteborg.epw"))
     shallow = simulate_building(
         building, weather=weather, settings=RCSettings(
-            effective_mass_depth_m=0.05, airflow_policy="sensible_only_unlimited_supply",
+            effective_mass_depth_m=0.05, airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier",
         )
     )
     deep = simulate_building(
         building, weather=weather, settings=RCSettings(
-            effective_mass_depth_m=0.2, airflow_policy="sensible_only_unlimited_supply",
+            effective_mass_depth_m=0.2, airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier",
         )
     )
     assert shallow.run_id != deep.run_id
@@ -137,7 +137,7 @@ def test_solar_limits_accept_read_only_provider_arrays(monkeypatch):
     weather = core.Weather.from_epw(files("epsm_rc").joinpath("data/epw/goteborg.epw"))
     result = simulate_building(
         core.Building(), weather=weather,
-        settings=RCSettings(airflow_policy="sensible_only_unlimited_supply"),
+        settings=RCSettings(airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier"),
     )
     assert result.scalars["space_heating_demand_kwh"] > 0
     assert len(result.time_axis) == 8760

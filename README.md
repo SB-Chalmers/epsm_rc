@@ -56,6 +56,7 @@ building = Building()
 weather = Weather.from_epw("weather.epw")
 settings = RCSettings.from_policy(
     "epsm_rc_5r1c_v1", airflow_policy="sensible_only_unlimited_supply",
+    ground_policy="conductance_multiplier",
 )
 result = simulate_building(building, weather=weather, settings=settings)
 ```
@@ -98,6 +99,18 @@ Core's default 50 °C / 13 °C limits. Select
 unlimited supply temperature and omitted latent recovery. Diagnostics retain
 the requested unsupported field names and values; run identity includes this
 policy. Sensible recovery, infiltration and availability remain applied.
+
+The adapter does not implement Kiva soil/foundation physics. A Kiva request
+requires an explicit approximation: `ground_policy="conductance_multiplier"`
+uses `ground_coupling_factor` once, while
+`ground_policy="prescribed_monthly_temperature"` requires 12 finite
+`monthly_ground_temperatures_c` and a `monthly_ground_temperature_source`.
+An already prescribed monthly boundary in the input specification is retained
+exactly. Monthly boundaries use full ground conductance and bypass the static
+multiplier. Diagnostics record the requested foundation method and assumptions,
+effective method, selected boundary/source and effective multiplier. The shared
+Core Building currently compiles a Kiva specification; the RC settings route
+provides an explicit monthly approximation for that authoring interface.
 
 Readiness explicitly rejects unsupported geometry, site shading, unconditioned
 parts, FVP/PV delivery and detailed zone controls. This is a reduced calculation,

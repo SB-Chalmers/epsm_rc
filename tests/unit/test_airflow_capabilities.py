@@ -42,7 +42,7 @@ def test_explicit_sensible_approximation_records_omitted_fields(core_inputs):
     )
     result = simulate_building(
         building, weather=weather,
-        settings=RCSettings(airflow_policy="sensible_only_unlimited_supply"),
+        settings=RCSettings(airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier"),
     )
     assert result.scalars["space_heating_demand_kwh"] > 0
     airflow = result.diagnostics["airflow_capabilities"]
