@@ -54,7 +54,9 @@ from epsm_rc import RCSettings, simulate_building
 
 building = Building()
 weather = Weather.from_epw("weather.epw")
-settings = RCSettings(airflow_policy="sensible_only_unlimited_supply")
+settings = RCSettings.from_policy(
+    "epsm_rc_5r1c_v1", airflow_policy="sensible_only_unlimited_supply",
+)
 result = simulate_building(building, weather=weather, settings=settings)
 ```
 
@@ -69,7 +71,21 @@ injected into this path. Detailed material quantities remain in the Building.
 
 The 5R1C calculation uses one common temperature domain, area-weighted thermal
 conductance and the first 0.1 m of construction from the room side for effective
-mass. `RCSettings` exposes this depth, ground coupling and ground reflectance.
+mass. Explicit `settings` are required; missing settings fail before input I/O.
+`RCSettings.from_policy("epsm_rc_5r1c_v1", ...)` selects the versioned baseline
+profile. `RCSettings(...)` also explicitly selects that baseline. Both retain
+caller overrides as the effective configuration. The profile identifies model
+assumptions, including internal-area and mass-area ratios, capacity thresholds,
+internal gain split, air heat capacity, node transfer coefficients, outside film
+resistances and sky-exchange coefficients. These assumptions are separate from
+physical Building evidence and all adjustable coefficients configure the actual
+reduced properties or forcing. Fixed numerical methods and their constants are
+also reported. Results expose the complete `effective_configuration` and derived
+areas, capacitance, conductances and sky loss in `reduced_properties` diagnostics.
+The inherited mass-to-exterior coupling uses a series inverse-conductance rule
+and falls back to opaque conductance when its denominator is nonpositive;
+configuration declares this method and diagnostics report when it applies.
+Missing construction mass cannot receive a fallback building class.
 The hourly calendar and EPW checksum are validated. Results retain these settings
 and the reduction assumptions. Calculation identity includes inputs, weather,
 settings, installed source hashes and numerical dependency versions. Daylight with zero diffuse radiation uses the
@@ -92,8 +108,9 @@ The platform adapter corrects a legacy heat-recovery double count: mechanical
 conductance is reduced once, with infiltration left unrecovered. Standalone
 `Building5R1C` behavior is retained for compatibility. The sensible-only reduction
 treats occupant activity as sensible gain, uses the ISO 50% convective gain split
-and internal area of 4.5 times floor area, and retains the solver's fixed sky-air
-temperature difference of 11 K. These assumptions are recorded in diagnostics;
+and internal area of 4.5 times floor area, and uses a sky-air temperature
+difference of 11 K in the baseline reduction profile. These values may be
+explicitly overridden in `RCSettings`. They are recorded in diagnostics;
 they are not inferred properties of the physical Building.
 
 The standalone factories retain historical defaults and should not be used to

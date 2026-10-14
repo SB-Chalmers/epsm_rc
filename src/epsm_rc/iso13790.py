@@ -626,6 +626,8 @@ class Building5R1C:
     # ISO 13790 default: 3.45 (combined convective + radiative)
     # BESTEST/Modelica: 2.1 (convective only, radiation handled separately)
     h_is: float = 3.45
+    h_ms: float = 9.1  # Mass-surface coefficient [W/(m²K)]
+    air_volumetric_heat_capacity_j_m3_k: float = 1200.0
     
     # Total internal surface area [m²] (optional override)
     # If None, uses ISO 13790 default: A_tot = 4.5 × A_f
@@ -752,6 +754,9 @@ class Building5R1C:
     
     def __post_init__(self):
         """Calculate derived thermal properties."""
+        for name in ("h_ms", "air_volumetric_heat_capacity_j_m3_k"):
+            if not np.isfinite(getattr(self, name)) or getattr(self, name) <= 0:
+                raise ValueError(f"{name} must be finite and positive")
         # Apply thermal bridge class if specified
         if self.thermal_bridge_class is not None:
             self.delta_u_thermal_bridge = THERMAL_BRIDGE_DELTA_U[self.thermal_bridge_class]
@@ -931,7 +936,7 @@ class Building5R1C:
         # =========================================================================
         # Eq. (65): H_tr,ms = h_ms * A_m  where h_ms = 9.1 W/(m^2.K)
         # This couples the thermal mass node (θ_m) to the surface node (θ_s)
-        self._h_tr_ms = 9.1 * self._mass_area
+        self._h_tr_ms = self.h_ms * self._mass_area
         
         # =========================================================================
         # ISO 13790:2008 Section 7.2.2.2 Eq. (9) - Surface-Air Coupling
@@ -987,7 +992,10 @@ class Building5R1C:
         
         # H_ve = ρ.c_p.V̇ = ρ.c_p.V.n/3600 (ISO 13790 Eq. 21, p.49)
         # ρ.c_p ≈ 1200 J/(m³.K) for air at ~20°C
-        self._h_ve = 1200.0 * b_ek * self._building_vol * ach_total / 3600.0
+        self._h_ve = (
+            self.air_volumetric_heat_capacity_j_m3_k
+            * b_ek * self._building_vol * ach_total / 3600.0
+        )
     
     def _handle_window_opening(self, t_out: float) -> float:
         """Determine additional ventilation from window opening (stochastic).
@@ -1050,7 +1058,10 @@ class Building5R1C:
             ach_without_hr = self.ach_infiltration + ach_window
             ach_effective = ach_with_hr + ach_without_hr
             
-            self._h_ve = 1200.0 * self._building_vol * ach_effective / 3600.0
+            self._h_ve = (
+                self.air_volumetric_heat_capacity_j_m3_k
+                * self._building_vol * ach_effective / 3600.0
+            )
         else:
             # Windows closed: normal ventilation
             self._update_ventilation_coefficient()
@@ -1485,8 +1496,8 @@ class Building5R1C:
         Eq. (C.3): Φ_st = (1 - A_m/A_t - H_tr,w/(9.1×A_t)) × 0.5 × (Φ_int + Φ_sol)
             → Remaining radiative fraction to surface node
             
-        The coefficient 9.1 in Eq. (C.3) equals h_ms, ensuring consistency
-        with the mass-surface coupling coefficient.
+        The coefficient h_ms (default 9.1) in Eq. (C.3) is also used in
+        mass-surface coupling, including when explicitly overridden.
         
         Note on strict_iso mode:
             When strict_iso=True, the exact ISO 13790 equations are used with
@@ -1519,7 +1530,7 @@ class Building5R1C:
             if self._a_tot > 0:
                 # Area ratios per ISO 13790
                 ratio_mass = self._mass_area / self._a_tot
-                ratio_window = self._h_tr_w / (9.1 * self._a_tot)
+                ratio_window = self._h_tr_w / (self.h_ms * self._a_tot)
                 ratio_surface = max(0.0, 1.0 - ratio_mass - ratio_window)
                 
                 # Eq. (C.2): Φ_m = (A_m/A_t) × 0.5 × (Φ_int + Φ_sol)
@@ -1545,7 +1556,7 @@ class Building5R1C:
             if self._a_tot > 0:
                 # ISO 13790 Eq. C.2 and C.3 area ratios
                 ratio_mass = self._mass_area / self._a_tot
-                ratio_window = self._h_tr_w / (9.1 * self._a_tot)
+                ratio_window = self._h_tr_w / (self.h_ms * self._a_tot)
                 ratio_surface = max(0.0, 1.0 - ratio_mass - ratio_window)
                 
                 # Heat flow to surface node (φ_st) 
