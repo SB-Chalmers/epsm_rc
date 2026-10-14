@@ -44,11 +44,11 @@ def test_effective_coefficients_change_actual_reduced_properties(inputs, changes
     building, weather = inputs
     baseline = simulate_building(
         building, weather=weather,
-        settings=RCSettings(airflow_policy="sensible_only_unlimited_supply"),
+        settings=RCSettings(airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier"),
     )
     changed = simulate_building(
         building, weather=weather,
-        settings=RCSettings(airflow_policy="sensible_only_unlimited_supply", **changes),
+        settings=RCSettings(airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier", **changes),
     )
     assert baseline.run_id != changed.run_id
     assert baseline.diagnostics["reduced_properties"][property_name] != pytest.approx(
@@ -67,7 +67,7 @@ def test_effective_gain_ventilation_and_mass_methods_change_results(inputs, chan
     building, weather = inputs
     results = [simulate_building(
         building, weather=weather,
-        settings=RCSettings(airflow_policy="sensible_only_unlimited_supply", **configuration),
+        settings=RCSettings(airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier", **configuration),
     ) for configuration in ({}, changes)]
     assert results[0].run_id != results[1].run_id
     assert results[0].scalars["space_heating_demand_kwh"] != pytest.approx(
@@ -104,7 +104,7 @@ def test_complete_constructions_do_not_receive_fallback_class(inputs, monkeypatc
     result = simulate_building(
         building, weather=weather,
         settings=RCSettings.from_policy(
-            "epsm_rc_5r1c_v1", airflow_policy="sensible_only_unlimited_supply",
+            "epsm_rc_5r1c_v1", airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier",
         ),
     )
     assert models[0].building_class is None
@@ -134,7 +134,7 @@ def test_new_solver_coefficients_require_positive_values(parameters):
 def test_mass_exterior_fallback_is_declared_and_reported(inputs):
     building, weather = inputs
     settings = RCSettings(
-        airflow_policy="sensible_only_unlimited_supply", mass_surface_coefficient_w_m2_k=0.01,
+        airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier", mass_surface_coefficient_w_m2_k=0.01,
     )
     result = simulate_building(building, weather=weather, settings=settings)
     assert result.diagnostics["effective_configuration"]["methods"]["mass_exterior_coupling"] == (

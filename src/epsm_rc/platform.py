@@ -69,8 +69,8 @@ class RCSettings:
     effective_mass_depth_m : float
         Positive room-side active construction depth in metres; default 0.1.
     ground_coupling_factor : float
-        Conductance multiplier in [0, 1] when no ground temperature boundary
-        is supplied; default 0.5.
+        Conductance multiplier in [0, 1] for the explicitly selected
+        ``conductance_multiplier`` ground policy; baseline value 0.5.
     ground_reflectance : float
         Solar ground albedo in [0, 1]; default 0.2.
     airflow_policy : str
@@ -98,6 +98,15 @@ class RCSettings:
         Nonnegative sky exchange coefficient and fixed sky-air difference.
     wall_sky_view_factor, roof_sky_view_factor : float
         Sky view fractions in [0, 1]. These are model assumptions.
+    ground_policy : str
+        ``reject`` rejects unsupported foundation methods such as Kiva.
+        Select ``conductance_multiplier`` or ``prescribed_monthly_temperature``
+        to explicitly approximate an unsupported foundation.
+    monthly_ground_temperatures_c : tuple or None
+        Twelve finite Celsius boundary values for an explicitly selected
+        monthly approximation. A source must also be supplied.
+    monthly_ground_temperature_source : str or None
+        Source or assumption identifying the supplied monthly boundary.
 
     Notes
     -----
@@ -129,6 +138,9 @@ class RCSettings:
     sky_air_temperature_difference_k: float = 11.0
     wall_sky_view_factor: float = 0.5
     roof_sky_view_factor: float = 1.0
+    ground_policy: str = "reject"
+    monthly_ground_temperatures_c: tuple[float, ...] | None = None
+    monthly_ground_temperature_source: str | None = None
 
     def __post_init__(self):
         if not np.isfinite(self.effective_mass_depth_m) or self.effective_mass_depth_m <= 0:
@@ -166,6 +178,23 @@ class RCSettings:
             raise ValueError("Mass capacity thresholds must be strictly increasing")
         if max(self.mass_area_factors) > self.internal_surface_area_factor:
             raise ValueError("Effective mass area cannot exceed the internal surface area")
+        if self.ground_policy not in {
+            "reject", "conductance_multiplier", "prescribed_monthly_temperature",
+        }:
+            raise ValueError("Unknown ground_policy")
+        if self.ground_policy == "prescribed_monthly_temperature":
+            values = tuple(self.monthly_ground_temperatures_c or ())
+            if len(values) != 12 or any(not np.isfinite(value) for value in values):
+                raise ValueError("Monthly ground boundary requires 12 finite temperatures")
+            if not isinstance(self.monthly_ground_temperature_source, str) or not (
+                self.monthly_ground_temperature_source.strip()
+            ):
+                raise ValueError("Monthly ground boundary requires an explicit source or assumption")
+            object.__setattr__(self, "monthly_ground_temperatures_c", values)
+        elif self.monthly_ground_temperatures_c is not None or (
+            self.monthly_ground_temperature_source is not None
+        ):
+            raise ValueError("Select ground_policy='prescribed_monthly_temperature' for monthly inputs")
 
     @classmethod
     def from_policy(cls, name: str, **overrides) -> RCSettings:
@@ -217,6 +246,42 @@ def _airflow_capabilities(airflow, settings: RCSettings) -> dict:
             "For epsm.Building.simulate(engine='epsm_rc'), pass these RC settings explicitly."
         )
     return {"effective_model": settings.airflow_policy, "omitted_inputs": omitted}
+
+
+def _ground_reduction(envelope, settings: RCSettings) -> tuple[tuple | None, float, dict]:
+    """Preserve prescribed monthly boundaries or require an explicit approximation."""
+    requested = envelope.foundation.model_dump(mode="json")
+    boundary = envelope.ground_temperature
+    report = {"requested_foundation": requested, "requested_policy": settings.ground_policy}
+    if boundary is not None:
+        if settings.monthly_ground_temperatures_c is not None:
+            raise ValueError("Two monthly ground boundaries supplied; select one source explicitly")
+        months = tuple(boundary.monthly_temperatures_c)
+        source = boundary.source
+    elif settings.ground_policy == "prescribed_monthly_temperature":
+        months = settings.monthly_ground_temperatures_c
+        source = settings.monthly_ground_temperature_source
+    elif settings.ground_policy == "conductance_multiplier":
+        report.update(
+            effective_method="conductance_multiplier",
+            effective_multiplier=settings.ground_coupling_factor,
+            monthly_temperatures_c=None,
+            boundary_source="caller-selected conductance multiplier approximation",
+        )
+        return None, settings.ground_coupling_factor, report
+    else:
+        raise ValueError(
+            f"epsm_rc does not implement {requested['method']} foundations. Select an explicit "
+            "ground_policy='conductance_multiplier' or 'prescribed_monthly_temperature' "
+            "in RCSettings to acknowledge the approximation."
+        )
+    report.update(
+        effective_method="prescribed_monthly_temperature",
+        effective_multiplier=1.0,
+        monthly_temperatures_c=months,
+        boundary_source=source,
+    )
+    return months, 1.0, report
 
 
 def _implementation_identity() -> dict:
@@ -304,7 +369,8 @@ def simulate_building(
     >>> result = simulate_building(  # doctest: +SKIP
     ...     Building(), weather=Weather.from_epw("weather.epw"),
     ...     settings=RCSettings.from_policy(
-    ...         "epsm_rc_5r1c_v1", airflow_policy="sensible_only_unlimited_supply"))
+    ...         "epsm_rc_5r1c_v1", airflow_policy="sensible_only_unlimited_supply",
+    ...         ground_policy="conductance_multiplier"))
     >>> result.scalars["space_heating_demand_kwh"] >= 0  # doctest: +SKIP
     True
     """
@@ -330,6 +396,7 @@ def simulate_building(
     building.readiness(engine="epsm_rc", weather=weather).require()
     spec = building.to_spec(weather)
     airflow_capabilities = _airflow_capabilities(spec.airflow, settings)
+    ground, ground_multiplier, ground_reduction = _ground_reduction(spec.envelope, settings)
     implementation = _implementation_identity()
     run_id = hashlib.sha256(
         json.dumps(
@@ -442,7 +509,6 @@ def simulate_building(
         + use.equipment_gain_w_m2 * equipment_fraction * annual(use.equipment_fraction)
         + use.lighting_gain_w_m2 * annual(use.lighting_fraction)
     )
-    ground = spec.envelope.ground_temperature
     capacity = sum(c.total_thermal_mass_j_k for c in constructions)
     if not constructions or not np.isfinite(capacity) or capacity <= 0:
         raise ValueError("RC reduction requires positive thermal mass from explicit constructions")
@@ -475,8 +541,8 @@ def simulate_building(
         ventilation_system=None,
         delta_u_thermal_bridge=0,
         ventilation_behaviour=0,
-        temp_adj_ground=settings.ground_coupling_factor,
-        ground_temps_monthly=list(ground.monthly_temperatures_c) if ground else None,
+        temp_adj_ground=ground_multiplier,
+        ground_temps_monthly=list(ground) if ground is not None else None,
         a_tot_surfaces_m2=settings.internal_surface_area_factor * area,
         mass_area_factor_override=mass_area_factor,
         convective_fraction_internal=settings.convective_internal_gains_fraction,
@@ -653,6 +719,7 @@ def simulate_building(
             "surface_air_conductance_w_k": model._h_tr_is,
             "mass_surface_conductance_w_k": model._h_tr_ms,
             "opaque_transmission_conductance_w_k": model._h_tr_op,
+            "effective_ground_conductance_w_k": model._h_tr_ground * ground_multiplier,
             "mass_exterior_conductance_w_k": model._h_tr_em,
             "mass_exterior_coupling_fallback": bool(
                 model._h_tr_op > 0 and model._h_tr_ms > 0 and model._h_tr_op >= model._h_tr_ms
@@ -661,11 +728,12 @@ def simulate_building(
         },
         implementation=implementation,
         airflow_capabilities=airflow_capabilities,
+        ground_reduction=ground_reduction,
         approximations=[
             "One aggregated conditioned thermal domain",
             "Perez solar gains with scalar window shading; no geometric site shading",
             "Room-side mass depth and construction-capacity mass-area rule from explicit policy",
-            "Ground conductance reduction when no monthly boundary is supplied",
+            "Ground boundary or conductance multiplier explicitly selected and reported",
             "Solar gains use fixed whole-window SHGC",
             "No fan heat feedback",
             "Sensible-only model treats all occupant activity as sensible gain",
