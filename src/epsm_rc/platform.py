@@ -14,8 +14,10 @@
 The reduction combines conditioned space into one temperature domain. Material
 inventory remains in Core; only transport/storage equivalents enter this model.
 Solar radiation uses actual facade azimuths and Perez irradiance with the supplied
-scalar window shading factor. Geometric site shading is unsupported. Weather is
-read explicitly; optional output writes hourly arrays. No catalogue loads occur
+scalar window shading factor. Geometric site shading is unsupported.
+Self-shadowing for courtyards, concave footprints or multiple parts requires an
+explicit omission policy, reported in diagnostics and calculation identity.
+Weather is read explicitly; optional output writes hourly arrays. No catalogue loads occur
 on import. The standalone solver retains its compatibility behavior.
 """
 
@@ -36,6 +38,7 @@ import numpy as np
 import pandas as pd
 from pvlib import atmosphere, irradiance, solarposition
 from pvlib.iotools import read_epw
+from shapely.geometry import Polygon
 
 from .iso13790 import Building5R1C, Construction, ConstructionLayer
 
@@ -107,6 +110,10 @@ class RCSettings:
         monthly approximation. A source must also be supplied.
     monthly_ground_temperature_source : str or None
         Source or assumption identifying the supplied monthly boundary.
+    self_shadowing_policy : str
+        ``reject`` (default) requires an explicit decision for courtyards,
+        concave footprints and multiple parts. ``ignore`` acknowledges omitted
+        self-shadowing; it does not enable geometric site shading.
 
     Notes
     -----
@@ -141,6 +148,7 @@ class RCSettings:
     ground_policy: str = "reject"
     monthly_ground_temperatures_c: tuple[float, ...] | None = None
     monthly_ground_temperature_source: str | None = None
+    self_shadowing_policy: str = "reject"
 
     def __post_init__(self):
         if not np.isfinite(self.effective_mass_depth_m) or self.effective_mass_depth_m <= 0:
@@ -195,6 +203,8 @@ class RCSettings:
             self.monthly_ground_temperature_source is not None
         ):
             raise ValueError("Select ground_policy='prescribed_monthly_temperature' for monthly inputs")
+        if self.self_shadowing_policy not in {"reject", "ignore"}:
+            raise ValueError("Unknown self_shadowing_policy; choose reject or ignore")
 
     @classmethod
     def from_policy(cls, name: str, **overrides) -> RCSettings:
@@ -226,6 +236,7 @@ class RCSettings:
                 "gain_partition": "area_ratios_with_nonnegative_surface_fraction",
                 "load_interpolation": "linear_unlimited_load_interpolation",
                 "mass_exterior_coupling": "series_inverse_conductance_with_opaque_fallback",
+                "self_shadowing": "geometry_capability_gate_with_explicit_omission",
             },
         }
 
@@ -282,6 +293,30 @@ def _ground_reduction(envelope, settings: RCSettings) -> tuple[tuple | None, flo
         boundary_source=source,
     )
     return months, 1.0, report
+
+
+def _self_shadowing_capabilities(geometry, settings: RCSettings) -> dict:
+    """Gate geometry that can occlude its own facades before irradiance calculation."""
+    affected = []
+    if len(geometry.parts) > 1:
+        affected.append("multiple building parts")
+    for part in geometry.parts:
+        if part.footprint.holes:
+            affected.append(f"courtyard in part {part.identifier}")
+        exterior = Polygon(part.footprint.exterior)
+        if not exterior.equals(exterior.convex_hull):
+            affected.append(f"concave footprint in part {part.identifier}")
+    if affected and settings.self_shadowing_policy == "reject":
+        raise ValueError(
+            f"epsm_rc does not model self-shadowing for {', '.join(affected)}. "
+            "Select self_shadowing_policy='ignore' in RCSettings to acknowledge its omission."
+        )
+    return {
+        "policy": settings.self_shadowing_policy,
+        "omitted": bool(affected),
+        "affected_geometry": affected,
+        "geometry_occlusion_applied": False,
+    }
 
 
 def _implementation_identity() -> dict:
@@ -397,6 +432,7 @@ def simulate_building(
     spec = building.to_spec(weather)
     airflow_capabilities = _airflow_capabilities(spec.airflow, settings)
     ground, ground_multiplier, ground_reduction = _ground_reduction(spec.envelope, settings)
+    self_shadowing = _self_shadowing_capabilities(spec.geometry, settings)
     implementation = _implementation_identity()
     run_id = hashlib.sha256(
         json.dumps(
@@ -729,6 +765,7 @@ def simulate_building(
         implementation=implementation,
         airflow_capabilities=airflow_capabilities,
         ground_reduction=ground_reduction,
+        self_shadowing=self_shadowing,
         approximations=[
             "One aggregated conditioned thermal domain",
             "Perez solar gains with scalar window shading; no geometric site shading",
