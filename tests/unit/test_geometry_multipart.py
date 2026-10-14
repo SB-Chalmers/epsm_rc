@@ -1,4 +1,4 @@
-"""Disconnected footprints must not be reduced to their largest part."""
+"""Disconnected footprints preserve all parts in a common coordinate frame."""
 
 import pytest
 from shapely.geometry import MultiPolygon, Polygon, mapping
@@ -15,26 +15,38 @@ def multipart_polygon():
     ])
 
 
-def test_direct_shapely_rejects_multipart(multipart_polygon):
+def assert_parts_preserved(geometry):
+    assert geometry.footprint_area == 150.0
+    parts = sorted(geometry.core_geometry.parts, key=lambda part: part.footprint.polygon.bounds)
+    assert len(parts) == 2
+    assert parts[1].footprint.polygon.bounds[0] - parts[0].footprint.polygon.bounds[0] == 30.0
+    assert parts[1].footprint.polygon.centroid.y - parts[0].footprint.polygon.centroid.y == -2.5
+
+
+def test_direct_shapely_preserves_multipart(multipart_polygon):
     assert multipart_polygon.area == 150.0
-    with pytest.raises(ValueError, match="MultiPolygon|multipart"):
-        BuildingGeometry.from_shapely(multipart_polygon)
+    assert_parts_preserved(BuildingGeometry.from_shapely(
+        multipart_polygon, num_floors=2, floor_height=3,
+    ))
 
 
 @pytest.mark.parametrize("batch", [False, True])
-def test_geojson_rejects_multipart(multipart_polygon, batch, caplog):
+def test_geojson_preserves_multipart(multipart_polygon, batch):
     feature = {"type": "Feature", "properties": {}, "geometry": mapping(multipart_polygon)}
     if batch:
         features = {"type": "FeatureCollection", "features": [feature]}
-        assert FootprintImporter.from_geojson_multi(features, crs="EPSG:3006") == []
-        assert "MultiPolygon" in caplog.text
+        geometry = FootprintImporter.from_geojson_multi(
+            features, crs="EPSG:3006", num_floors=2, floor_height=3,
+        )[0]
     else:
-        with pytest.raises(ValueError, match="MultiPolygon|multipart"):
-            FootprintImporter.from_geojson(feature, crs="EPSG:3006")
+        geometry = FootprintImporter.from_geojson(
+            feature, crs="EPSG:3006", num_floors=2, floor_height=3,
+        )
+    assert_parts_preserved(geometry)
 
 
 @pytest.mark.parametrize("batch", [False, True])
-def test_shapefile_rejects_multipart(multipart_polygon, batch, caplog, tmp_path):
+def test_shapefile_preserves_multipart(multipart_polygon, batch, tmp_path):
     fiona = pytest.importorskip("fiona")
     path = tmp_path / "parts.shp"
     with fiona.open(
@@ -43,11 +55,10 @@ def test_shapefile_rejects_multipart(multipart_polygon, batch, caplog, tmp_path)
     ) as destination:
         destination.write({"geometry": mapping(multipart_polygon), "properties": {}})
     if batch:
-        assert FootprintImporter.from_shapefile(path) == []
-        assert "MultiPolygon" in caplog.text
+        geometry = FootprintImporter.from_shapefile(path, num_floors=2, floor_height=3)[0]
     else:
-        with pytest.raises(ValueError, match="MultiPolygon|multipart"):
-            FootprintImporter.from_shapefile(path, fid=0)
+        geometry = FootprintImporter.from_shapefile(path, fid=0, num_floors=2, floor_height=3)
+    assert_parts_preserved(geometry)
 
 
 def test_shapefile_single_polygon_retains_metric_area(tmp_path):

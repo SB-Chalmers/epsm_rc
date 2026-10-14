@@ -13,17 +13,45 @@ print(result["heating_demand_kwh"])
 
 Install with `python -m pip install .`; tests with `python -m pytest tests`.
 
-Legacy `BuildingGeometry.from_shapely` and GIS footprint imports support polygons
-without holes. Interior rings (courtyards) raise `ValueError`, because this geometry
-cannot represent their floor, roof and wall surfaces correctly. Batch GIS imports
-skip these unsupported features with a warning. For example, a 400 m² exterior
-with a 100 m² courtyard is rejected rather than reported as a 400 m² footprint.
-OSM relations containing members with an `inner` role are also rejected.
-Disconnected `MultiPolygon` inputs are rejected before coordinate transformation;
-no component is selected or discarded. Batch imports warn and skip unsupported
-features. OSM relations support one closed way explicitly marked `outer`;
-multiple outer ways or ambiguous member roles require an unsupported assembly
-step and are rejected.
+`BuildingGeometry` now delegates footprint validation, extrusion and facade
+identity to Core. Install the `platform` extra with coordinated Core/Data versions
+for authoring; ordinary RC imports still work without Core. Supply explicit
+`num_floors` and `floor_height`; WWR starts missing and partial assignments remain
+partial. Numeric segment IDs enumerate Core's facade catalogue, whose stable
+IDs are available on each segment. Core `window_rectangles` supplies actual
+per-storey window areas using the inspectable `window_layout` (scaled by default).
+No second window-placement or facade-orientation algorithm remains in RC.
+
+Direct Shapely, GeoJSON and shapefile inputs preserve holes and disconnected
+components in `core_geometry`. GIS transforms every ring/component once in one
+common coordinate frame. A 400 m² exterior with a 100 m² courtyard retains its
+300 m² net area; 100 m² and 50 m² components retain their 150 m² total and relative
+positions. Invalid or 3-D footprints fail clearly. OSM relation assembly still
+supports one closed way explicitly marked `outer`; inner members, multiple outer
+ways or ambiguous roles require a complete assembled polygon supplied through
+another entry point. Batches warn and skip unsupported or incomplete features.
+
+`to_core_building()` creates a Core empty draft with only supplied physical
+inputs. Missing constructions, glazing, HVAC and operation stay missing.
+Transferring selected WWR requires explicit glazing rather than a guessed U-value
+or SHGC. `to_core_facade(glazing)` creates the shared facade specification.
+Selected geometry values transfer to Core; original GIS `height_evidence` remains
+on the wrapper because the current Core snapshot has no field for that source
+record. Retain the wrapper evidence alongside the model when needed.
+
+```python
+from epsm_rc import BuildingGeometry
+geometry = BuildingGeometry.from_rectangle(20, 10, num_floors=2, floor_height=3)
+draft = geometry.to_core_building()  # Geometry only; inspect missing physical inputs.
+geometry.set_wwr_uniform(0.2)  # Explicit illustrative opening assumption.
+print(geometry.get_5r1c_params())
+```
+
+Legacy `get_eplus_surfaces()` is retired with an actionable `EnergyPlusCompiler`
+migration error. The old polygon IDF emitter and the EnergyPlus comparison stage
+of `examples/10_osm_neighbourhood_simulation.py` require that migration; geometry
+inspection and explicitly configured RC authoring remain available. Use a fully
+authored Core Building and `EnergyPlusCompiler` for EnergyPlus compilation.
 
 GIS height inputs have no implicit defaults. Omitted `num_floors` is resolved from
 `building:levels`, `levels`, `floors` or `num_floors`; omitted `floor_height` is
