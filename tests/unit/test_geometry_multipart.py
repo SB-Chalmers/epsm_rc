@@ -61,8 +61,12 @@ def test_shapefile_single_polygon_retains_metric_area(tmp_path):
             "geometry": mapping(Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])),
             "properties": {},
         })
-    assert FootprintImporter.from_shapefile(path, fid=0).footprint_area == 100.0
-    assert FootprintImporter.from_shapefile(path)[0].footprint_area == 100.0
+    assert FootprintImporter.from_shapefile(
+        path, fid=0, num_floors=2, floor_height=2.5,
+    ).footprint_area == 100.0
+    assert FootprintImporter.from_shapefile(
+        path, num_floors=2, floor_height=2.5,
+    )[0].footprint_area == 100.0
 
 
 def mock_osm(monkeypatch, members, ways):
@@ -117,4 +121,6 @@ def test_osm_uses_declared_single_closed_outer(monkeypatch):
             {"type": "way", "id": 100, "nodes": [1, 2, 3, 4, 1]},
         ],
     )
-    assert len(FootprintImporter.from_osm(relation_id=42).vertices) == 4
+    assert len(FootprintImporter.from_osm(
+        relation_id=42, num_floors=2, floor_height=2.5,
+    ).vertices) == 4

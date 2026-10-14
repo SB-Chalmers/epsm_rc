@@ -83,7 +83,8 @@ def fetch_buildings(building_defs: list[dict]) -> list[dict]:
     results = []
     for i, bdef in enumerate(building_defs):
         way_id = bdef["way_id"]
-        num_floors = bdef.get("num_floors") or 2  # default for from_osm
+        # Explicit illustrative assumptions for this example; not source evidence.
+        num_floors = bdef.get("num_floors")
         print(f"  Fetching OSM way/{way_id} ...")
 
         if i > 0:
@@ -92,6 +93,7 @@ def fetch_buildings(building_defs: list[dict]) -> list[dict]:
         geom = FootprintImporter.from_osm(
             way_id=way_id,
             num_floors=num_floors,
+            floor_height=2.5,
         )
         geom.set_wwr_cardinal({"N": 0.12, "S": 0.25, "E": 0.15, "W": 0.15})
 

@@ -57,7 +57,9 @@ def test_simple_polygon_imports_preserve_metric_area():
     polygon = Polygon([(0, 0), (20, 0), (20, 20), (0, 20)])
     assert BuildingGeometry.from_shapely(polygon).footprint_area == 400.0
     feature = {"type": "Feature", "properties": {}, "geometry": mapping(polygon)}
-    assert FootprintImporter.from_geojson(feature, crs="EPSG:3006").footprint_area == 400.0
+    assert FootprintImporter.from_geojson(
+        feature, crs="EPSG:3006", num_floors=2, floor_height=2.5,
+    ).footprint_area == 400.0
 
 
 @pytest.mark.parametrize("source_kind", ["relation_id", "url"])
