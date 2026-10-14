@@ -20,6 +20,8 @@ All methods return BuildingGeometry (or list thereof) in a local metric
 coordinate system with the centroid shifted to the origin.
 Polygons with interior rings (courtyards) are unsupported: single imports
 raise ValueError; batch imports skip them with a warning.
+Multipart geometry is rejected with the same policy. OSM relations must contain
+exactly one explicitly identified, closed outer way.
 
 Coordinate handling:
 - WGS84 (EPSG:4326) → UTM auto-zone  (for OSM / GeoJSON in lon/lat)
@@ -128,6 +130,11 @@ def _polygon_to_geometry(
     Raises ValueError for courtyards before extracting the exterior, because
     the legacy BuildingGeometry cannot represent holes.
     """
+    if poly.geom_type != "Polygon":
+        raise ValueError(
+            f"BuildingGeometry requires a single Polygon; {poly.geom_type} "
+            "is unsupported and its components cannot be discarded."
+        )
     if poly.interiors:
         raise ValueError(
             "BuildingGeometry does not support interior rings (courtyards); "
@@ -227,7 +234,28 @@ class FootprintImporter:
                         "the OSM relation cannot be imported without losing its holes."
                     )
 
-        # Build node lookup
+        target_way_id = element_id
+        relation_tags = {}
+        if element_type == "relation":
+            relation = next(
+                (element for element in data["elements"]
+                 if element["type"] == "relation" and element["id"] == element_id),
+                None,
+            )
+            if relation is None:
+                raise ValueError(f"OSM relation/{element_id}: relation metadata is missing")
+            members = relation.get("members", [])
+            if len(members) != 1 or members[0].get("type") != "way" or (
+                members[0].get("role") != "outer"
+            ):
+                raise ValueError(
+                    f"OSM relation/{element_id}: only one explicitly identified outer way "
+                    "is supported; multipart or ambiguous relations cannot be imported."
+                )
+            target_way_id = members[0]["ref"]
+            relation_tags = relation.get("tags", {})
+
+        # Build node lookup and select only the declared outer way.
         nodes: Dict[int, Tuple[float, float]] = {}
         way_nodes: Optional[List[int]] = None
         tags: Dict[str, str] = {}
@@ -235,16 +263,17 @@ class FootprintImporter:
         for el in data["elements"]:
             if el["type"] == "node":
                 nodes[el["id"]] = (el["lon"], el["lat"])
-            elif el["type"] == "way" and el["id"] == element_id:
+            elif el["type"] == "way" and el["id"] == target_way_id:
                 way_nodes = el["nodes"]
                 tags = el.get("tags", {})
-            elif el["type"] == "way" and element_type == "relation":
-                # For relations, collect all ways (take outer ring)
-                if way_nodes is None:
-                    way_nodes = el["nodes"]
 
         if way_nodes is None:
             raise ValueError(f"OSM {element_type}/{element_id}: no way nodes found")
+        if element_type == "relation" and (
+            len(way_nodes) < 4 or way_nodes[0] != way_nodes[-1]
+        ):
+            raise ValueError(f"OSM relation/{element_id}: outer way must be a closed ring")
+        tags = {**tags, **relation_tags}
 
         # Resolve coordinates (lon, lat)
         coords = []
@@ -336,11 +365,11 @@ class FootprintImporter:
             raise ValueError(f"Unsupported GeoJSON type: {data.get('type')}")
 
         geom_obj = shapely_shape(feature["geometry"])
-        if geom_obj.geom_type == "MultiPolygon":
-            # Take the largest polygon
-            geom_obj = max(geom_obj.geoms, key=lambda g: g.area)
         if geom_obj.geom_type != "Polygon":
-            raise ValueError(f"Expected Polygon, got {geom_obj.geom_type}")
+            raise ValueError(
+                f"Expected a single Polygon, got unsupported {geom_obj.geom_type}; "
+                "components cannot be discarded."
+            )
 
         # Try to infer floors from properties
         props = feature.get("properties", {}) or {}
@@ -463,8 +492,6 @@ class FootprintImporter:
             if fid is not None:
                 feat = src[fid]
                 geom_obj = shapely_shape(feat["geometry"])
-                if geom_obj.geom_type == "MultiPolygon":
-                    geom_obj = max(geom_obj.geoms, key=lambda g: g.area)
                 return _polygon_to_geometry(
                     geom_obj, source_crs=file_crs,
                     num_floors=num_floors, floor_height=floor_height,
@@ -475,10 +502,6 @@ class FootprintImporter:
                     break
                 try:
                     geom_obj = shapely_shape(feat["geometry"])
-                    if geom_obj.geom_type == "MultiPolygon":
-                        geom_obj = max(geom_obj.geoms, key=lambda g: g.area)
-                    if geom_obj.geom_type != "Polygon":
-                        continue
                     g = _polygon_to_geometry(
                         geom_obj, source_crs=file_crs,
                         num_floors=num_floors, floor_height=floor_height,
