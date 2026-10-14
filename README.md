@@ -112,6 +112,14 @@ effective method, selected boundary/source and effective multiplier. The shared
 Core Building currently compiles a Kiva specification; the RC settings route
 provides an explicit monthly approximation for that authoring interface.
 
+RC does not calculate geometry-derived self-shadowing. Courtyards, concave
+footprints and multiple building parts require explicit
+`self_shadowing_policy="ignore"`; the default rejects these geometries before
+the solver. Diagnostics identify affected parts and the selected omission, and
+run identity includes the policy. One convex part remains supported with the
+default policy. Explicit neighbour and facade shading geometry remain unsupported
+even when self-shadowing is ignored.
+
 Readiness explicitly rejects unsupported geometry, site shading, unconditioned
 parts, FVP/PV delivery and detailed zone controls. This is a reduced calculation,
 not an equivalence claim with EnergyPlus. The common delivered-energy boundary
