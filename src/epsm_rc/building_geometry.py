@@ -240,7 +240,17 @@ class BuildingGeometry:
             polygon: shapely.geometry.Polygon (any winding order, auto-corrected)
             num_floors: Number of floors
             floor_height: Height per floor [m]
+
+        Raises:
+            ValueError: If the polygon contains interior rings (courtyards).
+                This legacy geometry stores only an exterior ring, so importing
+                holes would overstate floor area, volume and roof area.
         """
+        if polygon.interiors:
+            raise ValueError(
+                "BuildingGeometry does not support interior rings (courtyards); "
+                "the footprint cannot be imported without losing its holes."
+            )
         oriented = orient(polygon, sign=1.0)  # Ensure CCW
         coords = list(oriented.exterior.coords)[:-1]
         return cls(
