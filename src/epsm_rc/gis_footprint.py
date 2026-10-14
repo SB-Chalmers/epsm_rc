@@ -18,6 +18,8 @@ Three entry-points, one return type:
 
 All methods return BuildingGeometry (or list thereof) in a local metric
 coordinate system with the centroid shifted to the origin.
+Polygons with interior rings (courtyards) are unsupported: single imports
+raise ValueError; batch imports skip them with a warning.
 
 Coordinate handling:
 - WGS84 (EPSG:4326) → UTM auto-zone  (for OSM / GeoJSON in lon/lat)
@@ -121,7 +123,16 @@ def _polygon_to_geometry(
     num_floors: int,
     floor_height: float,
 ) -> BuildingGeometry:
-    """Convert a Shapely polygon to BuildingGeometry with CRS handling."""
+    """Convert a polygon without interior rings, with CRS handling.
+
+    Raises ValueError for courtyards before extracting the exterior, because
+    the legacy BuildingGeometry cannot represent holes.
+    """
+    if poly.interiors:
+        raise ValueError(
+            "BuildingGeometry does not support interior rings (courtyards); "
+            "the footprint cannot be imported without losing its holes."
+        )
     oriented = orient(poly, sign=1.0)  # CCW
     coords = list(oriented.exterior.coords)[:-1]  # Drop closing vertex
     local = _to_local_metres(coords, source_crs=source_crs)

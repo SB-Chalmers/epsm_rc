@@ -12,6 +12,13 @@ print(result["heating_demand_kwh"])
 ```
 
 Install with `python -m pip install .`; tests with `python -m pytest tests`.
+
+Legacy `BuildingGeometry.from_shapely` and GIS footprint imports support polygons
+without holes. Interior rings (courtyards) raise `ValueError`, because this geometry
+cannot represent their floor, roof and wall surfaces correctly. Batch GIS imports
+skip these unsupported features with a warning. For example, a 400 m² exterior
+with a 100 m² courtyard is rejected rather than reported as a 400 m² footprint.
+
 ## Shared Building interface
 
 The platform extra requires Python 3.11+ and the coordinated Data/Core versions
