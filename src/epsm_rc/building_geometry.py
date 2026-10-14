@@ -110,6 +110,7 @@ class BuildingGeometry:
     vertices: List[Tuple[float, float]]  # Footprint vertices (CCW order)
     num_floors: int = 1
     floor_height: float = 2.6
+    height_evidence: dict = field(default_factory=dict, init=False)
     
     # Computed
     wall_segments: List[WallSegment] = field(default_factory=list)

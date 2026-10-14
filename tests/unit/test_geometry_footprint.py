@@ -299,7 +299,9 @@ class TestFootprintImporter:
         import requests
         monkeypatch.setattr(requests, 'get', _fake_get)
 
-        geom = FootprintImporter.from_osm(url="https://www.openstreetmap.org/way/90851303")
+        geom = FootprintImporter.from_osm(
+            url="https://www.openstreetmap.org/way/90851303", floor_height=2.5,
+        )
 
         assert geom.num_floors == 4  # inferred from building:levels tag
         assert geom.footprint_area > 1.0
@@ -326,7 +328,7 @@ class TestFootprintImporter:
             ],
         }
 
-        geom = FootprintImporter.from_geojson(geojson)
+        geom = FootprintImporter.from_geojson(geojson, floor_height=2.5)
         assert geom.num_floors == 3
         assert geom.footprint_area > 1.0
 

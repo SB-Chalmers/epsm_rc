@@ -25,6 +25,24 @@ features. OSM relations support one closed way explicitly marked `outer`;
 multiple outer ways or ambiguous member roles require an unsupported assembly
 step and are rejected.
 
+GIS height inputs have no implicit defaults. Omitted `num_floors` is resolved from
+`building:levels`, `levels`, `floors` or `num_floors`; omitted `floor_height` is
+resolved from `floor_height_m`, `storey_height_m` or `floor_height`, or from total
+`height` / `building:height` / `height_m` divided by the selected floor count.
+Heights use metres; numeric strings optionally ending in `m` are accepted.
+Explicit overrides take precedence, including `num_floors=2`. Missing or invalid
+required evidence raises `ValueError`; batches warn and skip the feature. Returned
+geometry retains the original source fields and selections in `height_evidence`.
+For a footprint without height evidence, select assumptions explicitly:
+
+```python
+from epsm_rc.gis_footprint import FootprintImporter
+geometry = FootprintImporter.from_geojson(
+    "building.geojson", num_floors=2, floor_height=2.5,
+)
+print(geometry.height_evidence)
+```
+
 ## Shared Building interface
 
 The platform extra requires Python 3.11+ and the coordinated Data/Core versions
