@@ -106,3 +106,34 @@ def test_changed_reduction_settings_get_distinct_calculation_identity():
     assert shallow.diagnostics["implementation"] == deep.diagnostics["implementation"]
     assert shallow.diagnostics["reduction"]["effective_mass_depth_m"] == 0.05
     assert deep.diagnostics["reduction"]["effective_mass_depth_m"] == 0.2
+
+
+def test_solar_limits_accept_read_only_provider_arrays(monkeypatch):
+    core = pytest.importorskip("epsm_core")
+    from epsm_rc import platform
+
+    original = platform.irradiance.get_total_irradiance
+    supplied = []
+
+    class IrradianceSeries:
+        def __init__(self, series):
+            self.values = series.to_numpy(copy=True)
+            supplied.append((self.values, self.values.copy()))
+            self.values.flags.writeable = False
+
+        def to_numpy(self, *, copy=False):
+            return self.values.copy() if copy else self.values
+
+    def readonly_irradiance(*args, **kwargs):
+        values = original(*args, **kwargs)
+        return {"poa_global": IrradianceSeries(values["poa_global"])}
+
+    monkeypatch.setattr(platform.irradiance, "get_total_irradiance", readonly_irradiance)
+    weather = core.Weather.from_epw(files("epsm_rc").joinpath("data/epw/goteborg.epw"))
+    result = simulate_building(core.Building(), weather=weather)
+    assert result.scalars["space_heating_demand_kwh"] > 0
+    assert len(result.time_axis) == 8760
+    assert supplied
+    for values, before in supplied:
+        np.testing.assert_array_equal(values, before)
+        assert not values.flags.writeable

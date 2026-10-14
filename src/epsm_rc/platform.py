@@ -372,7 +372,9 @@ def simulate_building(
             airmass=air_mass,
             albedo=settings.ground_reflectance,
             model="perez",
-        )["poa_global"].to_numpy()
+        )["poa_global"].to_numpy(copy=True)
+        # Own the array before applying physical limits: pandas may expose a
+        # read-only view of the irradiance provider's storage.
         # Perez has a 0/0 sky-clearness term when diffuse radiation is zero.
         # The exact zero-diffuse limit is beam plus ground reflection.
         zero_diffuse = data.dhi.to_numpy() == 0
