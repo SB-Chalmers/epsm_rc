@@ -8,7 +8,7 @@
 # Date modified: 2026-10-14
 # Changelog:
 #   2026-10-14 - Add the Core adapter with explicit reduction and delivery assumptions.
-#   2026-10-14 - Correct recovery double counting only in the platform adapter.
+#   2026-10-14 - Use the common solver with sensible recovery applied once.
 """Reduce a Core Building to independent hourly 5R1C evaluations.
 
 The reduction combines conditioned space into one temperature domain. Material
@@ -18,7 +18,7 @@ scalar window shading factor. Geometric site shading is unsupported.
 Self-shadowing for courtyards, concave footprints or multiple parts requires an
 explicit omission policy, reported in diagnostics and calculation identity.
 Weather is read explicitly; optional output writes hourly arrays. No catalogue loads occur
-on import. The standalone solver retains its compatibility behavior.
+on import. Sensible recovery uses the common standalone solver implementation.
 """
 
 from __future__ import annotations
@@ -49,18 +49,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class _Platform5R1C(Building5R1C):
-    """Apply sensible recovery exactly once, to mechanical conductance.
-
-    The inherited conductance already represents infiltration plus mechanical
-    flow multiplied by (1 - effectiveness). Consequently its driving outdoor
-    temperature must remain unmodified. The legacy standalone class also warms
-    the supply temperature; this adapter correction deliberately leaves that
-    separate compatibility API unchanged.
-    """
-
-    def calc_supply_air_temperature(self, t_out: float) -> float:
-        return t_out
+# Private compatibility name; all paths now use the same solver implementation.
+_Platform5R1C = Building5R1C
 
 
 @dataclass(frozen=True)
@@ -553,7 +543,7 @@ def simulate_building(
     mass_area_factor = settings.mass_area_factors[
         2 if capacity_per_area >= upper else 1 if capacity_per_area >= lower else 0
     ]
-    model = _Platform5R1C(
+    model = Building5R1C(
         floor_area_m2=area,
         building_class=None,
         constructions=constructions,

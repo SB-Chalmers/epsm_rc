@@ -214,9 +214,19 @@ parts, FVP/PV delivery and detailed zone controls. This is a reduced calculation
 not an equivalence claim with EnergyPlus. The common delivered-energy boundary
 currently covers space heating and ventilation fans; DHW/cooling remain separate.
 
-The platform adapter corrects a legacy heat-recovery double count: mechanical
-conductance is reduced once, with infiltration left unrecovered. Standalone
-`Building5R1C` behavior is retained for compatibility. The sensible-only reduction
+Both the standalone `Building5R1C` and shared Building adapter now apply sensible
+recovery once to mechanical conductance, leaving infiltration and window/natural
+flow unrecovered. `calc_supply_air_temperature(t_out)` returns the outdoor
+**driving temperature of the reduced node**, not the physical post-exchanger
+mechanical supply temperature. It no longer warms that driving temperature.
+This deliberately changes historical standalone numerical results: recovery no
+longer reduces infiltration or applies a second mechanical reduction. For 300 m³,
+0.2 ACH infiltration, 0.5 ACH mechanical ventilation, 80% recovery and 20 K,
+the loss is 400 W + 200 W = 600 W. With no mechanical flow, changing recovery
+leaves infiltration loss and calculated heating demand unchanged. Additional
+window flow uses the same coefficient calculation and receives no recovery;
+known mechanical recovery remains applied. A total-flow override must include
+the declared mechanical share; added flow is unrecovered. The sensible-only reduction
 treats occupant activity as sensible gain, uses the ISO 50% convective gain split
 and internal area of 4.5 times floor area, and uses a sky-air temperature
 difference of 11 K in the baseline reduction profile. These values may be

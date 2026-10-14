@@ -20,7 +20,7 @@ def test_kiva_requires_ground_approximation_before_solver(inputs, monkeypatch):
     def forbidden(*args, **kwargs):
         pytest.fail("Unsupported Kiva input reached the solver")
 
-    monkeypatch.setattr(platform, "_Platform5R1C", forbidden)
+    monkeypatch.setattr(platform, "Building5R1C", forbidden)
     with pytest.raises(ValueError, match="kiva.*ground_policy|ground_policy.*kiva"):
         simulate_building(
             building, weather=weather,

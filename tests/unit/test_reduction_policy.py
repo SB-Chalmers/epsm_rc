@@ -92,14 +92,14 @@ def test_complete_constructions_do_not_receive_fallback_class(inputs, monkeypatc
     from epsm_rc import platform
 
     models = []
-    original = platform._Platform5R1C
+    original = platform.Building5R1C
 
     def capture(*args, **kwargs):
         model = original(*args, **kwargs)
         models.append(model)
         return model
 
-    monkeypatch.setattr(platform, "_Platform5R1C", capture)
+    monkeypatch.setattr(platform, "Building5R1C", capture)
     building, weather = inputs
     result = simulate_building(
         building, weather=weather,
