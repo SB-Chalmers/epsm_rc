@@ -88,7 +88,7 @@ def mock_osm(monkeypatch, members, ways):
     monkeypatch.setattr(requests, "get", lambda *args, **kwargs: Response())
 
 
-@pytest.mark.parametrize("case", ["multiple", "ambiguous", "open", "missing_relation"])
+@pytest.mark.parametrize("case", ["multiple", "ambiguous", "open", "empty_members"])
 def test_osm_rejects_unsupported_relation(monkeypatch, case):
     members = [{"type": "way", "ref": 100, "role": "outer"}]
     ways = [{"type": "way", "id": 100, "nodes": [1, 2, 3, 4, 1]}]
