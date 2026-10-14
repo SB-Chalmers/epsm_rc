@@ -47,11 +47,52 @@ geometry.set_wwr_uniform(0.2)  # Explicit illustrative opening assumption.
 print(geometry.get_5r1c_params())
 ```
 
-Legacy `get_eplus_surfaces()` is retired with an actionable `EnergyPlusCompiler`
-migration error. The old polygon IDF emitter and the EnergyPlus comparison stage
-of `examples/10_osm_neighbourhood_simulation.py` require that migration; geometry
-inspection and explicitly configured RC authoring remain available. Use a fully
-authored Core Building and `EnergyPlusCompiler` for EnergyPlus compilation.
+Legacy `get_eplus_surfaces()`, `generate_idf()` and `generate_polygon_idf()` are
+retired with actionable Core migration errors. No independent IDF geometry,
+material or schedule emitter remains. Historical `ParametricBuilding` and
+`get_5r1c_params()` retain standalone RC conveniences and their documented
+assumptions; they are not converted into shared physical inputs.
+`examples/10_osm_neighbourhood_simulation.py` is an RC-only neighbourhood demo.
+
+Use `prepare_engine_comparison()` to compile EnergyPlus inputs and calculate RC
+demand from one captured, fully authored Core Building:
+
+```python
+from epsm_rc import prepare_engine_comparison, RCSettings
+comparison = prepare_engine_comparison(
+    building, weather="weather.epw", directory="comparison",
+    energyplus="/path/to/EnergyPlus-24.2/energyplus",
+    rc_settings=RCSettings.from_policy(
+        "epsm_rc_5r1c_v1", airflow_policy="sensible_only_unlimited_supply",
+        ground_policy="conductance_multiplier", self_shadowing_policy="ignore",
+    ),
+)
+```
+
+Here `building` is the caller's complete Core Building with supplied geometry,
+fabric, glazing, operation and HVAC; the helper infers none of these inputs.
+Core's `EnergyPlusCompiler` discovers the executable version, loads its adjacent
+`Energy+.schema.epJSON` and validates emitted epJSON. If the executable argument
+is omitted, Core checks `ENERGYPLUS_EXE` then PATH. The caller's Building remains
+unchanged. The compilation report and RC result expose the actual consumed
+physical specification hash, and `comparison.json` ties these outputs to the
+captured snapshot and explicit RC reductions. Output files overwrite sequentially;
+a later failure can leave earlier artifacts.
+
+This helper compiles EnergyPlus inputs and runs an annual RC calculation. It does
+not run an EnergyPlus annual simulation or establish scientific equivalence or
+calibration. `examples/11_core_engine_comparison.py` accepts a Core snapshot,
+local EPW, explicit settings JSON and output directory. The historical module
+entry point uses the same path:
+
+```shell
+python -m epsm_rc.parametric --building building-snapshot.json --weather weather.epw \
+  --rc-settings rc-settings.json --directory comparison --energyplus /path/to/energyplus
+```
+
+Local integration tests require EnergyPlus 24.2 and exercise rectangle and concave
+polygon compilation, supplied materials/glazing/schedules, boundary geometry and
+output identity. These two tests explicitly skip if EnergyPlus is absent in CI.
 
 GIS height inputs have no implicit defaults. Omitted `num_floors` is resolved from
 `building:levels`, `levels`, `floors` or `num_floors`; omitted `floor_height` is

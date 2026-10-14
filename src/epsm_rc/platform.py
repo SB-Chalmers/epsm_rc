@@ -763,6 +763,7 @@ def simulate_building(
             "sky_radiation_loss_w": model.calc_sky_radiation_loss(),
         },
         implementation=implementation,
+        physical_inputs_sha256=spec.physical_hash(),
         airflow_capabilities=airflow_capabilities,
         ground_reduction=ground_reduction,
         self_shadowing=self_shadowing,

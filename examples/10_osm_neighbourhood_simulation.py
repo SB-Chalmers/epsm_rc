@@ -14,7 +14,7 @@ This demo shows how to:
 The workflow uses the FootprintImporter to pull building polygons by OSM
 way IDs, then creates Building5R1C models from the derived geometry.
 
-Requirements (install with `pip install epsm_rc[gis]`):
+Requirements (install with `pip install epsm_rc[platform,gis]`):
     - pyproj, requests  (for OSM fetching)
     - pvlib              (for detailed solar gains)
     - matplotlib         (for plotting)
@@ -43,7 +43,7 @@ from epsm_rc.weather import load_epw
 
 # A small neighbourhood in Gothenburg (Majorna).
 # Each entry: (OSM way ID, assumed construction era, number of floors override).
-# Set num_floors=None to let OSM tags decide (defaults to 2 if absent).
+# Set num_floors=None to require source OSM levels; absent levels raise an error.
 BUILDINGS = [
     {"way_id": 90851303, "era": "1960_1975", "num_floors": None, "label": "A"},
     {"way_id": 90851304, "era": "1976_1990", "num_floors": 3, "label": "B"},
