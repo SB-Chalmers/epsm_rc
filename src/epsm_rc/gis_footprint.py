@@ -211,6 +211,22 @@ class FootprintImporter:
         resp.raise_for_status()
         data = resp.json()
 
+        # Relations identify courtyard rings by member role. Check this before
+        # extracting any outer way, which cannot retain those holes.
+        if element_type == "relation":
+            for element in data["elements"]:
+                if (
+                    element["type"] == "relation"
+                    and element["id"] == element_id
+                    and any(
+                        member.get("role") == "inner" for member in element.get("members", [])
+                    )
+                ):
+                    raise ValueError(
+                        "BuildingGeometry does not support interior rings (courtyards); "
+                        "the OSM relation cannot be imported without losing its holes."
+                    )
+
         # Build node lookup
         nodes: Dict[int, Tuple[float, float]] = {}
         way_nodes: Optional[List[int]] = None

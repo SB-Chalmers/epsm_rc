@@ -18,6 +18,7 @@ without holes. Interior rings (courtyards) raise `ValueError`, because this geom
 cannot represent their floor, roof and wall surfaces correctly. Batch GIS imports
 skip these unsupported features with a warning. For example, a 400 m² exterior
 with a 100 m² courtyard is rejected rather than reported as a 400 m² footprint.
+OSM relations containing members with an `inner` role are also rejected.
 
 ## Shared Building interface
 

@@ -58,3 +58,39 @@ def test_simple_polygon_imports_preserve_metric_area():
     assert BuildingGeometry.from_shapely(polygon).footprint_area == 400.0
     feature = {"type": "Feature", "properties": {}, "geometry": mapping(polygon)}
     assert FootprintImporter.from_geojson(feature, crs="EPSG:3006").footprint_area == 400.0
+
+
+@pytest.mark.parametrize("source_kind", ["relation_id", "url"])
+def test_osm_relation_rejects_courtyard_members(monkeypatch, source_kind):
+    requests = pytest.importorskip("requests")
+    response_data = {
+        "elements": [
+            {
+                "type": "relation",
+                "id": 42,
+                "members": [
+                    {"type": "way", "ref": 100, "role": "outer"},
+                    {"type": "way", "ref": 101, "role": "inner"},
+                ],
+            },
+            {"type": "way", "id": 100, "nodes": [1, 2, 3, 4, 1]},
+            {"type": "node", "id": 1, "lon": 11.97, "lat": 57.70},
+            {"type": "node", "id": 2, "lon": 11.98, "lat": 57.70},
+            {"type": "node", "id": 3, "lon": 11.98, "lat": 57.71},
+            {"type": "node", "id": 4, "lon": 11.97, "lat": 57.71},
+        ],
+    }
+
+    class Response:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return response_data
+
+    monkeypatch.setattr(requests, "get", lambda *args, **kwargs: Response())
+    kwargs = {"relation_id": 42} if source_kind == "relation_id" else {
+        "url": "https://www.openstreetmap.org/relation/42"
+    }
+    with pytest.raises(ValueError, match="courtyard|interior ring"):
+        FootprintImporter.from_osm(**kwargs)
