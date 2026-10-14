@@ -73,6 +73,11 @@ class RCSettings:
         is supplied; default 0.5.
     ground_reflectance : float
         Solar ground albedo in [0, 1]; default 0.2.
+    airflow_policy : str
+        ``reject`` (default) rejects unsupported latent recovery and supply
+        temperature limits, including Core's default limits. Select
+        ``sensible_only_unlimited_supply`` to explicitly omit these fields.
+        Omitted requested values are retained in result diagnostics.
 
     Notes
     -----
@@ -89,12 +94,33 @@ class RCSettings:
     effective_mass_depth_m: float = 0.1
     ground_coupling_factor: float = 0.5
     ground_reflectance: float = 0.2
+    airflow_policy: str = "reject"
 
     def __post_init__(self):
         if not np.isfinite(self.effective_mass_depth_m) or self.effective_mass_depth_m <= 0:
             raise ValueError("Effective mass depth must be finite and positive")
         if not 0 <= self.ground_coupling_factor <= 1 or not 0 <= self.ground_reflectance <= 1:
             raise ValueError("Ground coupling and reflectance must be fractions")
+        if self.airflow_policy not in {"reject", "sensible_only_unlimited_supply"}:
+            raise ValueError("Unknown airflow_policy; choose reject or sensible_only_unlimited_supply")
+
+
+def _airflow_capabilities(airflow, settings: RCSettings) -> dict:
+    """Reject unsupported requests or record the caller-selected omission."""
+    omitted = {
+        "maximum_heating_supply_temperature_c": airflow.maximum_heating_supply_temperature_c,
+        "minimum_cooling_supply_temperature_c": airflow.minimum_cooling_supply_temperature_c,
+    }
+    if airflow.latent_recovery_effectiveness:
+        omitted["latent_recovery_effectiveness"] = airflow.latent_recovery_effectiveness
+    if settings.airflow_policy == "reject":
+        raise ValueError(
+            f"epsm_rc does not support airflow fields: {', '.join(omitted)}. "
+            "To acknowledge their omission, pass "
+            "settings=RCSettings(airflow_policy='sensible_only_unlimited_supply'). "
+            "For epsm.Building.simulate(engine='epsm_rc'), pass these RC settings explicitly."
+        )
+    return {"effective_model": settings.airflow_policy, "omitted_inputs": omitted}
 
 
 def _implementation_identity() -> dict:
@@ -144,7 +170,8 @@ def simulate_building(
         If supplied, create this directory and write ``hourly.npz``. An existing
         file with that name is overwritten. The caller owns output locations.
     settings : RCSettings or dict, optional
-        Explicit reduction assumptions. Defaults to ``RCSettings()``.
+        Explicit reduction assumptions. Defaults to ``RCSettings()``, whose
+        airflow policy rejects unsupported latent/supply control requests.
 
     Returns
     -------
@@ -178,7 +205,8 @@ def simulate_building(
 
     >>> from epsm_core import Building, Weather
     >>> result = simulate_building(  # doctest: +SKIP
-    ...     Building(), weather=Weather.from_epw("weather.epw"))
+    ...     Building(), weather=Weather.from_epw("weather.epw"),
+    ...     settings=RCSettings(airflow_policy="sensible_only_unlimited_supply"))
     >>> result.scalars["space_heating_demand_kwh"] >= 0  # doctest: +SKIP
     True
     """
@@ -194,6 +222,7 @@ def simulate_building(
         raise ValueError("EPW contents changed after Weather was created")
     building.readiness(engine="epsm_rc", weather=weather).require()
     spec = building.to_spec(weather)
+    airflow_capabilities = _airflow_capabilities(spec.airflow, settings)
     implementation = _implementation_identity()
     run_id = hashlib.sha256(
         json.dumps(
@@ -483,6 +512,7 @@ def simulate_building(
         engine="epsm_rc",
         reduction=asdict(settings),
         implementation=implementation,
+        airflow_capabilities=airflow_capabilities,
         approximations=[
             "One aggregated conditioned thermal domain",
             "Perez solar gains with scalar window shading; no geometric site shading",

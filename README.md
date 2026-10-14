@@ -54,11 +54,12 @@ from epsm_rc import RCSettings, simulate_building
 
 building = Building()
 weather = Weather.from_epw("weather.epw")
-result = simulate_building(building, weather=weather, settings=RCSettings())
+settings = RCSettings(airflow_policy="sensible_only_unlimited_supply")
+result = simulate_building(building, weather=weather, settings=settings)
 ```
 
 For automatic LCA and retained combined results, use
-`epsm.Building.simulate(engine="epsm_rc", weather=weather)`.
+`epsm.Building.simulate(engine="epsm_rc", weather=weather, settings=settings)`.
 The adapter reads the same physical constructions, schedules and weather as Core.
 It uses Core's explicit carrier and fan accounting; thermal demand and delivered
 energy remain separate. No construction defaults from the legacy factories are
@@ -73,6 +74,14 @@ The hourly calendar and EPW checksum are validated. Results retain these setting
 and the reduction assumptions. Calculation identity includes inputs, weather,
 settings, installed source hashes and numerical dependency versions. Daylight with zero diffuse radiation uses the
 exact beam-plus-ground limit of the irradiance calculation.
+
+Airflow support is sensible-only and does not implement heating/cooling supply
+temperature limits. The default airflow policy rejects these inputs, including
+Core's default 50 °C / 13 °C limits. Select
+`airflow_policy="sensible_only_unlimited_supply"` explicitly to acknowledge
+unlimited supply temperature and omitted latent recovery. Diagnostics retain
+the requested unsupported field names and values; run identity includes this
+policy. Sensible recovery, infiltration and availability remain applied.
 
 Readiness explicitly rejects unsupported geometry, site shading, unconditioned
 parts, FVP/PV delivery and detailed zone controls. This is a reduced calculation,

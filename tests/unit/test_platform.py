@@ -42,8 +42,9 @@ def test_actual_building_calls_start_fresh_and_preserve_common_delivery(tmp_path
     building = core.Building()
     before = building.snapshot().sha256
     weather = core.Weather.from_epw(files("epsm_rc").joinpath("data/epw/goteborg.epw"))
-    first = simulate_building(building, weather=weather, directory=tmp_path / "first")
-    second = simulate_building(building, weather=weather)
+    settings = RCSettings(airflow_policy="sensible_only_unlimited_supply")
+    first = simulate_building(building, weather=weather, directory=tmp_path / "first", settings=settings)
+    second = simulate_building(building, weather=weather, settings=settings)
     assert building.snapshot().sha256 == before
     assert len(first.time_axis) == 8760
     assert first.run_id == second.run_id
@@ -94,10 +95,14 @@ def test_changed_reduction_settings_get_distinct_calculation_identity():
     building = core.Building()
     weather = core.Weather.from_epw(files("epsm_rc").joinpath("data/epw/goteborg.epw"))
     shallow = simulate_building(
-        building, weather=weather, settings=RCSettings(effective_mass_depth_m=0.05)
+        building, weather=weather, settings=RCSettings(
+            effective_mass_depth_m=0.05, airflow_policy="sensible_only_unlimited_supply",
+        )
     )
     deep = simulate_building(
-        building, weather=weather, settings=RCSettings(effective_mass_depth_m=0.2)
+        building, weather=weather, settings=RCSettings(
+            effective_mass_depth_m=0.2, airflow_policy="sensible_only_unlimited_supply",
+        )
     )
     assert shallow.run_id != deep.run_id
     assert shallow.scalars["space_heating_demand_kwh"] != pytest.approx(
@@ -130,7 +135,10 @@ def test_solar_limits_accept_read_only_provider_arrays(monkeypatch):
 
     monkeypatch.setattr(platform.irradiance, "get_total_irradiance", readonly_irradiance)
     weather = core.Weather.from_epw(files("epsm_rc").joinpath("data/epw/goteborg.epw"))
-    result = simulate_building(core.Building(), weather=weather)
+    result = simulate_building(
+        core.Building(), weather=weather,
+        settings=RCSettings(airflow_policy="sensible_only_unlimited_supply"),
+    )
     assert result.scalars["space_heating_demand_kwh"] > 0
     assert len(result.time_axis) == 8760
     assert supplied
