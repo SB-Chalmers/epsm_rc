@@ -13,6 +13,26 @@ print(result["heating_demand_kwh"])
 
 Install with `python -m pip install .`; tests with `python -m pytest tests`.
 
+EPW loading and annual EPW simulation require coordinated `epsm_rc[platform]`
+(Python 3.11+) for Core's shared checksum and calendar validation. Ordinary RC
+imports and explicitly supplied numerical arrays remain usable without Core.
+Weather selection is explicit: `load_epw("weather.epw")`, `load_epw(weather)`
+with a captured Core Weather, or `load_epw(preset="goteborg")`. The temperature,
+irradiance and monthly helpers accept the same explicit input/preset. Calls with
+neither fail; `default_weather` is retired. `DEFAULT_EPW` remains an explicit
+path constant. `ParametricBuilding` starts with no selected weather.
+
+Standalone loading and `SolarGainsCalculator.from_epw()` reject incomplete,
+duplicated, malformed or missing physical records. They never pad, repeat or
+truncate annual data. Captured Weather checksums are verified; cached data is
+keyed by content identity and calendar, and arrays are read-only. Valid ordinary
+years retain every value and their declared calendar; complete leap calendars
+currently raise an explicit unsupported-calendar error. Monthly statistics use
+that calendar's month lengths. Date-range helpers reuse selected annual weather
+by month/day (including requests across year boundaries); February 29 fails for
+ordinary-year input instead of shifting later dates. These stricter input and
+dependency requirements replace the previous standalone weather defaults.
+
 `BuildingGeometry` now delegates footprint validation, extrusion and facade
 identity to Core. Install the `platform` extra with coordinated Core/Data versions
 for authoring; ordinary RC imports still work without Core. Supply explicit

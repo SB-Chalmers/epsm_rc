@@ -1,7 +1,20 @@
+# File: weather.py
+# Purpose: Parse explicitly selected EPW inputs after shared checksum/calendar validation.
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Sanjay Somanath
+# Author: Sanjay Somanath
+# Research attribution: Existing numerical model credits remain in iso13790.py.
+# Date created: Unknown; retained weather module predates this refactor.
+# Date modified: 2026-10-14
+# Changelog:
+#   2026-10-14 - Require explicit selection and shared validation; remove annual padding/truncation.
 """Weather data from EPW files for Swedish load simulation.
 
 Uses EnergyPlus Weather (EPW) format - Typical Meteorological Year data.
-Default: Göteborg (bundled). Other Swedish locations available from:
+Weather selection is explicit; Göteborg is an optional named bundled preset.
+Strict loading requires epsm_rc[platform] and delegates calendar/checksum checks
+to Core. Complete ordinary years are retained; leap calendars are unsupported.
+Other Swedish locations available from:
 - climate.onebuilding.org (free)
 - EnergyPlus website (IWEC data)
 
@@ -20,18 +33,22 @@ EPW Field Reference (0-indexed from data rows):
 
 from __future__ import annotations
 
+from calendar import isleap
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING
+
 import numpy as np
 
+if TYPE_CHECKING:
+    from epsm_core import Weather
 
-# Bundled default: Göteborg TMY
+# Compatibility path constant; it is never selected implicitly.
 DEFAULT_EPW = Path(__file__).parent / "data" / "epw" / "goteborg.epw"
 
 # Cache loaded EPW files
-_cache: dict[Path, "EPWData"] = {}
+_cache: dict[tuple[Path, str, int], EPWData] = {}
 
 
 @dataclass
@@ -50,6 +67,11 @@ class EPWData:
     dni_wh_m2: np.ndarray        # Direct Normal Irradiance [Wh/m²]  
     dhi_wh_m2: np.ndarray        # Diffuse Horizontal Irradiance [Wh/m²]
     
+    path: Path | None = None
+    sha256: str | None = None
+    calendar_year: int = 2023
+    _captured_weather: Weather | None = field(default=None, repr=False)
+
     # Monthly aggregates (computed on init)
     monthly_mean_temp: np.ndarray = field(default_factory=lambda: np.zeros(12))
     monthly_mean_ghi: np.ndarray = field(default_factory=lambda: np.zeros(12))
@@ -57,12 +79,21 @@ class EPWData:
     
     def __post_init__(self):
         """Compute monthly statistics."""
+        if isleap(self.calendar_year):
+            raise ValueError("Leap calendar is unsupported by standalone RC weather; no records are truncated")
+        for name in ("temp_c", "ghi_wh_m2", "dni_wh_m2", "dhi_wh_m2"):
+            values = np.asarray(getattr(self, name), dtype=float)
+            if values.shape != (8760,) or not np.isfinite(values).all():
+                raise ValueError(f"Invalid {name}: require 8760 finite hourly values")
+            values.setflags(write=False)
+            setattr(self, name, values)
         self._compute_monthly_stats()
     
     def _compute_monthly_stats(self):
         """Calculate monthly mean temperature and irradiance values."""
-        # Hours per month (approximate, using standard month lengths)
-        month_hours = [744, 672, 744, 720, 744, 720, 744, 744, 720, 744, 720, 744]
+        # Gregorian month lengths for the declared validated calendar.
+        from calendar import monthrange
+        month_hours = [monthrange(self.calendar_year, month)[1] * 24 for month in range(1, 13)]
         hour_idx = 0
         
         for m in range(12):
@@ -81,6 +112,12 @@ class EPWData:
                 self.monthly_mean_ghi[m] = 0
             
             hour_idx += n_hours
+
+    def validate(self):
+        """Recheck captured file identity/calendar before reusing parsed input."""
+        if self._captured_weather is not None:
+            self._captured_weather.validate()
+        return self
     
     @property
     def annual_mean_temp(self) -> float:
@@ -105,7 +142,7 @@ class EPWData:
         end_date: date,
         resolution_minutes: int = 10,
         noise_std: float = 0.0,
-        rng: Optional[np.random.Generator] = None,
+        rng: np.random.Generator | None = None,
     ) -> np.ndarray:
         """Get temperature for date range, interpolated to resolution.
         
@@ -119,6 +156,7 @@ class EPWData:
         Returns:
             Temperature array at specified resolution
         """
+        self.validate()
         n_days = (end_date - start_date).days
         slots_per_hour = 60 // resolution_minutes
         n_slots = n_days * 24 * slots_per_hour
@@ -127,7 +165,11 @@ class EPWData:
         hourly = []
         for day in range(n_days):
             d = start_date + timedelta(days=day)
-            hour_of_year = (d.timetuple().tm_yday - 1) * 24
+            try:
+                calendar_day = date(self.calendar_year, d.month, d.day)
+            except ValueError as error:
+                raise ValueError("February 29 is unsupported by this ordinary-year calendar") from error
+            hour_of_year = (calendar_day.timetuple().tm_yday - 1) * 24
             for h in range(24):
                 idx = (hour_of_year + h) % 8760
                 hourly.append(self.temp_c[idx])
@@ -166,6 +208,7 @@ class EPWData:
         Returns:
             Irradiance array [W/m²] at specified resolution
         """
+        self.validate()
         if component == "ghi":
             source = self.ghi_wh_m2
         elif component == "dni":
@@ -183,7 +226,11 @@ class EPWData:
         hourly = []
         for day in range(n_days):
             d = start_date + timedelta(days=day)
-            hour_of_year = (d.timetuple().tm_yday - 1) * 24
+            try:
+                calendar_day = date(self.calendar_year, d.month, d.day)
+            except ValueError as error:
+                raise ValueError("February 29 is unsupported by this ordinary-year calendar") from error
+            hour_of_year = (calendar_day.timetuple().tm_yday - 1) * 24
             for h in range(24):
                 idx = (hour_of_year + h) % 8760
                 hourly.append(source[idx])
@@ -206,6 +253,7 @@ class EPWData:
         Returns:
             Dictionary with monthly GHI statistics useful for solar gain calculations
         """
+        self.validate()
         return {
             "monthly_mean_ghi_w_m2": self.monthly_mean_ghi.tolist(),
             "monthly_total_ghi_kwh_m2": self.monthly_total_ghi.tolist(),
@@ -227,73 +275,59 @@ class EPWData:
         )
 
 
-def load_epw(path: Path | str | None = None) -> EPWData:
-    """Load EPW weather file. Uses bundled Göteborg data if no path given.
-    
-    Args:
-        path: Path to .epw file (default: bundled Göteborg)
-        
-    Returns:
-        EPWData with hourly temperatures and irradiance
+def load_epw(
+    path: Path | str | Weather | None = None, *, preset: str | None = None,
+) -> EPWData:
+    """Load explicit EPW input, validating Core checksum/calendar before parsing.
+
+    Supply one local path, captured Core Weather or ``preset="goteborg"``.
+    Requires coordinated ``epsm_rc[platform]`` (Python 3.11+); imports remain lazy.
+    Changed captured Weather fails. Cache keys include resolved path, checksum
+    and calendar; every call revalidates file identity and coverage. Required
+    solar arrays are finite and cannot contain EPW missing-value sentinels.
+    No records are repeated, padded or truncated. Leap calendars fail explicitly.
+    Returned arrays are read-only to protect cached input values.
     """
-    path = Path(path) if path else DEFAULT_EPW
-    
-    if path in _cache:
-        return _cache[path]
-    
-    if not path.exists():
-        raise FileNotFoundError(f"EPW file not found: {path}")
-    
-    with open(path) as f:
-        lines = f.readlines()
-    
-    # Header line 1: LOCATION,city,state,country,source,WMO,lat,lon,tz,elev
-    h = lines[0].strip().split(',')
-    location = h[1]
-    latitude = float(h[6])
-    longitude = float(h[7])
-    timezone = float(h[8])
-    elevation = float(h[9])
-    
-    # Data starts at line 9 (0-indexed: line 8)
-    temps = []
-    ghi = []
-    dni = []
-    dhi = []
-    
-    for line in lines[8:]:
-        if not line.strip():
-            continue
-        fields = line.split(',')
-        temps.append(float(fields[6]))   # Dry bulb temp
-        ghi.append(float(fields[13]))    # Global Horizontal Radiation
-        dni.append(float(fields[14]))    # Direct Normal Radiation
-        dhi.append(float(fields[15]))    # Diffuse Horizontal Radiation
-    
-    # Ensure exactly 8760 hours (pad or truncate if needed)
-    def ensure_8760(arr):
-        arr = np.array(arr[:8760])
-        if len(arr) < 8760:
-            arr = np.tile(arr, 8760 // len(arr) + 1)[:8760]
-        return arr
-    
-    temps = ensure_8760(temps)
-    ghi = ensure_8760(ghi)
-    dni = ensure_8760(dni)
-    dhi = ensure_8760(dhi)
-    
+    if path is None and preset is None:
+        raise ValueError("Supply an explicit EPW path/Core Weather or select preset='goteborg'")
+    if path is not None and preset is not None:
+        raise ValueError("Supply either one weather input or a preset, not both")
+    if preset is not None:
+        if preset != "goteborg":
+            raise ValueError(f"Unknown weather preset: {preset!r}; available preset: 'goteborg'")
+        path = DEFAULT_EPW
+    try:
+        from epsm_core import Weather
+    except ImportError as error:
+        raise ImportError("Strict EPW loading requires epsm_rc[platform] with coordinated Core/Data (Python 3.11+)") from error
+    weather = path if isinstance(path, Weather) else Weather.from_epw(path)
+    weather.validate()
+    if isleap(weather.calendar_year):
+        raise ValueError("Leap calendar is unsupported by standalone RC weather; no records are truncated")
+    key = (weather.path.resolve(), weather.sha256, weather.calendar_year)
+    if key in _cache:
+        return _cache[key]
+    from pvlib.iotools import read_epw
+    data, metadata = read_epw(weather.path, coerce_year=weather.calendar_year)
+    arrays = {}
+    for column, name in (("temp_air", "temp_c"), ("ghi", "ghi_wh_m2"),
+                         ("dni", "dni_wh_m2"), ("dhi", "dhi_wh_m2")):
+        values = data[column].to_numpy(dtype=float)
+        if not np.isfinite(values).all() or (column != "temp_air" and ((values < 0) | (values >= 9999)).any()):
+            raise ValueError(f"Missing or invalid EPW {column}: require finite physical values")
+        arrays[name] = values
+    weather.validate()  # Bind parsed values to the same captured bytes.
     epw = EPWData(
-        location=location,
-        latitude=latitude,
-        longitude=longitude,
-        elevation=elevation,
-        timezone=timezone,
-        temp_c=temps,
-        ghi_wh_m2=ghi,
-        dni_wh_m2=dni,
-        dhi_wh_m2=dhi,
+        location=metadata["city"], latitude=metadata["latitude"], longitude=metadata["longitude"],
+        elevation=metadata["altitude"], timezone=metadata["TZ"], **arrays,
+        path=weather.path.resolve(), sha256=weather.sha256, calendar_year=weather.calendar_year,
+        _captured_weather=weather,
     )
-    _cache[path] = epw
+    # Keep one current parsed entry per file rather than retaining obsolete versions.
+    for old_key in list(_cache):
+        if old_key[0] == key[0]:
+            del _cache[old_key]
+    _cache[key] = epw
     return epw
 
 
@@ -302,8 +336,9 @@ def get_temperature(
     end_date: date,
     resolution_minutes: int = 10,
     noise_std: float = 0.0,
-    rng: Optional[np.random.Generator] = None,
-    epw_path: Path | str | None = None,
+    rng: np.random.Generator | None = None,
+    epw_path: Path | str | Weather | None = None,
+    *, preset: str | None = None,
 ) -> np.ndarray:
     """Convenience function: get temperature from EPW data.
     
@@ -313,12 +348,12 @@ def get_temperature(
         resolution_minutes: Output resolution (default 10 min)
         noise_std: Microclimate noise for diversity [°C]
         rng: Random generator
-        epw_path: Custom EPW file (default: Göteborg)
+        epw_path: Explicit local EPW or captured Core Weather; or select preset.
         
     Returns:
         Temperature array
     """
-    epw = load_epw(epw_path)
+    epw = load_epw(epw_path, preset=preset)
     return epw.get_temperature(
         start_date=start_date,
         end_date=end_date,
@@ -333,7 +368,8 @@ def get_irradiance(
     end_date: date,
     component: str = "ghi",
     resolution_minutes: int = 60,
-    epw_path: Path | str | None = None,
+    epw_path: Path | str | Weather | None = None,
+    *, preset: str | None = None,
 ) -> np.ndarray:
     """Convenience function: get solar irradiance from EPW data.
     
@@ -342,12 +378,12 @@ def get_irradiance(
         end_date: End date (exclusive)
         component: "ghi" (global), "dni" (direct), or "dhi" (diffuse)
         resolution_minutes: Output resolution (default 60 min)
-        epw_path: Custom EPW file (default: Göteborg)
+        epw_path: Explicit local EPW or captured Core Weather; or select preset.
         
     Returns:
         Irradiance array [W/m²]
     """
-    epw = load_epw(epw_path)
+    epw = load_epw(epw_path, preset=preset)
     return epw.get_irradiance(
         start_date=start_date,
         end_date=end_date,
@@ -356,16 +392,18 @@ def get_irradiance(
     )
 
 
-def get_monthly_irradiance(epw_path: Path | str | None = None) -> dict:
+def get_monthly_irradiance(
+    epw_path: Path | str | Weather | None = None, *, preset: str | None = None,
+) -> dict:
     """Convenience function: get monthly irradiance statistics.
     
     Args:
-        epw_path: Custom EPW file (default: Göteborg)
+        epw_path: Explicit local EPW or captured Core Weather; or select preset.
         
     Returns:
         Dictionary with monthly GHI values and statistics
     """
-    epw = load_epw(epw_path)
+    epw = load_epw(epw_path, preset=preset)
     return epw.get_monthly_irradiance_profile()
 
 
@@ -459,5 +497,5 @@ def parse_ground_temperatures(epw_path: Path | str) -> dict[str, list[float]]:
 def __getattr__(name):
     # Compatibility: explicit access loads weather; imports perform no weather I/O.
     if name == "default_weather":
-        return load_epw()
+        raise ValueError("default_weather is retired; select load_epw(preset=\"goteborg\") explicitly")
     raise AttributeError(name)

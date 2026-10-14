@@ -267,17 +267,17 @@ def plot_building(geometry: dict, save_path: Path = None):
 # 3. WEATHER DATA
 # =============================================================================
 
-def load_weather(epw_path: str = None) -> tuple[EPWData, np.ndarray]:
+def load_weather(epw_path: str = None, *, preset: str = None) -> tuple[EPWData, np.ndarray]:
     """
     Load EPW weather data.
     
     Args:
-        epw_path: Path to EPW file (uses bundled Göteborg if None)
+        epw_path: Explicit EPW path; alternatively choose a named preset.
         
     Returns:
         EPWData object and hourly temperatures array
     """
-    epw = load_epw(epw_path)
+    epw = load_epw(epw_path, preset=preset)
     
     print(f"\n{'='*60}")
     print("WEATHER DATA")
@@ -649,8 +649,7 @@ def main():
     print("\n[3/5] Loading weather data...")
     # You can specify a custom EPW path here:
     # epw_path = "/path/to/your/weather.epw"
-    epw_path = None  # Uses bundled Göteborg data
-    epw, t_outdoor = load_weather(epw_path)
+    epw, t_outdoor = load_weather(preset="goteborg")  # Explicit illustrative weather assumption.
     
     # 4. Simulate annual heating
     print("\n[4/5] Running annual simulation...")

@@ -70,7 +70,7 @@ class ParametricBuilding:
     wall_specific_heat_j_kgk: float = 1000  # Specific heat
     
     # Weather
-    epw_path: str = "src/data/epw/goteborg.epw"
+    epw_path: Optional[str] = None
     
     # Computed properties
     @property

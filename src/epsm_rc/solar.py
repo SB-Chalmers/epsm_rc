@@ -21,8 +21,7 @@ References:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Optional, Union, Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -109,16 +108,17 @@ class SolarGainsCalculator:
     # EPW data (populated when loading from file)
     _epw_data: Optional[pd.DataFrame] = field(default=None, repr=False)
     _epw_metadata: Optional[dict] = field(default=None, repr=False)
+    _validated_weather: object = field(default=None, repr=False)
     
     @classmethod
-    def from_epw(cls, epw_path: Union[str, Path], ground_reflectance: float = 0.2) -> 'SolarGainsCalculator':
+    def from_epw(cls, epw_path=None, ground_reflectance: float = 0.2, *, preset=None) -> 'SolarGainsCalculator':
         """Create calculator from EPW weather file.
         
         This extracts location (lat, lon, altitude, timezone) from the EPW
         and stores the weather data for use in calculations.
         
         Args:
-            epw_path: Path to EPW weather file
+            epw_path: Explicit EPW path or captured Core Weather; alternatively select preset
             ground_reflectance: Ground albedo (default: 0.2)
             
         Returns:
@@ -128,7 +128,12 @@ class SolarGainsCalculator:
             >>> calc = SolarGainsCalculator.from_epw("SWE_VG_Goteborg.epw")
             >>> print(f"Location: {calc.latitude:.2f}°N, {calc.longitude:.2f}°E")
         """
-        data, metadata = read_epw(str(epw_path))
+        from .weather import load_epw
+
+        weather = load_epw(epw_path, preset=preset)
+        data, metadata = read_epw(weather.path, coerce_year=weather.calendar_year)
+        # Recheck that the parser consumed the same validated bytes.
+        weather.validate()
         
         # Extract location from metadata
         latitude = metadata['latitude']
@@ -153,6 +158,7 @@ class SolarGainsCalculator:
         )
         calc._epw_data = data
         calc._epw_metadata = metadata
+        calc._validated_weather = weather
         
         return calc
     
@@ -488,6 +494,8 @@ class SolarGainsCalculator:
         if self._epw_data is None:
             raise ValueError("No EPW data loaded. Use SolarGainsCalculator.from_epw() to load.")
         
+        if self._validated_weather is not None:
+            self._validated_weather.validate()
         data = self._epw_data
         
         # EPW has ghi, dni, dhi columns
