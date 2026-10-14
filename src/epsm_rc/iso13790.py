@@ -129,6 +129,7 @@ from __future__ import annotations
 
 import bisect
 import random
+import warnings
 from dataclasses import dataclass, field
 from typing import Optional, Literal, TYPE_CHECKING, List, Tuple
 from enum import Enum
@@ -2293,11 +2294,13 @@ def create_swedish_apartment(
     use_config: bool = False,
     **kwargs,
 ) -> Building5R1C:
-    """Create a Building5R1C configured for typical Swedish apartment.
+    """Create a legacy illustrative apartment; use explicit geometry for new work.
     
-    Apartments have less external surface area per floor area than villas,
-    resulting in lower heat losses. Uses Swedish "miljonprogrammet" and
-    newer apartment building characteristics.
+    This compatibility helper uses coarse, unsourced era values and assumes two
+    exposed walls plus partial roof and floor exposure. It does not resolve an
+    epsm_data LoD1 archetype or describe a particular apartment. For new work,
+    resolve construction with epsm_data, provide measured/declared geometry to
+    epsm_core, and run the resulting Building through the RC platform adapter.
     
     Args:
         floor_area_m2: Heated floor area [m^2]
@@ -2309,7 +2312,14 @@ def create_swedish_apartment(
     Returns:
         Configured Building5R1C instance
     """
-    # U-values by era (apartments slightly better than villas due to shared walls)
+    warnings.warn(
+        "create_swedish_apartment is deprecated: resolve epsm_data LoD1 "
+        "construction and explicit epsm_core geometry instead",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
+    # Legacy illustrative U-values by era; not an epsm_data catalogue lookup.
     u_values_by_era = {
         "pre_1960": {"u_walls": 0.50, "u_roof": 0.35, "u_floor": 0.35, "u_windows": 2.5},
         "1960_1975": {"u_walls": 0.35, "u_roof": 0.20, "u_floor": 0.25, "u_windows": 2.2},
