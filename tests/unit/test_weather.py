@@ -20,9 +20,9 @@ from epsm_rc.weather import (
 class TestLoadEPW:
     """Tests for EPW file loading."""
     
-    def test_loads_default_goteborg(self):
-        """Default load uses bundled Göteborg EPW."""
-        epw = load_epw()
+    def test_loads_selected_goteborg(self):
+        """Explicit preset selects bundled Göteborg EPW."""
+        epw = load_epw(preset="goteborg")
         
         assert "goteborg" in epw.location.lower()  # Göteborg in some form
         assert 57.0 < epw.latitude < 58.0  # Göteborg latitude
@@ -43,8 +43,8 @@ class TestLoadEPW:
     
     def test_caches_loaded_data(self):
         """Same file should return cached instance."""
-        epw1 = load_epw()
-        epw2 = load_epw()
+        epw1 = load_epw(preset="goteborg")
+        epw2 = load_epw(preset="goteborg")
         
         assert epw1 is epw2  # Same object from cache
     
@@ -79,7 +79,7 @@ class TestLoadEPW:
                     dni = ghi * 0.8
                     dhi = ghi * 0.2
                     # EPW data format with irradiance fields
-                    data = f"2024,{month},{day},{hour},60,?,{temp:.1f},0,0,0,0,0,0,{ghi:.0f},{dni:.0f},{dhi:.0f},0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0"
+                    data = f"2024,{month},{day},{hour},60,?,{temp:.1f},0,0,101325,0,0,0,{ghi:.0f},{dni:.0f},{dhi:.0f},0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0"
                     lines.append(data)
         
         return "\n".join(lines)
@@ -91,6 +91,7 @@ class TestGetTemperature:
     def test_returns_correct_length(self):
         """Temperature array should match expected length."""
         temps = get_temperature(
+            preset="goteborg",
             start_date=date(2024, 1, 15),
             end_date=date(2024, 1, 16),  # 1 day
             resolution_minutes=10,
@@ -101,6 +102,7 @@ class TestGetTemperature:
     def test_multi_day(self):
         """Multiple days should work."""
         temps = get_temperature(
+            preset="goteborg",
             start_date=date(2024, 1, 1),
             end_date=date(2024, 1, 8),  # 7 days
             resolution_minutes=60,
@@ -111,6 +113,7 @@ class TestGetTemperature:
     def test_winter_is_cold(self):
         """January temperatures should be cold in Sweden."""
         temps = get_temperature(
+            preset="goteborg",
             start_date=date(2024, 1, 15),
             end_date=date(2024, 1, 16),
         )
@@ -120,6 +123,7 @@ class TestGetTemperature:
     def test_summer_is_warm(self):
         """July temperatures should be warmer."""
         temps = get_temperature(
+            preset="goteborg",
             start_date=date(2024, 7, 15),
             end_date=date(2024, 7, 16),
         )
@@ -132,12 +136,14 @@ class TestGetTemperature:
         rng2 = np.random.default_rng(43)
         
         temps1 = get_temperature(
+            preset="goteborg",
             start_date=date(2024, 1, 15),
             end_date=date(2024, 1, 16),
             noise_std=1.0,
             rng=rng1,
         )
         temps2 = get_temperature(
+            preset="goteborg",
             start_date=date(2024, 1, 15),
             end_date=date(2024, 1, 16),
             noise_std=1.0,
@@ -150,11 +156,13 @@ class TestGetTemperature:
     def test_no_noise_is_deterministic(self):
         """Without noise, same dates should give same result."""
         temps1 = get_temperature(
+            preset="goteborg",
             start_date=date(2024, 1, 15),
             end_date=date(2024, 1, 16),
             noise_std=0.0,
         )
         temps2 = get_temperature(
+            preset="goteborg",
             start_date=date(2024, 1, 15),
             end_date=date(2024, 1, 16),
             noise_std=0.0,
@@ -168,7 +176,7 @@ class TestEPWData:
     
     def test_get_temperature_wraps_year(self):
         """Temperature lookup should wrap around year boundary."""
-        epw = load_epw()
+        epw = load_epw(preset="goteborg")
         
         # Get temps spanning year end (should work without error)
         temps = epw.get_temperature(
@@ -190,9 +198,8 @@ class TestDefaultWeather:
     
     def test_default_weather_is_goteborg(self):
         """Default weather should be Göteborg."""
-        from epsm_rc.weather import default_weather
-        
-        assert "GOTEBORG" in default_weather.location.upper()
+        selected = load_epw(preset="goteborg")
+        assert "GOTEBORG" in selected.location.upper()
 
 
 class TestIrradianceData:
@@ -200,27 +207,27 @@ class TestIrradianceData:
     
     def test_ghi_array_length(self):
         """GHI array should have 8760 hourly values."""
-        epw = load_epw()
+        epw = load_epw(preset="goteborg")
         assert len(epw.ghi_wh_m2) == 8760
     
     def test_dni_array_length(self):
         """DNI array should have 8760 hourly values."""
-        epw = load_epw()
+        epw = load_epw(preset="goteborg")
         assert len(epw.dni_wh_m2) == 8760
     
     def test_dhi_array_length(self):
         """DHI array should have 8760 hourly values."""
-        epw = load_epw()
+        epw = load_epw(preset="goteborg")
         assert len(epw.dhi_wh_m2) == 8760
     
     def test_ghi_non_negative(self):
         """GHI should never be negative."""
-        epw = load_epw()
+        epw = load_epw(preset="goteborg")
         assert np.all(epw.ghi_wh_m2 >= 0)
     
     def test_ghi_zero_at_night(self):
         """GHI should be zero during night hours."""
-        epw = load_epw()
+        epw = load_epw(preset="goteborg")
         # Check midnight hours (around hour 0) in winter
         # January has short days in Sweden
         jan_midnight = epw.ghi_wh_m2[0]  # Hour 0 of Jan 1
@@ -228,7 +235,7 @@ class TestIrradianceData:
     
     def test_ghi_higher_in_summer(self):
         """Summer GHI should be higher than winter."""
-        epw = load_epw()
+        epw = load_epw(preset="goteborg")
         
         # January mean (first 744 hours)
         jan_mean = np.mean(epw.ghi_wh_m2[:744])
@@ -241,7 +248,7 @@ class TestIrradianceData:
     
     def test_annual_ghi_reasonable_range(self):
         """Annual GHI should be in reasonable range for Sweden."""
-        epw = load_epw()
+        epw = load_epw(preset="goteborg")
         
         # Swedish annual GHI typically 850-1100 kWh/m²
         assert 800 < epw.annual_ghi_kwh_m2 < 1200
@@ -252,22 +259,22 @@ class TestMonthlyStatistics:
     
     def test_monthly_mean_temp_length(self):
         """Should have 12 monthly mean temperatures."""
-        epw = load_epw()
+        epw = load_epw(preset="goteborg")
         assert len(epw.monthly_mean_temp) == 12
     
     def test_monthly_total_ghi_length(self):
         """Should have 12 monthly GHI totals."""
-        epw = load_epw()
+        epw = load_epw(preset="goteborg")
         assert len(epw.monthly_total_ghi) == 12
     
     def test_monthly_mean_ghi_length(self):
         """Should have 12 monthly mean GHI values."""
-        epw = load_epw()
+        epw = load_epw(preset="goteborg")
         assert len(epw.monthly_mean_ghi) == 12
     
     def test_winter_temp_lower_than_summer(self):
         """Winter months should be colder than summer."""
-        epw = load_epw()
+        epw = load_epw(preset="goteborg")
         
         jan_temp = epw.monthly_mean_temp[0]
         jul_temp = epw.monthly_mean_temp[6]
@@ -276,7 +283,7 @@ class TestMonthlyStatistics:
     
     def test_monthly_ghi_sum_equals_annual(self):
         """Sum of monthly GHI should approximately equal annual."""
-        epw = load_epw()
+        epw = load_epw(preset="goteborg")
         
         monthly_sum = np.sum(epw.monthly_total_ghi)
         annual = epw.annual_ghi_kwh_m2
@@ -290,12 +297,12 @@ class TestHeatingDegreeDays:
     
     def test_hdd18_positive(self):
         """HDD18 should be positive in Sweden."""
-        epw = load_epw()
+        epw = load_epw(preset="goteborg")
         assert epw.heating_degree_days_18 > 0
     
     def test_hdd18_reasonable_range(self):
         """HDD18 should be in reasonable range for Göteborg."""
-        epw = load_epw()
+        epw = load_epw(preset="goteborg")
         
         # Göteborg typically 3200-3600 HDD18
         assert 3000 < epw.heating_degree_days_18 < 4000
@@ -307,6 +314,7 @@ class TestGetIrradiance:
     def test_get_ghi(self):
         """Can retrieve GHI for date range."""
         irr = get_irradiance(
+            preset="goteborg",
             start_date=date(2024, 6, 21),
             end_date=date(2024, 6, 22),
             component="ghi",
@@ -318,6 +326,7 @@ class TestGetIrradiance:
     def test_get_dni(self):
         """Can retrieve DNI for date range."""
         irr = get_irradiance(
+            preset="goteborg",
             start_date=date(2024, 6, 21),
             end_date=date(2024, 6, 22),
             component="dni",
@@ -328,6 +337,7 @@ class TestGetIrradiance:
     def test_get_dhi(self):
         """Can retrieve DHI for date range."""
         irr = get_irradiance(
+            preset="goteborg",
             start_date=date(2024, 6, 21),
             end_date=date(2024, 6, 22),
             component="dhi",
@@ -339,6 +349,7 @@ class TestGetIrradiance:
         """Invalid component should raise ValueError."""
         with pytest.raises(ValueError):
             get_irradiance(
+            preset="goteborg",
                 start_date=date(2024, 6, 21),
                 end_date=date(2024, 6, 22),
                 component="invalid",
@@ -350,7 +361,7 @@ class TestGetMonthlyIrradiance:
     
     def test_returns_dict(self):
         """Should return dictionary with expected keys."""
-        result = get_monthly_irradiance()
+        result = get_monthly_irradiance(preset="goteborg")
         
         assert isinstance(result, dict)
         assert "monthly_mean_ghi_w_m2" in result
@@ -361,7 +372,7 @@ class TestGetMonthlyIrradiance:
     
     def test_monthly_lists_length(self):
         """Monthly lists should have 12 values."""
-        result = get_monthly_irradiance()
+        result = get_monthly_irradiance(preset="goteborg")
         
         assert len(result["monthly_mean_ghi_w_m2"]) == 12
         assert len(result["monthly_total_ghi_kwh_m2"]) == 12
@@ -394,7 +405,7 @@ class TestMultipleEPWFiles:
         """Luleå should be significantly colder than Göteborg."""
         lulea_path = DEFAULT_EPW.parent / "lulea.epw"
         if lulea_path.exists():
-            goteborg = load_epw()
+            goteborg = load_epw(preset="goteborg")
             lulea = load_epw(lulea_path)
             
             assert lulea.annual_mean_temp < goteborg.annual_mean_temp - 3
@@ -406,7 +417,7 @@ class TestEPWSummary:
     
     def test_summary_returns_string(self):
         """Summary should return a string."""
-        epw = load_epw()
+        epw = load_epw(preset="goteborg")
         summary = epw.summary()
         
         assert isinstance(summary, str)
@@ -414,14 +425,14 @@ class TestEPWSummary:
     
     def test_summary_contains_location(self):
         """Summary should contain location name."""
-        epw = load_epw()
+        epw = load_epw(preset="goteborg")
         summary = epw.summary()
         
         assert epw.location in summary
     
     def test_summary_contains_key_values(self):
         """Summary should contain key weather statistics."""
-        epw = load_epw()
+        epw = load_epw(preset="goteborg")
         summary = epw.summary()
         
         assert "HDD18" in summary

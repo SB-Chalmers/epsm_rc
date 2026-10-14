@@ -2128,6 +2128,9 @@ class Building5R1C:
         if epw_path is None:
             raise ValueError("No EPW path provided. Set epw_path argument or self.epw_path")
         
+        # Validate weather before changing the solver's ground or location state.
+        solar_calc = SolarGainsCalculator.from_epw(epw_path)
+
         # Set default ground temperatures if not already specified
         # NOTE: We do NOT auto-load EPW ground temps because they are "undisturbed" soil temps
         # which are too extreme for soil under a conditioned building (per E+ documentation).
@@ -2139,7 +2142,6 @@ class Building5R1C:
             self.ground_temps_monthly = SWEDISH_DEFAULT_GROUND_TEMPS.copy()
         
         # Create solar calculator from EPW
-        solar_calc = SolarGainsCalculator.from_epw(epw_path)
         self._solar_calc = solar_calc
         
         # Update lat/lon from EPW

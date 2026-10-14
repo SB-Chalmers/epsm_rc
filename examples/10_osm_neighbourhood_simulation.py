@@ -389,7 +389,7 @@ def main():
 
     # --- 3. Load weather and simulate ---
     print("\n[3/4] Loading weather & running annual simulations ...")
-    epw = load_epw()  # bundled Göteborg TMY
+    epw = load_epw(preset="goteborg")  # explicitly selected illustrative TMY
     t_outdoor = epw.temp_c
     print(f"  Weather: {epw.location}, {len(t_outdoor)} hours, "
           f"mean {t_outdoor.mean():.1f} °C")
