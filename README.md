@@ -39,7 +39,8 @@ The 5R1C calculation uses one common temperature domain, area-weighted thermal
 conductance and the first 0.1 m of construction from the room side for effective
 mass. `RCSettings` exposes this depth, ground coupling and ground reflectance.
 The hourly calendar and EPW checksum are validated. Results retain these settings
-and the reduction assumptions. Daylight with zero diffuse radiation uses the
+and the reduction assumptions. Calculation identity includes inputs, weather,
+settings, installed source hashes and numerical dependency versions. Daylight with zero diffuse radiation uses the
 exact beam-plus-ground limit of the irradiance calculation.
 
 Readiness explicitly rejects unsupported geometry, site shading, unconditioned

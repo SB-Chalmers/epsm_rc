@@ -87,3 +87,22 @@ def test_reduction_settings_validate_fractions_and_depth():
     ):
         with pytest.raises(ValueError):
             RCSettings(**parameters)
+
+
+def test_changed_reduction_settings_get_distinct_calculation_identity():
+    core = pytest.importorskip("epsm_core")
+    building = core.Building()
+    weather = core.Weather.from_epw(files("epsm_rc").joinpath("data/epw/goteborg.epw"))
+    shallow = simulate_building(
+        building, weather=weather, settings=RCSettings(effective_mass_depth_m=0.05)
+    )
+    deep = simulate_building(
+        building, weather=weather, settings=RCSettings(effective_mass_depth_m=0.2)
+    )
+    assert shallow.run_id != deep.run_id
+    assert shallow.scalars["space_heating_demand_kwh"] != pytest.approx(
+        deep.scalars["space_heating_demand_kwh"]
+    )
+    assert shallow.diagnostics["implementation"] == deep.diagnostics["implementation"]
+    assert shallow.diagnostics["reduction"]["effective_mass_depth_m"] == 0.05
+    assert deep.diagnostics["reduction"]["effective_mass_depth_m"] == 0.2

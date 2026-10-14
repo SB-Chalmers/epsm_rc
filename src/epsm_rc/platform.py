@@ -24,8 +24,10 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import sys
 from dataclasses import asdict, dataclass
 from datetime import timedelta, timezone
+from importlib import import_module, metadata
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
@@ -95,6 +97,32 @@ class RCSettings:
             raise ValueError("Ground coupling and reflectance must be fractions")
 
 
+def _implementation_identity() -> dict:
+    """Fingerprint installed source and numerical dependency versions.
+
+    Development checkouts can change without a distribution version bump.
+    Source hashes therefore identify the actual adapter, Core delivery and Data
+    object behavior. This reads installed source files only when evaluating.
+    """
+    sources = {}
+    for package in ("epsm_rc", "epsm_core", "epsm_data"):
+        root = Path(import_module(package).__file__).parent
+        digest = hashlib.sha256()
+        for path in sorted(root.rglob("*.py")):
+            digest.update(path.relative_to(root).as_posix().encode())
+            digest.update(b"\0")
+            digest.update(path.read_bytes())
+            digest.update(b"\0")
+        sources[package] = digest.hexdigest()
+    return {
+        "source_sha256": sources,
+        "dependencies": {
+            package: metadata.version(package) for package in ("numpy", "pandas", "pvlib")
+        },
+        "python": sys.version.split()[0],
+    }
+
+
 def simulate_building(
     building: Building,
     *,
@@ -135,6 +163,9 @@ def simulate_building(
 
     Notes
     -----
+    Run identity includes the complete physical inputs, weather checksum,
+    reduction settings, installed package source hashes and numerical dependency
+    versions. Installed Python sources are read for these hashes on evaluation.
     Each call creates fresh thermal state. The five-resistance model uses a
     single temperature domain and sensible heat only. Heat recovery reduces
     mechanical conductance once; infiltration is never recovered. No weather
@@ -163,6 +194,19 @@ def simulate_building(
         raise ValueError("EPW contents changed after Weather was created")
     building.readiness(engine="epsm_rc", weather=weather).require()
     spec = building.to_spec(weather)
+    implementation = _implementation_identity()
+    run_id = hashlib.sha256(
+        json.dumps(
+            {
+                "physical_inputs": spec.physical_dict(),
+                "settings": asdict(settings),
+                "implementation": implementation,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode()
+    ).hexdigest()
     logger.info(
         "RC calculation started",
         extra={
@@ -436,6 +480,7 @@ def simulate_building(
         accepted=all(np.isfinite(v).all() for v in hourly.values()),
         engine="epsm_rc",
         reduction=asdict(settings),
+        implementation=implementation,
         approximations=[
             "One aggregated conditioned thermal domain",
             "Perez solar gains with scalar window shading; no geometric site shading",
@@ -452,7 +497,6 @@ def simulate_building(
     )
     if not diagnostics["accepted"]:
         raise ValueError("RC calculation produced non-finite output")
-    run_id = hashlib.sha256(json.dumps(spec.physical_dict(), sort_keys=True).encode()).hexdigest()
     artifacts = {}
     if directory is not None:
         directory = Path(directory)
