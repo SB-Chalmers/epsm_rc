@@ -438,7 +438,8 @@ class TestSwedishBuildingFactories:
     ])
     def test_create_swedish_apartment_all_eras(self, era):
         """Apartment factory works for all eras."""
-        apt = create_swedish_apartment(floor_area_m2=70.0, era=era)
+        with pytest.warns(DeprecationWarning, match="epsm_data LoD1"):
+            apt = create_swedish_apartment(floor_area_m2=70.0, era=era)
         
         assert apt.floor_area_m2 == 70.0
         assert apt.u_walls > 0

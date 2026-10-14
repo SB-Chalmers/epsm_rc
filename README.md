@@ -12,9 +12,52 @@ print(result["heating_demand_kwh"])
 ```
 
 Install with `python -m pip install .`; tests with `python -m pytest tests`.
-The platform adapter is documented separately as it is introduced. The standalone
-factories retain historical defaults and should not be used to assign evidence
-in the harmonised Core Building model.
+## Shared Building interface
+
+The platform extra requires Python 3.11+ and the coordinated Data/Core versions
+on `codex/harmonisation`. Install these repositories first, then this package.
+
+```python
+from epsm_core import Building, Weather
+from epsm_rc import RCSettings, simulate_building
+
+building = Building()
+weather = Weather.from_epw("weather.epw")
+result = simulate_building(building, weather=weather, settings=RCSettings())
+```
+
+For automatic LCA and retained combined results, use
+`epsm.Building.simulate(engine="epsm_rc", weather=weather)`.
+The adapter reads the same physical constructions, schedules and weather as Core.
+It uses Core's explicit carrier and fan accounting; thermal demand and delivered
+energy remain separate. No construction defaults from the legacy factories are
+injected into this path. Detailed material quantities remain in the Building.
+
+### Reduction assumptions
+
+The 5R1C calculation uses one common temperature domain, area-weighted thermal
+conductance and the first 0.1 m of construction from the room side for effective
+mass. `RCSettings` exposes this depth, ground coupling and ground reflectance.
+The hourly calendar and EPW checksum are validated. Results retain these settings
+and the reduction assumptions. Calculation identity includes inputs, weather,
+settings, installed source hashes and numerical dependency versions. Daylight with zero diffuse radiation uses the
+exact beam-plus-ground limit of the irradiance calculation.
+
+Readiness explicitly rejects unsupported geometry, site shading, unconditioned
+parts, FVP/PV delivery and detailed zone controls. This is a reduced calculation,
+not an equivalence claim with EnergyPlus. The common delivered-energy boundary
+currently covers space heating and ventilation fans; DHW/cooling remain separate.
+
+The platform adapter corrects a legacy heat-recovery double count: mechanical
+conductance is reduced once, with infiltration left unrecovered. Standalone
+`Building5R1C` behavior is retained for compatibility. The sensible-only reduction
+treats occupant activity as sensible gain, uses the ISO 50% convective gain split
+and internal area of 4.5 times floor area, and retains the solver's fixed sky-air
+temperature difference of 11 K. These assumptions are recorded in diagnostics;
+they are not inferred properties of the physical Building.
+
+The standalone factories retain historical defaults and should not be used to
+assign evidence in the harmonised Core Building model.
 
 Code includes adaptations credited in the source to DIBS/IWU and
 RC_BuildingSimulator/ETH. Retain their original notices. EPSM-owned additions use
