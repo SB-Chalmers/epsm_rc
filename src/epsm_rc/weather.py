@@ -456,5 +456,8 @@ def parse_ground_temperatures(epw_path: Path | str) -> dict[str, list[float]]:
     }
 
 
-# Pre-load default weather on import
-default_weather = load_epw()
+def __getattr__(name):
+    # Compatibility: explicit access loads weather; imports perform no weather I/O.
+    if name == "default_weather":
+        return load_epw()
+    raise AttributeError(name)

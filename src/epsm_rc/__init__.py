@@ -16,7 +16,7 @@ Quick start::
 
     villa = create_swedish_villa(floor_area_m2=150, era="1976_1990")
     results = villa.simulate_with_epw("goteborg.epw")
-    print(f"Annual heating: {results['annual_heating_kwh']:.0f} kWh")
+    print(f"Annual heating: {results['heating_demand_kwh']:.0f} kWh")
 
 Adapted from DIBS (Dynamic ISO Building Simulator) by IWU, MIT License.
 """
@@ -50,6 +50,8 @@ except ImportError:
     FootprintImporter = None  # type: ignore[assignment,misc]
 
 __all__ = [
+    "simulate_building",
+    "RCSettings",
     # Core model
     "Building5R1C",
     "BuildingClass",
@@ -86,4 +88,11 @@ __all__ = [
     "get_5r1c_params",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
+
+# Platform integration imports Core only when explicitly requested.
+def __getattr__(name):
+    if name in {"simulate_building", "RCSettings"}:
+        from . import platform
+        return getattr(platform, name)
+    raise AttributeError(name)
