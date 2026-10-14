@@ -19,6 +19,11 @@ cannot represent their floor, roof and wall surfaces correctly. Batch GIS import
 skip these unsupported features with a warning. For example, a 400 m² exterior
 with a 100 m² courtyard is rejected rather than reported as a 400 m² footprint.
 OSM relations containing members with an `inner` role are also rejected.
+Disconnected `MultiPolygon` inputs are rejected before coordinate transformation;
+no component is selected or discarded. Batch imports warn and skip unsupported
+features. OSM relations support one closed way explicitly marked `outer`;
+multiple outer ways or ambiguous member roles require an unsupported assembly
+step and are rejected.
 
 ## Shared Building interface
 

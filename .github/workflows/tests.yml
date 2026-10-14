@@ -32,7 +32,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Install platform dependencies and test tools
-        run: python -m pip install build -e .ci/epsm_data -e .ci/epsm_core -e '.[platform,dev]'
+        run: python -m pip install build -e .ci/epsm_data -e .ci/epsm_core -e '.[platform,dev,gis]'
       - name: Run full RC suite
         run: python -m pytest -q
       - name: Build and check installed wheel

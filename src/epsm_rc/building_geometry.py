@@ -242,10 +242,16 @@ class BuildingGeometry:
             floor_height: Height per floor [m]
 
         Raises:
-            ValueError: If the polygon contains interior rings (courtyards).
+            ValueError: If the geometry is not a single Polygon or contains
+                interior rings (courtyards).
                 This legacy geometry stores only an exterior ring, so importing
                 holes would overstate floor area, volume and roof area.
         """
+        if polygon.geom_type != "Polygon":
+            raise ValueError(
+                f"BuildingGeometry requires a single Polygon; {polygon.geom_type} "
+                "is unsupported and its components cannot be discarded."
+            )
         if polygon.interiors:
             raise ValueError(
                 "BuildingGeometry does not support interior rings (courtyards); "
