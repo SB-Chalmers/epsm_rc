@@ -342,15 +342,34 @@ class BuildingGeometry:
 
     def to_core_building(
         self, *, glazing: GlazingSpec | dict | None = None,
-        construction_set=None, hvac=None, operation=None,
+        construction_set=None, hvac=None, operation=None, provenance=None,
     ) -> Building:
         """Create a Core empty draft containing only explicitly supplied physical inputs."""
         if self._wwr_per_segment and glazing is None:
             raise ValueError("Supply explicit glazing to transfer selected WWR; no glazing is assumed")
         facade = self.to_core_facade(glazing) if glazing is not None else None
-        return _core().Building.empty(
-            geometry=self.core_geometry, facade=facade, construction_set=construction_set,
-            hvac=hvac, operation=operation,
+        core = _core()
+        supplied = core.ProvenanceSpec.model_validate(
+            provenance.model_dump(mode="json") if hasattr(provenance, "model_dump") else provenance or {})
+        records = list(supplied.records)
+        geometry = self.core_geometry
+        if self.height_evidence:
+            parts = []
+            inferred = all(self.height_evidence.get(name) != "caller" for name in (
+                "num_floors_source", "floor_height_source"))
+            for index, part in enumerate(geometry.parts):
+                path = f"geometry.parts.{index}.storey_elevations_m"
+                record = next((r for r in records if r.field_path == path), None)
+                if record is None:
+                    record = core.SourceRecord(field_path=path,
+                        status="inferred" if inferred else "assumed", source="gis_height_selection",
+                        evidence=self.height_evidence)
+                    records.append(record)
+                parts.append(part.updated(height_status=record.status))
+            geometry = geometry.updated(parts=tuple(parts))
+        return core.Building.empty(
+            geometry=geometry, facade=facade, construction_set=construction_set,
+            hvac=hvac, operation=operation, provenance=core.ProvenanceSpec(records=tuple(records)),
         )
 
     def get_eplus_surfaces(self):

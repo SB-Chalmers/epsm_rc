@@ -37,9 +37,9 @@ def test_recovery_does_not_reduce_infiltration_without_mechanical_flow():
     assert loss == pytest.approx(400)
 
 
-def test_actual_building_calls_start_fresh_and_preserve_common_delivery(tmp_path):
+def test_actual_building_calls_start_fresh_and_preserve_common_delivery(tmp_path, reference_building):
     core = pytest.importorskip("epsm_core")
-    building = core.Building()
+    building = reference_building
     before = building.snapshot().sha256
     weather = core.Weather.from_epw(files("epsm_rc").joinpath("data/epw/goteborg.epw"))
     settings = RCSettings(airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier")
@@ -90,9 +90,9 @@ def test_reduction_settings_validate_fractions_and_depth():
             RCSettings(**parameters)
 
 
-def test_changed_reduction_settings_get_distinct_calculation_identity():
+def test_changed_reduction_settings_get_distinct_calculation_identity(reference_building):
     core = pytest.importorskip("epsm_core")
-    building = core.Building()
+    building = reference_building
     weather = core.Weather.from_epw(files("epsm_rc").joinpath("data/epw/goteborg.epw"))
     shallow = simulate_building(
         building, weather=weather, settings=RCSettings(
@@ -113,7 +113,7 @@ def test_changed_reduction_settings_get_distinct_calculation_identity():
     assert deep.diagnostics["reduction"]["effective_mass_depth_m"] == 0.2
 
 
-def test_solar_limits_accept_read_only_provider_arrays(monkeypatch):
+def test_solar_limits_accept_read_only_provider_arrays(monkeypatch, reference_building):
     core = pytest.importorskip("epsm_core")
     from epsm_rc import platform
 
@@ -136,7 +136,7 @@ def test_solar_limits_accept_read_only_provider_arrays(monkeypatch):
     monkeypatch.setattr(platform.irradiance, "get_total_irradiance", readonly_irradiance)
     weather = core.Weather.from_epw(files("epsm_rc").joinpath("data/epw/goteborg.epw"))
     result = simulate_building(
-        core.Building(), weather=weather,
+        reference_building, weather=weather,
         settings=RCSettings(airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier"),
     )
     assert result.scalars["space_heating_demand_kwh"] > 0

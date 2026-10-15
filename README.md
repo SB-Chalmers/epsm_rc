@@ -134,6 +134,20 @@ print(geometry.height_evidence)
 
 ## Shared Building interface
 
+Explicit Core gain partitions now drive the RC sensible heat budget and hourly
+convective/radiant split. Equipment latent heat is excluded from that sensible
+network; visible lighting energy is deposited as radiant surface heat. Active
+return-air heat and engine-calculated occupant sensible heat are rejected before
+simulation. Supply an occupant sensible fraction to run those explicit inputs.
+The selected legacy RC policy retains its older gain treatment for legacy inputs.
+With explicit partitions, the aggregate `convective_internal_gains_fraction` is
+reported as inactive, and the effective channels are retained in diagnostics.
+
+GIS `height_evidence` is transferred into Core `SourceRecord.evidence` by
+`to_core_building()`. Derived source heights are inferred, caller assumptions are
+assumed, and optional caller-supplied provenance takes precedence. Copying and JSON
+roundtrips retain that evidence; editing geometry invalidates its source records.
+
 The platform extra requires Python 3.11+ and the coordinated Data/Core versions
 on `codex/harmonisation`. Install these repositories first, then this package.
 
@@ -141,7 +155,7 @@ on `codex/harmonisation`. Install these repositories first, then this package.
 from epsm_core import Building, Weather
 from epsm_rc import RCSettings, simulate_building
 
-building = Building()
+building = Building(preset="illustrative-reference")  # Explicit illustrative inputs.
 weather = Weather.from_epw("weather.epw")
 settings = RCSettings.from_policy(
     "epsm_rc_5r1c_v1", airflow_policy="sensible_only_unlimited_supply",

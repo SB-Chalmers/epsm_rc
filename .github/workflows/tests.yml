@@ -12,6 +12,7 @@ jobs:
       fail-fast: false
       matrix:
         python: ['3.11', '3.13']
+        core: ['932bfd49a3fbb7d017daa125f6331ef6fc01c870', 'dev']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
@@ -19,20 +20,25 @@ jobs:
           repository: SB-Chalmers/epsm_data
           ssh-key: ${{ secrets.EPSM_DATA_DEPLOY_KEY }}
           persist-credentials: false
-          ref: ae102d33eda79fd429fb445ec99b32dabcab8024
+          ref: d7b19688ae7bb73dbbc4bc12afa83a6bcc67ae48
           path: .ci/epsm_data
       - uses: actions/checkout@v4
         with:
           repository: SB-Chalmers/epsm_core
           ssh-key: ${{ secrets.EPSM_CORE_DEPLOY_KEY }}
           persist-credentials: false
-          ref: 8a7c5abf9228e7e6c3792f1f34490aaffd1f608f
+          ref: ${{ matrix.core }}
           path: .ci/epsm_core
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
       - name: Install platform dependencies and test tools
-        run: python -m pip install build -e .ci/epsm_data -e .ci/epsm_core -e '.[platform,dev,gis]'
+        run: python -m pip install build -e .ci/epsm_data -e '.ci/epsm_core[geometry]' -e '.[platform,dev,gis]'
+      - name: Record tested revisions
+        run: |
+          git rev-parse HEAD
+          git -C .ci/epsm_core rev-parse HEAD
+          git -C .ci/epsm_data rev-parse HEAD
       - name: Run full RC suite
         run: python -m pytest -q
       - name: Build and check installed wheel
@@ -42,3 +48,49 @@ jobs:
           python -m pip check
           cd /tmp
           python -c 'from epsm_rc import RCSettings, simulate_building; print(RCSettings, simulate_building)'
+
+  annual-integration:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: SB-Chalmers/epsm_data
+          ssh-key: ${{ secrets.EPSM_DATA_DEPLOY_KEY }}
+          persist-credentials: false
+          ref: d7b19688ae7bb73dbbc4bc12afa83a6bcc67ae48
+          path: .ci/epsm_data
+      - uses: actions/checkout@v4
+        with:
+          repository: SB-Chalmers/epsm_core
+          ssh-key: ${{ secrets.EPSM_CORE_DEPLOY_KEY }}
+          persist-credentials: false
+          ref: 932bfd49a3fbb7d017daa125f6331ef6fc01c870
+          path: .ci/epsm_core
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install coordinated inputs and test tools
+        run: python -m pip install -e .ci/epsm_data -e '.ci/epsm_core[dev,geometry]' -e '.[platform,dev,gis]'
+      - name: Install EnergyPlus 24.2
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v24.2.0 --repo NatLabRockies/EnergyPlus --pattern 'EnergyPlus-24.2.0-e7ecb2d53b-Linux-Ubuntu22.04-x86_64.tar.gz' --dir "$RUNNER_TEMP"
+          mkdir -p "$RUNNER_TEMP/energyplus"
+          tar -xzf "$RUNNER_TEMP/EnergyPlus-24.2.0-e7ecb2d53b-Linux-Ubuntu22.04-x86_64.tar.gz" -C "$RUNNER_TEMP/energyplus" --strip-components=1
+          echo "ENERGYPLUS_EXE=$RUNNER_TEMP/energyplus/energyplus" >> "$GITHUB_ENV"
+      - name: Record revisions and execute required real-engine cases
+        env:
+          EPSM_REQUIRE_ENERGYPLUS: '1'
+        run: |
+          git rev-parse HEAD
+          git -C .ci/epsm_core rev-parse HEAD
+          git -C .ci/epsm_data rev-parse HEAD
+          "$ENERGYPLUS_EXE" --version
+          python -m pytest tests/unit/test_annual_engine_integration.py tests/unit/test_core_engine_comparison.py --junitxml=integration-results.xml -q
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: annual-integration-results
+          path: integration-results.xml
