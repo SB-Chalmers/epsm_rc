@@ -21,28 +21,25 @@ Quick start::
 Adapted from DIBS (Dynamic ISO Building Simulator) by IWU, MIT License.
 """
 
+import logging as _stdlib_logging
+
+from .building_geometry import BuildingGeometry
 from .iso13790 import (
     Building5R1C,
     BuildingClass,
-    VentilationSystem,
-    ThermalBridgeClass,
-    ConstructionLayer,
     Construction,
+    ConstructionLayer,
+    ThermalBridgeClass,
+    VentilationSystem,
     calculate_thermal_mass_from_constructions,
-    estimate_ground_temps_from_air,
-    create_swedish_villa,
     create_swedish_apartment,
+    create_swedish_villa,
+    estimate_ground_temps_from_air,
 )
-
-from .solar import SolarGainsCalculator, simplified_solar_gains, estimate_window_orientation_split
-
-from .weather import EPWData, load_epw, get_temperature, get_irradiance, parse_ground_temperatures
-
-from .tabula import BuildingTABULA, ClimateData, ThermalMassClass
-
-from .building_geometry import BuildingGeometry
-
 from .parametric import ParametricBuilding, generate_idf, get_5r1c_params
+from .solar import SolarGainsCalculator, estimate_window_orientation_split, simplified_solar_gains
+from .tabula import BuildingTABULA, ClimateData, ThermalMassClass
+from .weather import EPWData, get_irradiance, get_temperature, load_epw, parse_ground_temperatures
 
 try:
     from .gis_footprint import FootprintImporter
@@ -92,6 +89,7 @@ __all__ = [
 
 __version__ = "0.3.0"
 
+
 # Platform integration imports Core only when explicitly requested.
 def __getattr__(name):
     if name in {"EngineComparison", "prepare_engine_comparison"}:
@@ -101,3 +99,8 @@ def __getattr__(name):
         from . import platform
         return getattr(platform, name)
     raise AttributeError(name)
+
+
+# A library emits no output until its host selects handlers.
+
+_stdlib_logging.getLogger("epsm_rc").addHandler(_stdlib_logging.NullHandler())

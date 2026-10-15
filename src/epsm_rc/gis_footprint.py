@@ -32,33 +32,36 @@ Coordinate handling:
 from __future__ import annotations
 
 import json
-import logging
 import math
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
-from shapely.geometry import Polygon as ShapelyPolygon
 from shapely.geometry import MultiPolygon as ShapelyMultiPolygon
+from shapely.geometry import Polygon as ShapelyPolygon
 from shapely.geometry import shape as shapely_shape
+
+from epsm_rc._logging import context_logger
+from epsm_rc._logging import operation as logged_operation
 
 from .building_geometry import BuildingGeometry
 
-logger = logging.getLogger(__name__)
+logger = context_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Coordinate helpers
 # ---------------------------------------------------------------------------
 
+
 def _to_local_metres(
-    coords: Sequence[Tuple[float, float]],
-    source_crs: Optional[str] = None,
-) -> List[Tuple[float, float]]:
+    coords: Sequence[tuple[float, float]],
+    source_crs: str | None = None,
+) -> list[tuple[float, float]]:
     """Convert coordinates to local metric system centred on centroid.
 
     Args:
         coords: List of (x, y) or (lon, lat) tuples (exterior ring, no closing point).
-        source_crs: EPSG string like "EPSG:4326" or "EPSG:3006". 
+        source_crs: EPSG string like "EPSG:4326" or "EPSG:3006".
                      If None, auto-detect from coordinate magnitude.
 
     Returns:
@@ -185,7 +188,7 @@ def _resolve_height(
 
 def _polygon_to_geometry(
     poly: ShapelyPolygon | ShapelyMultiPolygon,
-    source_crs: Optional[str],
+    source_crs: str | None,
     num_floors: int | None,
     floor_height: float | None,
     properties: dict | None = None,
@@ -225,16 +228,18 @@ def _polygon_to_geometry(
 # Main importer class
 # ---------------------------------------------------------------------------
 
+
 class FootprintImporter:
     """Import building footprints from OSM, GeoJSON, or Shapefile."""
 
     # ----- OpenStreetMap -----
 
     @staticmethod
+    @logged_operation("geometry.gis.osm.load")
     def from_osm(
-        way_id: Optional[int] = None,
-        relation_id: Optional[int] = None,
-        url: Optional[str] = None,
+        way_id: int | None = None,
+        relation_id: int | None = None,
+        url: str | None = None,
         *,
         num_floors: int | None = None,
         floor_height: float | None = None,
@@ -257,6 +262,7 @@ class FootprintImporter:
             ...     way_id=90851303, num_floors=2, floor_height=2.5)
         """
         import re
+
         import requests
 
         # Parse URL if given
@@ -328,9 +334,9 @@ class FootprintImporter:
             relation_tags = relation.get("tags", {})
 
         # Build node lookup and select only the declared outer way.
-        nodes: Dict[int, Tuple[float, float]] = {}
-        way_nodes: Optional[List[int]] = None
-        tags: Dict[str, str] = {}
+        nodes: dict[int, tuple[float, float]] = {}
+        way_nodes: list[int] | None = None
+        tags: dict[str, str] = {}
 
         for el in data["elements"]:
             if el["type"] == "node":
@@ -380,13 +386,14 @@ class FootprintImporter:
     # ----- GeoJSON -----
 
     @staticmethod
+    @logged_operation("geometry.gis.geojson.load")
     def from_geojson(
-        source: Union[str, Path, Dict],
+        source: str | Path | dict,
         *,
         feature_index: int = 0,
         num_floors: int | None = None,
         floor_height: float | None = None,
-        crs: Optional[str] = None,
+        crs: str | None = None,
     ) -> BuildingGeometry:
         """Load a building footprint from GeoJSON.
 
@@ -444,14 +451,15 @@ class FootprintImporter:
         )
 
     @staticmethod
+    @logged_operation("geometry.gis.geojson.batch.load")
     def from_geojson_multi(
-        source: Union[str, Path, Dict],
+        source: str | Path | dict,
         *,
         num_floors: int | None = None,
         floor_height: float | None = None,
-        crs: Optional[str] = None,
-        max_features: Optional[int] = None,
-    ) -> List[BuildingGeometry]:
+        crs: str | None = None,
+        max_features: int | None = None,
+    ) -> list[BuildingGeometry]:
         """Load ALL features from a GeoJSON FeatureCollection.
 
         Returns:
@@ -485,15 +493,16 @@ class FootprintImporter:
     # ----- Shapefile -----
 
     @staticmethod
+    @logged_operation("geometry.gis.shapefile.load")
     def from_shapefile(
-        path: Union[str, Path],
+        path: str | Path,
         *,
-        fid: Optional[int] = None,
+        fid: int | None = None,
         num_floors: int | None = None,
         floor_height: float | None = None,
-        crs_override: Optional[str] = None,
-        max_features: Optional[int] = None,
-    ) -> Union[BuildingGeometry, List[BuildingGeometry]]:
+        crs_override: str | None = None,
+        max_features: int | None = None,
+    ) -> BuildingGeometry | list[BuildingGeometry]:
         """Load building footprint(s) from an ESRI Shapefile.
 
         Handles EPSG:3006 (SWEREF99 TM) and other projected CRS natively.
@@ -521,7 +530,7 @@ class FootprintImporter:
         if not path.exists():
             raise FileNotFoundError(f"Shapefile not found: {path}")
 
-        results: List[BuildingGeometry] = []
+        results: list[BuildingGeometry] = []
 
         with fiona.open(path) as src:
             # Detect CRS

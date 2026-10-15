@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import logging
 import sys
 from dataclasses import asdict, dataclass
 from datetime import timedelta, timezone
@@ -40,13 +39,16 @@ from pvlib import atmosphere, irradiance, solarposition
 from pvlib.iotools import read_epw
 from shapely.geometry import Polygon
 
+from epsm_rc._logging import call_with_context, context_logger
+from epsm_rc._logging import operation as logged_operation
+
 from .iso13790 import Building5R1C, Construction, ConstructionLayer
 
 if TYPE_CHECKING:
     from epsm_core import Building, Weather
     from epsm_core.results import SimulationResult
 
-logger = logging.getLogger(__name__)
+logger = context_logger(__name__)
 
 
 # Private compatibility name; all paths now use the same solver implementation.
@@ -375,6 +377,7 @@ def _implementation_identity() -> dict:
     }
 
 
+@logged_operation("energy.rc")
 def simulate_building(
     building: Building,
     *,
@@ -456,11 +459,13 @@ def simulate_building(
     from epsm_core.results import SimulationResult
     from epsm_core.weather import file_sha256, hourly_axis, validate_epw_calendar
 
-    weather = weather if isinstance(weather, Weather) else Weather.from_epw(weather)
+    weather = (
+        weather if isinstance(weather, Weather) else call_with_context(Weather.from_epw, weather)
+    )
     if file_sha256(weather.path) != weather.sha256:
         raise ValueError("EPW contents changed after Weather was created")
     building.readiness(engine="epsm_rc", weather=weather).require()
-    spec = building.to_spec(weather)
+    spec = call_with_context(building.to_spec, weather)
     gains, convective_gains, radiant_gains, gain_reduction = _gain_inputs(
         spec.use, spec.load_reference_area_m2 or spec.geometry.conditioned_floor_area_m2,
         spec.climate.calendar_year, settings)
@@ -486,14 +491,6 @@ def simulate_building(
             allow_nan=False,
         ).encode()
     ).hexdigest()
-    logger.info(
-        "RC calculation started",
-        extra={
-            "epsm_event": "energy.rc.started",
-            "epsm_context": {"building_id": building.identifier},
-            "epsm_details": {"calendar_year": weather.calendar_year},
-        },
-    )
     year = spec.climate.calendar_year
     validate_epw_calendar(weather.path, year)
     if spec.zone_uses or spec.common_use or spec.common_airflow or spec.unconditioned_exchange:
@@ -821,12 +818,4 @@ def simulate_building(
         path = directory / "hourly.npz"
         np.savez_compressed(path, **hourly, time_axis=axis)
         artifacts["hourly"] = str(path)
-    logger.info(
-        "RC calculation completed",
-        extra={
-            "epsm_event": "energy.rc.completed",
-            "epsm_context": {"building_id": building.identifier, "run_id": run_id},
-            "epsm_details": {"hours": len(axis)},
-        },
-    )
     return SimulationResult(run_id, scalars, hourly, units, diagnostics, artifacts, axis)
