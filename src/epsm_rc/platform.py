@@ -432,7 +432,8 @@ def simulate_building(
 
     >>> from epsm_core import Building, Weather
     >>> result = simulate_building(  # doctest: +SKIP
-    ...     Building(), weather=Weather.from_epw("weather.epw"),
+    ...     Building(preset="illustrative-reference"),
+    ...     weather=Weather.from_epw("weather.epw"),
     ...     settings=RCSettings.from_policy(
     ...         "epsm_rc_5r1c_v1", airflow_policy="sensible_only_unlimited_supply",
     ...         ground_policy="conductance_multiplier"))
