@@ -8,15 +8,17 @@
 # Date modified: 2026-10-14
 # Changelog:
 #   2026-10-14 - Add the Core adapter with explicit reduction and delivery assumptions.
-#   2026-10-14 - Correct recovery double counting only in the platform adapter.
+#   2026-10-14 - Use the common solver with sensible recovery applied once.
 """Reduce a Core Building to independent hourly 5R1C evaluations.
 
 The reduction combines conditioned space into one temperature domain. Material
 inventory remains in Core; only transport/storage equivalents enter this model.
 Solar radiation uses actual facade azimuths and Perez irradiance with the supplied
-scalar window shading factor. Geometric site shading is unsupported. Weather is
-read explicitly; optional output writes hourly arrays. No catalogue loads occur
-on import. The standalone solver retains its compatibility behavior.
+scalar window shading factor. Geometric site shading is unsupported.
+Self-shadowing for courtyards, concave footprints or multiple parts requires an
+explicit omission policy, reported in diagnostics and calculation identity.
+Weather is read explicitly; optional output writes hourly arrays. No catalogue loads occur
+on import. Sensible recovery uses the common standalone solver implementation.
 """
 
 from __future__ import annotations
@@ -36,6 +38,7 @@ import numpy as np
 import pandas as pd
 from pvlib import atmosphere, irradiance, solarposition
 from pvlib.iotools import read_epw
+from shapely.geometry import Polygon
 
 from .iso13790 import Building5R1C, Construction, ConstructionLayer
 
@@ -46,18 +49,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class _Platform5R1C(Building5R1C):
-    """Apply sensible recovery exactly once, to mechanical conductance.
-
-    The inherited conductance already represents infiltration plus mechanical
-    flow multiplied by (1 - effectiveness). Consequently its driving outdoor
-    temperature must remain unmodified. The legacy standalone class also warms
-    the supply temperature; this adapter correction deliberately leaves that
-    separate compatibility API unchanged.
-    """
-
-    def calc_supply_air_temperature(self, t_out: float) -> float:
-        return t_out
+# Private compatibility name; all paths now use the same solver implementation.
+_Platform5R1C = Building5R1C
 
 
 @dataclass(frozen=True)
@@ -69,10 +62,48 @@ class RCSettings:
     effective_mass_depth_m : float
         Positive room-side active construction depth in metres; default 0.1.
     ground_coupling_factor : float
-        Conductance multiplier in [0, 1] when no ground temperature boundary
-        is supplied; default 0.5.
+        Conductance multiplier in [0, 1] for the explicitly selected
+        ``conductance_multiplier`` ground policy; baseline value 0.5.
     ground_reflectance : float
         Solar ground albedo in [0, 1]; default 0.2.
+    airflow_policy : str
+        ``reject`` (default) rejects unsupported latent recovery and supply
+        temperature limits, including Core's default limits. Select
+        ``sensible_only_unlimited_supply`` to explicitly omit these fields.
+        Omitted requested values are retained in result diagnostics.
+    policy_version : str
+        Version of the baseline defaults, ``epsm_rc_5r1c_v1``. Explicit
+        overrides are retained alongside this baseline identity.
+    internal_surface_area_factor, mass_area_factors : float or tuple
+        Ratios to conditioned floor area. Mass-area factors correspond to
+        construction capacities below, between and above the two thresholds.
+    mass_capacity_thresholds_j_m2_k : tuple
+        Ordered construction-capacity thresholds in J/(m² K).
+    convective_internal_gains_fraction : float
+        Fraction of sensible internal gains delivered to the air node.
+    surface_air_coefficient_w_m2_k, mass_surface_coefficient_w_m2_k : float
+        Positive node transfer coefficients in W/(m² K).
+    air_volumetric_heat_capacity_j_m3_k : float
+        Positive air volumetric heat capacity used for airflow conductance.
+    outside_wall_resistance_m2_k_w, outside_roof_resistance_m2_k_w : float
+        Nonnegative outside film resistances used for opaque solar and sky gains.
+    sky_radiation_coefficient_w_m2_k, sky_air_temperature_difference_k : float
+        Nonnegative sky exchange coefficient and fixed sky-air difference.
+    wall_sky_view_factor, roof_sky_view_factor : float
+        Sky view fractions in [0, 1]. These are model assumptions.
+    ground_policy : str
+        ``reject`` rejects unsupported foundation methods such as Kiva.
+        Select ``conductance_multiplier`` or ``prescribed_monthly_temperature``
+        to explicitly approximate an unsupported foundation.
+    monthly_ground_temperatures_c : tuple or None
+        Twelve finite Celsius boundary values for an explicitly selected
+        monthly approximation. A source must also be supplied.
+    monthly_ground_temperature_source : str or None
+        Source or assumption identifying the supplied monthly boundary.
+    self_shadowing_policy : str
+        ``reject`` (default) requires an explicit decision for courtyards,
+        concave footprints and multiple parts. ``ignore`` acknowledges omitted
+        self-shadowing; it does not enable geometric site shading.
 
     Notes
     -----
@@ -89,12 +120,233 @@ class RCSettings:
     effective_mass_depth_m: float = 0.1
     ground_coupling_factor: float = 0.5
     ground_reflectance: float = 0.2
+    airflow_policy: str = "reject"
+    policy_version: str = "epsm_rc_5r1c_v1"
+    internal_surface_area_factor: float = 4.5
+    convective_internal_gains_fraction: float = 0.5
+    mass_capacity_thresholds_j_m2_k: tuple[float, float] = (165_000.0, 260_000.0)
+    mass_area_factors: tuple[float, float, float] = (2.5, 3.0, 3.5)
+    surface_air_coefficient_w_m2_k: float = 3.45
+    mass_surface_coefficient_w_m2_k: float = 9.1
+    air_volumetric_heat_capacity_j_m3_k: float = 1200.0
+    outside_wall_resistance_m2_k_w: float = 0.04
+    outside_roof_resistance_m2_k_w: float = 0.04
+    sky_radiation_coefficient_w_m2_k: float = 5.0
+    sky_air_temperature_difference_k: float = 11.0
+    wall_sky_view_factor: float = 0.5
+    roof_sky_view_factor: float = 1.0
+    ground_policy: str = "reject"
+    monthly_ground_temperatures_c: tuple[float, ...] | None = None
+    monthly_ground_temperature_source: str | None = None
+    self_shadowing_policy: str = "reject"
 
     def __post_init__(self):
         if not np.isfinite(self.effective_mass_depth_m) or self.effective_mass_depth_m <= 0:
             raise ValueError("Effective mass depth must be finite and positive")
         if not 0 <= self.ground_coupling_factor <= 1 or not 0 <= self.ground_reflectance <= 1:
             raise ValueError("Ground coupling and reflectance must be fractions")
+        if self.airflow_policy not in {"reject", "sensible_only_unlimited_supply"}:
+            raise ValueError("Unknown airflow_policy; choose reject or sensible_only_unlimited_supply")
+        if self.policy_version != "epsm_rc_5r1c_v1":
+            raise ValueError("Unknown reduction policy version")
+        positive = (
+            "internal_surface_area_factor", "surface_air_coefficient_w_m2_k",
+            "mass_surface_coefficient_w_m2_k", "air_volumetric_heat_capacity_j_m3_k",
+        )
+        nonnegative = (
+            "outside_wall_resistance_m2_k_w", "outside_roof_resistance_m2_k_w",
+            "sky_radiation_coefficient_w_m2_k", "sky_air_temperature_difference_k",
+        )
+        for name in (*positive, *nonnegative):
+            value = getattr(self, name)
+            if not np.isfinite(value) or value < 0 or (name in positive and value == 0):
+                constraint = "positive" if name in positive else "nonnegative"
+                raise ValueError(f"{name} must be finite and {constraint}")
+        for name in (
+            "convective_internal_gains_fraction", "wall_sky_view_factor", "roof_sky_view_factor",
+        ):
+            if not 0 <= getattr(self, name) <= 1:
+                raise ValueError(f"{name} must be a finite fraction")
+        for name, size in (("mass_capacity_thresholds_j_m2_k", 2), ("mass_area_factors", 3)):
+            values = tuple(getattr(self, name))
+            if len(values) != size or any(not np.isfinite(v) or v <= 0 for v in values):
+                raise ValueError(f"{name} requires {size} positive finite values")
+            object.__setattr__(self, name, values)
+        if self.mass_capacity_thresholds_j_m2_k[0] >= self.mass_capacity_thresholds_j_m2_k[1]:
+            raise ValueError("Mass capacity thresholds must be strictly increasing")
+        if max(self.mass_area_factors) > self.internal_surface_area_factor:
+            raise ValueError("Effective mass area cannot exceed the internal surface area")
+        if self.ground_policy not in {
+            "reject", "conductance_multiplier", "prescribed_monthly_temperature",
+        }:
+            raise ValueError("Unknown ground_policy")
+        if self.ground_policy == "prescribed_monthly_temperature":
+            values = tuple(self.monthly_ground_temperatures_c or ())
+            if len(values) != 12 or any(not np.isfinite(value) for value in values):
+                raise ValueError("Monthly ground boundary requires 12 finite temperatures")
+            if not isinstance(self.monthly_ground_temperature_source, str) or not (
+                self.monthly_ground_temperature_source.strip()
+            ):
+                raise ValueError("Monthly ground boundary requires an explicit source or assumption")
+            object.__setattr__(self, "monthly_ground_temperatures_c", values)
+        elif self.monthly_ground_temperatures_c is not None or (
+            self.monthly_ground_temperature_source is not None
+        ):
+            raise ValueError("Select ground_policy='prescribed_monthly_temperature' for monthly inputs")
+        if self.self_shadowing_policy not in {"reject", "ignore"}:
+            raise ValueError("Unknown self_shadowing_policy; choose reject or ignore")
+
+    @classmethod
+    def from_policy(cls, name: str, **overrides) -> RCSettings:
+        """Select the named baseline profile with inspectable explicit overrides."""
+        return cls(policy_version=name, **overrides)
+
+    def effective_configuration(self) -> dict:
+        """Return model assumptions, distinct from the supplied physical evidence."""
+        return {
+            "origin": "explicit_reduction_policy",
+            "coefficients": asdict(self),
+            "model_constants": {
+                "timestep_hours": 1.0,
+                "crank_nicolson_weight": 0.5,
+                "load_interpolation_test_power_w_m2": 10.0,
+                "load_interpolation_temperature_tolerance_k": 1e-6,
+            },
+            "methods": {
+                "mass_capacity": "room_side_depth_limited_constructions",
+                "mass_area": "construction_capacity_thresholds",
+                "solar": "perez_with_exact_zero_diffuse_limit",
+                "glazing": "supplied_whole_window_shgc",
+                "occupant_gains": "all_activity_treated_as_sensible",
+                "fan_heat": "omitted",
+                "thermal_domain": "one_conditioned_domain",
+                "initial_temperature": "first_hour_heating_setpoint",
+                "integration": "hourly_crank_nicolson",
+                "control": "air_temperature",
+                "gain_partition": "area_ratios_with_nonnegative_surface_fraction",
+                "load_interpolation": "linear_unlimited_load_interpolation",
+                "mass_exterior_coupling": "series_inverse_conductance_with_opaque_fallback",
+                "self_shadowing": "geometry_capability_gate_with_explicit_omission",
+            },
+        }
+
+
+def _airflow_capabilities(airflow, settings: RCSettings) -> dict:
+    """Reject unsupported requests or record the caller-selected omission."""
+    omitted = {
+        "maximum_heating_supply_temperature_c": airflow.maximum_heating_supply_temperature_c,
+        "minimum_cooling_supply_temperature_c": airflow.minimum_cooling_supply_temperature_c,
+    }
+    if airflow.latent_recovery_effectiveness:
+        omitted["latent_recovery_effectiveness"] = airflow.latent_recovery_effectiveness
+    if settings.airflow_policy == "reject":
+        raise ValueError(
+            f"epsm_rc does not support airflow fields: {', '.join(omitted)}. "
+            "To acknowledge their omission, pass "
+            "settings=RCSettings(airflow_policy='sensible_only_unlimited_supply'). "
+            "For epsm.Building.simulate(engine='epsm_rc'), pass these RC settings explicitly."
+        )
+    return {"effective_model": settings.airflow_policy, "omitted_inputs": omitted}
+
+
+def _gain_inputs(use, reference_area, year, settings):
+    """Resolve supplied heat channels or the explicitly selected legacy RC policy."""
+    def annual(schedule):
+        return np.asarray(schedule.hourly(year), dtype=float)
+
+    partitions = use.gain_partitions
+    if partitions is not None and partitions.policy == "explicit":
+        from epsm_core.gains import resolve_internal_gains
+
+        channels = resolve_internal_gains(use, reference_area_m2=reference_area, calendar_year=year)
+        if any(channels.unresolved_people_w):
+            raise ValueError("epsm_rc requires an explicit people sensible heat fraction for active people gains")
+        if any(channels.return_air_w):
+            raise ValueError("epsm_rc does not support active lighting return-air heat")
+        convective = np.asarray(channels.convective_w)
+        radiant = np.asarray(channels.radiant_w)
+        report = {
+            "policy": "shared_explicit", "aggregate_split_applied": False,
+            "supplied_partitions": partitions.model_dump(mode="json"),
+            "visible_lighting_treatment": "radiant_heat_deposited_on_room_surfaces",
+            "latent_treatment": "excluded_from_sensible_thermal_network",
+            "channel_energy_kwh": {name: sum(getattr(channels, name)) / 1000 for name in (
+                "convective_w", "radiant_w", "latent_w", "lost_w", "return_air_w")},
+        }
+        return convective + radiant, convective, radiant, report
+
+    activity = annual(use.occupant_activity_schedule) if use.occupant_activity_schedule else use.occupant_activity_w
+    heat = annual(use.equipment_heat_fraction_schedule) if use.equipment_heat_fraction_schedule else use.equipment_heat_fraction
+    gains = reference_area * (
+        use.occupant_density_per_m2 * activity * annual(use.occupancy_fraction)
+        + use.equipment_gain_w_m2 * heat * annual(use.equipment_fraction)
+        + use.lighting_gain_w_m2 * annual(use.lighting_fraction))
+    convective = gains * settings.convective_internal_gains_fraction
+    return gains, convective, gains - convective, {
+        "policy": "legacy_sensible_from_explicit_rc_policy", "aggregate_split_applied": True,
+        "core_policy": partitions.policy if partitions is not None else "legacy_default",
+        "occupant_treatment": "all_activity_treated_as_sensible",
+    }
+
+
+def _ground_reduction(envelope, settings: RCSettings) -> tuple[tuple | None, float, dict]:
+    """Preserve prescribed monthly boundaries or require an explicit approximation."""
+    requested = envelope.foundation.model_dump(mode="json")
+    boundary = envelope.ground_temperature
+    report = {"requested_foundation": requested, "requested_policy": settings.ground_policy}
+    if boundary is not None:
+        if settings.monthly_ground_temperatures_c is not None:
+            raise ValueError("Two monthly ground boundaries supplied; select one source explicitly")
+        months = tuple(boundary.monthly_temperatures_c)
+        source = boundary.source
+    elif settings.ground_policy == "prescribed_monthly_temperature":
+        months = settings.monthly_ground_temperatures_c
+        source = settings.monthly_ground_temperature_source
+    elif settings.ground_policy == "conductance_multiplier":
+        report.update(
+            effective_method="conductance_multiplier",
+            effective_multiplier=settings.ground_coupling_factor,
+            monthly_temperatures_c=None,
+            boundary_source="caller-selected conductance multiplier approximation",
+        )
+        return None, settings.ground_coupling_factor, report
+    else:
+        raise ValueError(
+            f"epsm_rc does not implement {requested['method']} foundations. Select an explicit "
+            "ground_policy='conductance_multiplier' or 'prescribed_monthly_temperature' "
+            "in RCSettings to acknowledge the approximation."
+        )
+    report.update(
+        effective_method="prescribed_monthly_temperature",
+        effective_multiplier=1.0,
+        monthly_temperatures_c=months,
+        boundary_source=source,
+    )
+    return months, 1.0, report
+
+
+def _self_shadowing_capabilities(geometry, settings: RCSettings) -> dict:
+    """Gate geometry that can occlude its own facades before irradiance calculation."""
+    affected = []
+    if len(geometry.parts) > 1:
+        affected.append("multiple building parts")
+    for part in geometry.parts:
+        if part.footprint.holes:
+            affected.append(f"courtyard in part {part.identifier}")
+        exterior = Polygon(part.footprint.exterior)
+        if not exterior.equals(exterior.convex_hull):
+            affected.append(f"concave footprint in part {part.identifier}")
+    if affected and settings.self_shadowing_policy == "reject":
+        raise ValueError(
+            f"epsm_rc does not model self-shadowing for {', '.join(affected)}. "
+            "Select self_shadowing_policy='ignore' in RCSettings to acknowledge its omission."
+        )
+    return {
+        "policy": settings.self_shadowing_policy,
+        "omitted": bool(affected),
+        "affected_geometry": affected,
+        "geometry_occlusion_applied": False,
+    }
 
 
 def _implementation_identity() -> dict:
@@ -143,8 +395,10 @@ def simulate_building(
     directory : path-like, optional
         If supplied, create this directory and write ``hourly.npz``. An existing
         file with that name is overwritten. The caller owns output locations.
-    settings : RCSettings or dict, optional
-        Explicit reduction assumptions. Defaults to ``RCSettings()``.
+    settings : RCSettings or dict
+        Required explicit reduction assumptions. ``RCSettings.from_policy``
+        selects versioned baseline defaults and accepts explicit overrides.
+        The default airflow policy rejects unsupported latent/supply controls.
 
     Returns
     -------
@@ -178,28 +432,53 @@ def simulate_building(
 
     >>> from epsm_core import Building, Weather
     >>> result = simulate_building(  # doctest: +SKIP
-    ...     Building(), weather=Weather.from_epw("weather.epw"))
+    ...     Building(preset="illustrative-reference"),
+    ...     weather=Weather.from_epw("weather.epw"),
+    ...     settings=RCSettings.from_policy(
+    ...         "epsm_rc_5r1c_v1", airflow_policy="sensible_only_unlimited_supply",
+    ...         ground_policy="conductance_multiplier"))
     >>> result.scalars["space_heating_demand_kwh"] >= 0  # doctest: +SKIP
     True
     """
+    if settings is None:
+        raise ValueError(
+            "epsm_rc requires explicit settings or a named reduction policy: pass "
+            "settings=RCSettings.from_policy('epsm_rc_5r1c_v1', ...). "
+            "Pass these settings to epsm.Building.simulate(engine='epsm_rc') as well."
+        )
+    settings = RCSettings(**settings) if isinstance(settings, dict) else settings
+    if not isinstance(settings, RCSettings):
+        raise TypeError("settings must be RCSettings or an explicit settings dictionary")
+
     from epsm_core import Weather
     from epsm_core.geometry import facade_catalog
     from epsm_core.heating_delivery import heating_delivery
     from epsm_core.results import SimulationResult
     from epsm_core.weather import file_sha256, hourly_axis, validate_epw_calendar
 
-    settings = RCSettings(**settings) if isinstance(settings, dict) else settings or RCSettings()
     weather = weather if isinstance(weather, Weather) else Weather.from_epw(weather)
     if file_sha256(weather.path) != weather.sha256:
         raise ValueError("EPW contents changed after Weather was created")
     building.readiness(engine="epsm_rc", weather=weather).require()
     spec = building.to_spec(weather)
+    gains, convective_gains, radiant_gains, gain_reduction = _gain_inputs(
+        spec.use, spec.load_reference_area_m2 or spec.geometry.conditioned_floor_area_m2,
+        spec.climate.calendar_year, settings)
+    airflow_capabilities = _airflow_capabilities(spec.airflow, settings)
+    ground, ground_multiplier, ground_reduction = _ground_reduction(spec.envelope, settings)
+    self_shadowing = _self_shadowing_capabilities(spec.geometry, settings)
+    effective_configuration = settings.effective_configuration()
+    effective_configuration["gain_reduction"] = gain_reduction
+    if not gain_reduction["aggregate_split_applied"]:
+        effective_configuration["inactive_coefficients"] = ["convective_internal_gains_fraction"]
+        effective_configuration["methods"]["occupant_gains"] = "supplied_sensible_fraction"
+        effective_configuration["methods"]["gain_partition"] = "shared_hourly_sensible_channels"
     implementation = _implementation_identity()
     run_id = hashlib.sha256(
         json.dumps(
             {
                 "physical_inputs": spec.physical_dict(),
-                "settings": asdict(settings),
+                "settings": effective_configuration,
                 "implementation": implementation,
             },
             sort_keys=True,
@@ -291,23 +570,15 @@ def simulate_building(
         return np.asarray(schedule.hourly(year), dtype=float)
 
     heat_set, cool_set = annual(use.heating_setpoint), annual(use.cooling_setpoint)
-    people_activity = (
-        annual(use.occupant_activity_schedule)
-        if use.occupant_activity_schedule
-        else np.full(len(heat_set), use.occupant_activity_w)
-    )
-    equipment_fraction = (
-        annual(use.equipment_heat_fraction_schedule)
-        if use.equipment_heat_fraction_schedule
-        else np.full(len(heat_set), use.equipment_heat_fraction)
-    )
-    gains = reference_area * (
-        use.occupant_density_per_m2 * people_activity * annual(use.occupancy_fraction)
-        + use.equipment_gain_w_m2 * equipment_fraction * annual(use.equipment_fraction)
-        + use.lighting_gain_w_m2 * annual(use.lighting_fraction)
-    )
-    ground = spec.envelope.ground_temperature
-    model = _Platform5R1C(
+    capacity = sum(c.total_thermal_mass_j_k for c in constructions)
+    if not constructions or not np.isfinite(capacity) or capacity <= 0:
+        raise ValueError("RC reduction requires positive thermal mass from explicit constructions")
+    capacity_per_area = capacity / area
+    lower, upper = settings.mass_capacity_thresholds_j_m2_k
+    mass_area_factor = settings.mass_area_factors[
+        2 if capacity_per_area >= upper else 1 if capacity_per_area >= lower else 0
+    ]
+    model = Building5R1C(
         floor_area_m2=area,
         building_class=None,
         constructions=constructions,
@@ -331,8 +602,20 @@ def simulate_building(
         ventilation_system=None,
         delta_u_thermal_bridge=0,
         ventilation_behaviour=0,
-        temp_adj_ground=settings.ground_coupling_factor,
-        ground_temps_monthly=list(ground.monthly_temperatures_c) if ground else None,
+        temp_adj_ground=ground_multiplier,
+        ground_temps_monthly=list(ground) if ground is not None else None,
+        a_tot_surfaces_m2=settings.internal_surface_area_factor * area,
+        mass_area_factor_override=mass_area_factor,
+        convective_fraction_internal=settings.convective_internal_gains_fraction,
+        h_is=settings.surface_air_coefficient_w_m2_k,
+        h_ms=settings.mass_surface_coefficient_w_m2_k,
+        air_volumetric_heat_capacity_j_m3_k=settings.air_volumetric_heat_capacity_j_m3_k,
+        r_se_wall=settings.outside_wall_resistance_m2_k_w,
+        r_se_roof=settings.outside_roof_resistance_m2_k_w,
+        h_r=settings.sky_radiation_coefficient_w_m2_k,
+        delta_theta_er=settings.sky_air_temperature_difference_k,
+        form_factor_wall=settings.wall_sky_view_factor,
+        form_factor_roof=settings.roof_sky_view_factor,
     )
     # Apply Core's declared thermal-bridge uplift to the opaque heat transfer,
     # without changing installed materials or thermal storage.
@@ -405,7 +688,14 @@ def simulate_building(
         else:
             outside = element.construction.components[0].layers[0].layer
             alpha = sum(m.area_fraction * m.material.solar_absorptance for m in outside.materials)
-            opaque += poa * element.area_m2 * element.construction.u_value * alpha * 0.04 * uplift
+            outside_resistance = (
+                settings.outside_roof_resistance_m2_k_w if roof
+                else settings.outside_wall_resistance_m2_k_w
+            )
+            opaque += (
+                poa * element.area_m2 * element.construction.u_value
+                * alpha * outside_resistance * uplift
+            )
     infiltration = (
         airflow.infiltration_design_flow_m3_s(reference_area_m2=reference_area, volume_m3=volume)
         * 3600
@@ -430,6 +720,9 @@ def simulate_building(
     power, indoor = np.zeros(len(axis)), np.zeros(len(axis))
     model.t_m = model.t_air = model.t_s = float(heat_set[0])
     for hour, temperature in enumerate(temperatures):
+        if not gain_reduction["aggregate_split_applied"]:
+            model.convective_fraction_internal = (
+                float(convective_gains[hour] / gains[hour]) if gains[hour] > 0 else 0.0)
         model.t_set_heating, model.t_set_cooling = heat_set[hour], cool_set[hour]
         correction = (
             coefficients[0]
@@ -458,6 +751,8 @@ def simulate_building(
         "space_heating_demand_kwh": np.maximum(power, 0) / 1000,
         "cooling_demand_kwh": np.maximum(-power, 0) / 1000,
         "indoor_temperature_c": indoor,
+        "internal_gains_convective_w": convective_gains,
+        "internal_gains_radiant_w": radiant_gains,
     }
     dhw = annual(use.dhw_fraction)
     hourly["dhw_load_kwh"] = (
@@ -477,22 +772,42 @@ def simulate_building(
     )
     hourly.update(heating_delivery(spec, hourly["space_heating_demand_kwh"], report))
     scalars = {key: float(values.sum()) for key, values in hourly.items() if key.endswith("kwh")}
-    units = {key: "kWh" if key.endswith("kwh") else "C" for key in hourly}
+    units = {key: "kWh" if key.endswith("kwh") else "W" if key.endswith("_w") else "C" for key in hourly}
     diagnostics = dict(
         accepted=all(np.isfinite(v).all() for v in hourly.values()),
         engine="epsm_rc",
         reduction=asdict(settings),
+        effective_configuration=effective_configuration,
+        gain_reduction=gain_reduction,
+        reduced_properties={
+            "internal_surface_area_m2": model._a_tot,
+            "effective_mass_area_m2": model._mass_area,
+            "thermal_capacitance_j_k": model._c_m,
+            "surface_air_conductance_w_k": model._h_tr_is,
+            "mass_surface_conductance_w_k": model._h_tr_ms,
+            "opaque_transmission_conductance_w_k": model._h_tr_op,
+            "effective_ground_conductance_w_k": model._h_tr_ground * ground_multiplier,
+            "mass_exterior_conductance_w_k": model._h_tr_em,
+            "mass_exterior_coupling_fallback": bool(
+                model._h_tr_op > 0 and model._h_tr_ms > 0 and model._h_tr_op >= model._h_tr_ms
+            ),
+            "sky_radiation_loss_w": model.calc_sky_radiation_loss(),
+        },
         implementation=implementation,
+        physical_inputs_sha256=spec.physical_hash(),
+        airflow_capabilities=airflow_capabilities,
+        ground_reduction=ground_reduction,
+        self_shadowing=self_shadowing,
         approximations=[
             "One aggregated conditioned thermal domain",
             "Perez solar gains with scalar window shading; no geometric site shading",
-            "0.1 m room-side mass depth unless overridden",
-            "Ground conductance reduction when no monthly boundary is supplied",
+            "Room-side mass depth and construction-capacity mass-area rule from explicit policy",
+            "Ground boundary or conductance multiplier explicitly selected and reported",
             "Solar gains use fixed whole-window SHGC",
             "No fan heat feedback",
-            "Sensible-only model treats all occupant activity as sensible gain",
-            "ISO default 50% convective internal gains and internal area 4.5 times floor area",
-            "Legacy sky exchange uses a fixed 11 K sky-air difference and 5 W/(m2 K) coefficient",
+            "Explicit gain partitions use supplied sensible heat; legacy gain treatment is separately reported",
+            "Internal area, gain split, node transfer and air heat capacity from explicit policy",
+            "Fixed sky-air difference and sky exchange coefficients from explicit policy",
             "Heat recovery reduces mechanical conductance once; infiltration is unrecovered",
         ],
         empirical_validation="not_established_by_harmonisation",

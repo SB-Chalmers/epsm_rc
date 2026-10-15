@@ -88,10 +88,12 @@ ISO 13790 Compliance Features (2026-02)
 ---------------------------------------
 The following features provide strict ISO 13790 compliance:
 
-**Supply Air Temperature with Heat Recovery (Section 9.3)**
-    The calc_supply_air_temperature() method calculates θ_sup as:
-        θ_sup = θ_e + η_hr × (θ_air - θ_e)
-    This is properly integrated into calc_t_s(), calc_t_air(), and calc_phi_m_tot().
+**Sensible Recovery in Reduced Ventilation Conductance (Section 9.3)**
+    Mechanical conductance is reduced once by (1 - η_hr); infiltration and
+    natural flow are unrecovered. calc_supply_air_temperature() returns outdoor
+    temperature as the reduced node's driving temperature, not the physical
+    post-exchanger supply state. Standalone behavior changed to remove its
+    historical second recovery adjustment.
 
 **Intermittent Heating/Cooling (Section 13.2.3)**
     Parameters t_set_heating_setback, t_set_cooling_setback, and occupancy_schedule
@@ -626,6 +628,8 @@ class Building5R1C:
     # ISO 13790 default: 3.45 (combined convective + radiative)
     # BESTEST/Modelica: 2.1 (convective only, radiation handled separately)
     h_is: float = 3.45
+    h_ms: float = 9.1  # Mass-surface coefficient [W/(m²K)]
+    air_volumetric_heat_capacity_j_m3_k: float = 1200.0
     
     # Total internal surface area [m²] (optional override)
     # If None, uses ISO 13790 default: A_tot = 4.5 × A_f
@@ -752,6 +756,9 @@ class Building5R1C:
     
     def __post_init__(self):
         """Calculate derived thermal properties."""
+        for name in ("h_ms", "air_volumetric_heat_capacity_j_m3_k"):
+            if not np.isfinite(getattr(self, name)) or getattr(self, name) <= 0:
+                raise ValueError(f"{name} must be finite and positive")
         # Apply thermal bridge class if specified
         if self.thermal_bridge_class is not None:
             self.delta_u_thermal_bridge = THERMAL_BRIDGE_DELTA_U[self.thermal_bridge_class]
@@ -931,7 +938,7 @@ class Building5R1C:
         # =========================================================================
         # Eq. (65): H_tr,ms = h_ms * A_m  where h_ms = 9.1 W/(m^2.K)
         # This couples the thermal mass node (θ_m) to the surface node (θ_s)
-        self._h_tr_ms = 9.1 * self._mass_area
+        self._h_tr_ms = self.h_ms * self._mass_area
         
         # =========================================================================
         # ISO 13790:2008 Section 7.2.2.2 Eq. (9) - Surface-Air Coupling
@@ -972,23 +979,25 @@ class Building5R1C:
         Eq. (27): b_ve = 1 - (n_mech/n_tot) * η_hr   (heat recovery adjustment)
         
         Args:
-            ach_total: Override total air change rate [1/h]
+            ach_total: Total flow [1/h], including the declared mechanical share.
+                Added flow is unrecovered; totals below mechanical flow fail.
         """
         if ach_total is None:
             ach_total = self.ach_infiltration + self.ach_ventilation
         
-        # Temperature adjustment for heat recovery (ISO 13790 Eq. 27, p.53)
-        # b_ek = 1 - (ach_vent / ach_tot) * η_hr
-        if ach_total > 0:
-            vent_fraction = self.ach_ventilation / ach_total
-            b_ek = 1.0 - vent_fraction * self.heat_recovery_efficiency
-        else:
-            b_ek = 1.0
-        
-        # H_ve = ρ.c_p.V̇ = ρ.c_p.V.n/3600 (ISO 13790 Eq. 21, p.49)
-        # ρ.c_p ≈ 1200 J/(m³.K) for air at ~20°C
-        self._h_ve = 1200.0 * b_ek * self._building_vol * ach_total / 3600.0
-    
+        if not np.isfinite(ach_total) or ach_total < 0:
+            raise ValueError("Total air change rate must be finite and nonnegative")
+        if ach_total < self.ach_ventilation:
+            raise ValueError("Total air change rate cannot omit the declared mechanical flow")
+        # Only mechanical flow passes the heat exchanger. Infiltration and any
+        # additional natural/window flow keep their full outdoor conductance.
+        ach_unrecovered = ach_total - self.ach_ventilation
+        ach_effective = ach_unrecovered + self.ach_ventilation * (1.0 - self.heat_recovery_efficiency)
+        self._h_ve = (
+            self.air_volumetric_heat_capacity_j_m3_k
+            * self._building_vol * ach_effective / 3600.0
+        )
+
     def _handle_window_opening(self, t_out: float) -> float:
         """Determine additional ventilation from window opening (stochastic).
         
@@ -998,7 +1007,7 @@ class Building5R1C:
         2. Outdoor temperature provides cooling potential (T_out < T_air)
         3. Random probability check passes (based on ventilation_behaviour)
         
-        When windows are open, mechanical heat recovery is bypassed.
+        Window flow is unrecovered; declared mechanical recovery remains applied.
         
         Args:
             t_out: Outdoor temperature [°C]
@@ -1028,61 +1037,39 @@ class Building5R1C:
         return 0.0
     
     def _update_ventilation_with_window_opening(self, t_out: float):
-        """Update ventilation coefficient accounting for window opening.
-        
-        When windows are open:
-        - Additional ACH is added from natural ventilation
-        - Heat recovery efficiency is bypassed (set to 0) for that timestep
-        
-        Args:
-            t_out: Outdoor temperature [°C]
+        """Add unrecovered window flow using the common ventilation coefficient.
+
+        Mechanical recovery remains applied only to mechanical flow. Infiltration
+        and the additional window flow retain full outdoor conductance.
         """
         ach_window = self._handle_window_opening(t_out)
-        
-        if ach_window > 0:
-            # Windows open: add window ACH, bypass heat recovery
-            ach_total = self.ach_infiltration + self.ach_ventilation + ach_window
-            
-            # With windows open, outdoor air bypasses heat exchanger
-            # Calculate H_ve without heat recovery for the window portion
-            # H_ve = ρcp * V * (n_inf + n_vent*(1-η) + n_window) / 3600
-            ach_with_hr = self.ach_ventilation * (1.0 - self.heat_recovery_efficiency)
-            ach_without_hr = self.ach_infiltration + ach_window
-            ach_effective = ach_with_hr + ach_without_hr
-            
-            self._h_ve = 1200.0 * self._building_vol * ach_effective / 3600.0
-        else:
-            # Windows closed: normal ventilation
-            self._update_ventilation_coefficient()
-    
+        self._update_ventilation_coefficient(
+            self.ach_infiltration + self.ach_ventilation + ach_window,
+        )
+
     def calc_supply_air_temperature(self, t_out: float) -> float:
-        """Calculate supply air temperature accounting for heat recovery.
-        
-        ISO 13790:2008 Section 9.3 - the supply air temperature θ_sup is:
-        
-            θ_sup = θ_e + η_hr × (θ_air - θ_e)
-        
-        Where:
-            θ_e = outdoor air temperature [°C]
-            η_hr = heat recovery efficiency (0-1)
-            θ_air = indoor air temperature [°C]
-        
-        For systems without heat recovery, θ_sup = θ_e.
-        When windows are open, η_hr is bypassed (θ_sup = θ_e).
-        
-        Args:
-            t_out: Outdoor temperature θ_e [°C]
-            
-        Returns:
-            Supply air temperature θ_sup [°C]
+        """Return the outdoor driving temperature for the reduced ventilation node.
+
+        Sensible recovery is already applied once in mechanical conductance:
+        H_ve = rho_cp * V * (n_inf + n_mech * (1 - eta) + n_window) / 3600.
+        Warming this driving temperature would apply recovery again and also
+        recover infiltration. This method therefore always returns ``t_out``;
+        it does not report the physical post-exchanger mechanical supply state.
+        This corrects the historical standalone numerical behavior. The shared
+        Building path and standalone solver now use the same calculation.
+
+        Parameters
+        ----------
+        t_out : float
+            Outdoor temperature [degrees Celsius].
+
+        Returns
+        -------
+        float
+            Unmodified outdoor driving temperature [degrees Celsius].
         """
-        if self._windows_open or self.heat_recovery_efficiency <= 0:
-            return t_out
-        
-        # Calculate supply temperature with heat recovery
-        # θ_sup = θ_e + η_hr × (θ_air - θ_e)
-        return t_out + self.heat_recovery_efficiency * (self.t_air - t_out)
-    
+        return t_out
+
     def get_active_setpoints(self, hour_of_year: Optional[int] = None) -> tuple[float, float]:
         """Get active heating and cooling setpoints for current hour.
         
@@ -1485,8 +1472,8 @@ class Building5R1C:
         Eq. (C.3): Φ_st = (1 - A_m/A_t - H_tr,w/(9.1×A_t)) × 0.5 × (Φ_int + Φ_sol)
             → Remaining radiative fraction to surface node
             
-        The coefficient 9.1 in Eq. (C.3) equals h_ms, ensuring consistency
-        with the mass-surface coupling coefficient.
+        The coefficient h_ms (default 9.1) in Eq. (C.3) is also used in
+        mass-surface coupling, including when explicitly overridden.
         
         Note on strict_iso mode:
             When strict_iso=True, the exact ISO 13790 equations are used with
@@ -1519,7 +1506,7 @@ class Building5R1C:
             if self._a_tot > 0:
                 # Area ratios per ISO 13790
                 ratio_mass = self._mass_area / self._a_tot
-                ratio_window = self._h_tr_w / (9.1 * self._a_tot)
+                ratio_window = self._h_tr_w / (self.h_ms * self._a_tot)
                 ratio_surface = max(0.0, 1.0 - ratio_mass - ratio_window)
                 
                 # Eq. (C.2): Φ_m = (A_m/A_t) × 0.5 × (Φ_int + Φ_sol)
@@ -1545,7 +1532,7 @@ class Building5R1C:
             if self._a_tot > 0:
                 # ISO 13790 Eq. C.2 and C.3 area ratios
                 ratio_mass = self._mass_area / self._a_tot
-                ratio_window = self._h_tr_w / (9.1 * self._a_tot)
+                ratio_window = self._h_tr_w / (self.h_ms * self._a_tot)
                 ratio_surface = max(0.0, 1.0 - ratio_mass - ratio_window)
                 
                 # Heat flow to surface node (φ_st) 
@@ -1598,8 +1585,7 @@ class Building5R1C:
         Returns:
             Total heat flow to mass node Φ_m,tot [W]
         """
-        # Calculate supply air temperature with heat recovery (ISO 13790 Section 9.3)
-        # θ_sup = θ_e + η_hr × (θ_air - θ_e)
+        # Recovery is already applied to mechanical conductance; drive from outdoor air.
         t_supply = self.calc_supply_air_temperature(t_out)
         self._t_supply = t_supply  # Store for diagnostics
         
@@ -1708,7 +1694,7 @@ class Building5R1C:
         Returns:
             Surface temperature θ_s [°C]
         """
-        # Use supply air temperature with heat recovery (ISO 13790 Section 9.3)
+        # Use outdoor driving temperature with already reduced mechanical conductance.
         t_supply = self.calc_supply_air_temperature(t_out)
         
         if self._h_ve <= 0:
@@ -1750,7 +1736,7 @@ class Building5R1C:
         Returns:
             Air temperature θ_air [°C]
         """
-        # Use supply air temperature with heat recovery (ISO 13790 Section 9.3)
+        # Use outdoor driving temperature with already reduced mechanical conductance.
         t_supply = self.calc_supply_air_temperature(t_out)
         
         h_sum = self._h_tr_is + self._h_ve
@@ -2117,6 +2103,9 @@ class Building5R1C:
         if epw_path is None:
             raise ValueError("No EPW path provided. Set epw_path argument or self.epw_path")
         
+        # Validate weather before changing the solver's ground or location state.
+        solar_calc = SolarGainsCalculator.from_epw(epw_path)
+
         # Set default ground temperatures if not already specified
         # NOTE: We do NOT auto-load EPW ground temps because they are "undisturbed" soil temps
         # which are too extreme for soil under a conditioned building (per E+ documentation).
@@ -2128,7 +2117,6 @@ class Building5R1C:
             self.ground_temps_monthly = SWEDISH_DEFAULT_GROUND_TEMPS.copy()
         
         # Create solar calculator from EPW
-        solar_calc = SolarGainsCalculator.from_epw(epw_path)
         self._solar_calc = solar_calc
         
         # Update lat/lon from EPW

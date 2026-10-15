@@ -1,643 +1,391 @@
-"""Modular Building Geometry System
+"""Compatibility conveniences backed by Core geometry and window placement.
 
-Handles polygon footprints with flexible window-to-wall ratio (WWR) assignment.
-Supports bidirectional conversion between per-segment and cardinal WWR.
-Uses Shapely for robust geometric operations (area, CCW winding, validity).
-
-Usage:
-    # From polygon
-    geom = BuildingGeometry.from_polygon([(0,0), (50,0), (50,20), (0,20)], 
-                                          num_floors=5, floor_height=2.6)
-    
-    # WWR assignment (any of these - auto-converts to other representations)
-    geom.set_wwr_uniform(0.20)
-    geom.set_wwr_cardinal({'N': 0.15, 'S': 0.25, 'E': 0.20, 'W': 0.20})
-    geom.set_wwr_per_segment({0: 0.30, 1: 0.15, 2: 0.25, 3: 0.15})
-    
-    # Get parameters for different models
-    params_5r1c = geom.get_5r1c_params()       # Dict with window areas, envelope areas
-    walls_eplus = geom.get_eplus_surfaces()     # List of wall/window vertex dicts
+Heights and WWR are explicit inputs. This module supplies no constructions,
+glazing, HVAC or operation assumptions. Core loads only when authoring geometry;
+install the platform extra to use these entry points. EnergyPlus export belongs
+to Core's EnergyPlusCompiler rather than the retired legacy surface emitter.
 """
 
-from dataclasses import dataclass, field
-from typing import List, Dict, Tuple, Optional, Union, Sequence
-import numpy as np
-from math import atan2, degrees, sqrt
+from __future__ import annotations
 
-from shapely.geometry import Polygon as ShapelyPolygon
-from shapely.ops import orient
+import ast
+import math
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from itertools import pairwise
+from types import ModuleType
+from typing import TYPE_CHECKING
+
+from shapely.affinity import rotate, translate
+from shapely.geometry import MultiPolygon, Polygon
+
+if TYPE_CHECKING:
+    from epsm_core import Building, FacadeSpec, GeometrySpec, GlazingSpec, WindowLayoutSpec
+    from epsm_core.geometry import FacadeInfo
 
 
-@dataclass
+def _core() -> ModuleType:
+    """Load the coordinated Core API without making the base RC import depend on it."""
+    try:
+        import epsm_core
+
+        if not hasattr(epsm_core, "GeometrySpec") or not hasattr(epsm_core, "Building"):
+            raise ImportError("The installed Core version lacks the shared authoring API")
+        return epsm_core
+    except ImportError as error:
+        raise ImportError(
+            "BuildingGeometry now delegates to epsm_core. Install epsm_rc[platform] "
+            "with coordinated Core/Data versions; use Core GeometrySpec and FacadeSpec "
+            "for new authoring."
+        ) from error
+
+
+@dataclass(frozen=True)
 class WallSegment:
-    """A single wall segment of the building envelope."""
-    
+    """Compatibility view of one Core facade, with Core's azimuth and endpoints."""
+
     segment_id: int
-    start: Tuple[float, float]  # (x, y) coordinates
-    end: Tuple[float, float]
-    height: float  # Total wall height (all floors)
-    
+    facade: FacadeInfo
+
+    @property
+    def facade_id(self) -> str:
+        return self.facade.facade_id
+
+    @property
+    def start(self) -> tuple[float, float]:
+        return self.facade.start_m
+
+    @property
+    def end(self) -> tuple[float, float]:
+        return self.facade.end_m
+
     @property
     def length(self) -> float:
-        """Horizontal length of wall segment."""
-        dx = self.end[0] - self.start[0]
-        dy = self.end[1] - self.start[1]
-        return sqrt(dx*dx + dy*dy)
-    
+        return self.facade.length_m
+
+    @property
+    def height(self) -> float:
+        return self.facade.storey_elevations_m[-1]
+
     @property
     def area(self) -> float:
-        """Total wall area (gross, including windows)."""
         return self.length * self.height
-    
+
     @property
     def normal_angle(self) -> float:
-        """Outward normal angle in degrees (0=North, 90=East, 180=South, 270=West).
-        
-        Assumes polygon vertices are in counter-clockwise order (standard convention).
-        """
-        dx = self.end[0] - self.start[0]
-        dy = self.end[1] - self.start[1]
-        # Wall direction angle
-        wall_angle = degrees(atan2(dx, dy))  # Note: atan2(x,y) for compass bearing
-        # Outward normal is 90° clockwise from wall direction (for CCW polygon)
-        normal = (wall_angle + 90) % 360
-        return normal
-    
+        return self.facade.azimuth_deg
+
     @property
     def cardinal_direction(self) -> str:
-        """Nearest cardinal direction based on normal angle."""
-        angle = self.normal_angle
-        if 315 <= angle or angle < 45:
-            return 'N'
-        elif 45 <= angle < 135:
-            return 'E'
-        elif 135 <= angle < 225:
-            return 'S'
-        else:  # 225 <= angle < 315
-            return 'W'
-    
+        return "NESW"[int((self.normal_angle + 45) // 90) % 4]
+
     @property
-    def midpoint(self) -> Tuple[float, float]:
-        """Midpoint of the wall segment."""
-        return (
-            (self.start[0] + self.end[0]) / 2,
-            (self.start[1] + self.end[1]) / 2
-        )
-    
-    def get_3d_vertices(self, z_base: float = 0.0) -> List[Tuple[float, float, float]]:
-        """Get 3D vertices for this wall (counter-clockwise from outside).
-        
-        EnergyPlus GlobalGeometryRules: UpperLeftCorner, Counterclockwise
-        Order: top-left -> bottom-left -> bottom-right -> top-right
-        """
-        z_top = z_base + self.height
-        return [
-            (self.start[0], self.start[1], z_top),     # Top-left (start)
-            (self.start[0], self.start[1], z_base),    # Bottom-left
-            (self.end[0], self.end[1], z_base),        # Bottom-right
-            (self.end[0], self.end[1], z_top),         # Top-right (end)
-        ]
+    def midpoint(self) -> tuple[float, float]:
+        return tuple((a + b) / 2 for a, b in zip(self.start, self.end))
 
 
-@dataclass  
 class BuildingGeometry:
-    """Building geometry with polygon footprint and modular WWR system.
-    
-    Uses Shapely internally for robust geometric operations (area, winding,
-    validity checks). Coordinates are in metres (local / project CRS).
+    """Thin compatibility wrapper around an explicitly authored Core GeometrySpec.
+
+    ``core_geometry`` is the shared physical geometry. WWR may remain missing
+    while inspecting a footprint; methods that need windows reject incomplete
+    WWR. ``to_core_building`` creates an empty physical draft, with only the
+    constructions, glazing, HVAC and operation supplied by the caller.
     """
-    
-    vertices: List[Tuple[float, float]]  # Footprint vertices (CCW order)
-    num_floors: int = 1
-    floor_height: float = 2.6
-    
-    # Computed
-    wall_segments: List[WallSegment] = field(default_factory=list)
-    
-    # Internal Shapely polygon (built from vertices)
-    _shapely_poly: Optional[ShapelyPolygon] = field(default=None, repr=False)
-    
-    # WWR storage (both representations maintained in sync)
-    _wwr_per_segment: Dict[int, float] = field(default_factory=dict)
-    _wwr_cardinal: Dict[str, float] = field(default_factory=lambda: {
-        'N': 0.15, 'S': 0.25, 'E': 0.15, 'W': 0.15
-    })
-    
-    def __post_init__(self):
-        """Initialize Shapely polygon and wall segments from vertices."""
-        self._build_shapely_poly()
-        self._build_wall_segments()
-        # Initialize per-segment from default cardinal
-        self._cardinal_to_per_segment()
-    
-    def _build_shapely_poly(self):
-        """Build the internal Shapely polygon (CCW exterior ring)."""
-        self._shapely_poly = orient(ShapelyPolygon(self.vertices), sign=1.0)
-        # Re-extract vertices from the oriented polygon (drop closing duplicate)
-        coords = list(self._shapely_poly.exterior.coords)[:-1]
-        self.vertices = [(float(x), float(y)) for x, y in coords]
-    
-    def _build_wall_segments(self):
-        """Create wall segments from polygon vertices."""
-        self.wall_segments = []
-        n = len(self.vertices)
-        total_height = self.num_floors * self.floor_height
-        
-        for i in range(n):
-            start = self.vertices[i]
-            end = self.vertices[(i + 1) % n]
-            
-            segment = WallSegment(
-                segment_id=i,
-                start=start,
-                end=end,
-                height=total_height,
-            )
-            self.wall_segments.append(segment)
-    
+
+    def __init__(
+        self, vertices: Sequence[tuple[float, float]],
+        num_floors: int | None = None, floor_height: float | None = None,
+    ):
+        self._initialize(Polygon(vertices), num_floors, floor_height)
+
+    def _initialize(self, polygon: Polygon | MultiPolygon, num_floors, floor_height):
+        if num_floors is None or floor_height is None:
+            raise ValueError("Supply explicit num_floors and floor_height; Core does not infer heights")
+        core = _core()
+        from epsm_core.geometry import facade_catalog
+
+        self._core_geometry = core.GeometrySpec.from_footprint(
+            polygon, storeys=num_floors, storey_height_m=floor_height,
+        )
+        self._wall_segments = tuple(
+            WallSegment(index, facade)
+            for index, facade in enumerate(facade_catalog(self.core_geometry))
+        )
+        self.window_layout = core.WindowLayoutSpec(mode="scaled")
+        self.height_evidence = {}
+        self._wwr_per_segment = {}
+
+    @property
+    def core_geometry(self) -> GeometrySpec:
+        """Read-only shared geometry; source evidence remains on the wrapper."""
+        return self._core_geometry
+
+    @property
+    def num_floors(self) -> int:
+        return self.core_geometry.parts[0].floors
+
+    @property
+    def floor_height(self) -> float:
+        elevations = self.core_geometry.parts[0].storey_elevations_m
+        return elevations[1] - elevations[0]
+
+    @property
+    def window_layout(self) -> WindowLayoutSpec:
+        return self._window_layout
+
+    @window_layout.setter
+    def window_layout(self, layout: WindowLayoutSpec | dict):
+        self._window_layout = _core().WindowLayoutSpec.model_validate(
+            layout.model_dump() if hasattr(layout, "model_dump") else layout,
+        )
+
+    @property
+    def wall_segments(self) -> tuple[WallSegment, ...]:
+        return self._wall_segments
+
     @classmethod
     def from_polygon(
-        cls,
-        vertices: Union[Sequence[Tuple[float, float]], str],
-        num_floors: int = 1,
-        floor_height: float = 2.6,
-    ) -> 'BuildingGeometry':
-        """Create geometry from polygon vertices.
-        
-        Args:
-            vertices: List of (x, y) tuples in any winding order (auto-corrected),
-                      or string like "[(0,0), (50,0), (50,20), (0,20)]"
-            num_floors: Number of floors
-            floor_height: Height per floor [m]
-        """
-        if isinstance(vertices, str):
-            import ast
-            parsed: List[Tuple[float, float]] = ast.literal_eval(vertices)
-        else:
-            parsed = [(float(x), float(y)) for x, y in vertices]
-        
-        return cls(
-            vertices=parsed,
-            num_floors=num_floors,
-            floor_height=floor_height,
-        )
-    
+        cls, vertices: Sequence[tuple[float, float]] | str,
+        num_floors: int | None = None, floor_height: float | None = None,
+    ) -> BuildingGeometry:
+        """Delegate metric polygon vertices and explicit heights to Core validation."""
+        vertices = ast.literal_eval(vertices) if isinstance(vertices, str) else vertices
+        return cls(vertices, num_floors, floor_height)
+
     @classmethod
     def from_rectangle(
-        cls,
-        length: float,
-        width: float,
-        num_floors: int = 1,
-        floor_height: float = 2.6,
-        orientation: float = 0.0,
-    ) -> 'BuildingGeometry':
-        """Create rectangular building geometry.
-        
-        Args:
-            length: Building length in E-W direction [m]
-            width: Building width in N-S direction [m]
-            num_floors: Number of floors
-            floor_height: Height per floor [m]
-            orientation: Rotation from north [degrees]
-        """
-        # Basic rectangle centered at origin
-        # Length is E-W (x), Width is N-S (y)
-        half_l = length / 2
-        half_w = width / 2
-        
-        vertices = [
-            (-half_l, -half_w),  # SW corner
-            (half_l, -half_w),   # SE corner
-            (half_l, half_w),    # NE corner
-            (-half_l, half_w),   # NW corner
-        ]
-        
-        # Apply rotation if needed
-        if orientation != 0:
-            rad = np.radians(orientation)
-            cos_a, sin_a = float(np.cos(rad)), float(np.sin(rad))
-            vertices = [
-                (x * cos_a - y * sin_a, x * sin_a + y * cos_a)
-                for x, y in vertices
-            ]
-        
-        return cls(
-            vertices=vertices,
-            num_floors=num_floors,
-            floor_height=floor_height,
-        )
-    
+        cls, length: float, width: float, num_floors: int | None = None,
+        floor_height: float | None = None, orientation: float = 0.0,
+    ) -> BuildingGeometry:
+        """Preserve the legacy centred rectangle and counterclockwise rotation convention."""
+        polygon = _core().Footprint.rectangle(length, width).polygon
+        polygon = translate(polygon, -length / 2, -width / 2)
+        return cls.from_shapely(rotate(polygon, orientation, origin=(0, 0)), num_floors, floor_height)
+
     @classmethod
     def from_shapely(
-        cls,
-        polygon: ShapelyPolygon,
-        num_floors: int = 1,
-        floor_height: float = 2.6,
-    ) -> 'BuildingGeometry':
-        """Create geometry directly from a Shapely Polygon.
-        
-        Args:
-            polygon: shapely.geometry.Polygon (any winding order, auto-corrected)
-            num_floors: Number of floors
-            floor_height: Height per floor [m]
-        """
-        oriented = orient(polygon, sign=1.0)  # Ensure CCW
-        coords = list(oriented.exterior.coords)[:-1]
-        return cls(
-            vertices=[(float(x), float(y)) for x, y in coords],
-            num_floors=num_floors,
-            floor_height=floor_height,
-        )
-    
-    # =========================================================================
-    # Properties (delegating area / perimeter to Shapely)
-    # =========================================================================
-    
+        cls, polygon: Polygon | MultiPolygon,
+        num_floors: int | None = None, floor_height: float | None = None,
+    ) -> BuildingGeometry:
+        """Preserve valid metric Polygon/MultiPolygon rings and their shared frame in Core."""
+        if polygon.geom_type not in {"Polygon", "MultiPolygon"}:
+            raise ValueError(f"Core authoring requires Polygon or MultiPolygon, got {polygon.geom_type}")
+        result = cls.__new__(cls)
+        result._initialize(polygon, num_floors, floor_height)
+        return result
+
     @property
-    def shapely_polygon(self) -> ShapelyPolygon:
-        """Access the underlying Shapely polygon."""
-        if self._shapely_poly is None:
-            self._build_shapely_poly()
-        assert self._shapely_poly is not None
-        return self._shapely_poly
-    
+    def shapely_polygon(self) -> Polygon | MultiPolygon:
+        polygons = [part.footprint.polygon for part in self.core_geometry.parts]
+        return polygons[0] if len(polygons) == 1 else MultiPolygon(polygons)
+
+    @property
+    def vertices(self) -> list[tuple[float, float]]:
+        polygon = self.shapely_polygon
+        if polygon.geom_type != "Polygon" or polygon.interiors:
+            raise ValueError("A single vertices list cannot preserve this geometry; use core_geometry.parts")
+        return list(polygon.exterior.coords)[:-1]
+
     @property
     def is_valid(self) -> bool:
-        """Check if the polygon is geometrically valid (no self-intersections)."""
         return self.shapely_polygon.is_valid
-    
-    @property
-    def floor_area(self) -> float:
-        """Total floor area [m²]."""
-        return self.footprint_area * self.num_floors
-    
+
     @property
     def footprint_area(self) -> float:
-        """Single floor footprint area [m²] (via Shapely)."""
-        return float(self.shapely_polygon.area)
-    
+        return sum(part.footprint.area_m2 for part in self.core_geometry.parts)
+
     @property
-    def perimeter(self) -> float:
-        """Building perimeter [m] (via Shapely)."""
-        return float(self.shapely_polygon.length)
-    
-    @property
-    def total_wall_area(self) -> float:
-        """Total gross wall area [m²]."""
-        return sum(seg.area for seg in self.wall_segments)
-    
-    @property
-    def total_height(self) -> float:
-        """Total building height [m]."""
-        return self.num_floors * self.floor_height
-    
+    def floor_area(self) -> float:
+        return self.core_geometry.conditioned_floor_area_m2
+
     @property
     def volume(self) -> float:
-        """Building volume [m³]."""
-        return self.footprint_area * self.total_height
-    
+        return self.core_geometry.conditioned_volume_m3
+
     @property
-    def centroid(self) -> Tuple[float, float]:
-        """Footprint centroid (x, y)."""
-        c = self.shapely_polygon.centroid
-        return (float(c.x), float(c.y))
-    
+    def perimeter(self) -> float:
+        return sum(part.footprint.perimeter_m for part in self.core_geometry.parts)
+
     @property
-    def bounds(self) -> Tuple[float, float, float, float]:
-        """Bounding box (minx, miny, maxx, maxy)."""
+    def total_height(self) -> float:
+        return max(part.storey_elevations_m[-1] for part in self.core_geometry.parts)
+
+    @property
+    def total_wall_area(self) -> float:
+        return sum(segment.area for segment in self.wall_segments)
+
+    @property
+    def centroid(self) -> tuple[float, float]:
+        centroid = self.shapely_polygon.centroid
+        return centroid.x, centroid.y
+
+    @property
+    def bounds(self) -> tuple[float, float, float, float]:
         return self.shapely_polygon.bounds
-    
-    # =========================================================================
-    # WWR Assignment Methods
-    # =========================================================================
-    
-    def set_wwr_uniform(self, wwr: float):
-        """Set uniform WWR for all walls.
-        
-        Args:
-            wwr: Window-to-wall ratio (0.0 to 1.0)
-        """
-        self._wwr_cardinal = {'N': wwr, 'S': wwr, 'E': wwr, 'W': wwr}
-        self._wwr_per_segment = {seg.segment_id: wwr for seg in self.wall_segments}
-    
-    def set_wwr_cardinal(self, wwr: Dict[str, float]):
-        """Set WWR by cardinal direction, auto-impute per-segment.
-        
-        Args:
-            wwr: Dict with keys 'N', 'S', 'E', 'W' and WWR values
-        """
-        # Fill any missing directions with 0.15 default
-        self._wwr_cardinal = {
-            'N': wwr.get('N', wwr.get('north', 0.15)),
-            'S': wwr.get('S', wwr.get('south', 0.25)),
-            'E': wwr.get('E', wwr.get('east', 0.15)),
-            'W': wwr.get('W', wwr.get('west', 0.15)),
-        }
-        self._cardinal_to_per_segment()
-    
-    def set_wwr_per_segment(self, wwr: Dict[int, float]):
-        """Set WWR per wall segment, auto-compute cardinal aggregates.
-        
-        Args:
-            wwr: Dict mapping segment_id to WWR value
-        """
-        # Fill missing segments with 0.15 default
+
+    @staticmethod
+    def _validate_wwr(value: float) -> float:
+        if not math.isfinite(value) or not 0 <= value < 0.95:
+            raise ValueError("Core WWR must be finite and in [0, 0.95)")
+        return float(value)
+
+    def set_wwr_uniform(self, wwr: float) -> None:
+        """Select one explicit WWR for every Core facade."""
+        value = self._validate_wwr(wwr)
+        self._wwr_per_segment = {segment.segment_id: value for segment in self.wall_segments}
+
+    def set_wwr_cardinal(self, wwr: Mapping[str, float | None]) -> None:
+        """Select supplied cardinal values only; omitted directions remain missing."""
+        aliases = {"north": "N", "east": "E", "south": "S", "west": "W"}
+        selected = {}
+        for name, value in wwr.items():
+            if value is None:
+                continue
+            direction = aliases.get(name.lower(), name.upper())
+            if direction not in "NESW" or len(direction) != 1:
+                raise ValueError(f"Unknown cardinal WWR direction {name}")
+            if direction in selected:
+                raise ValueError(f"Duplicate cardinal WWR direction {direction}")
+            selected[direction] = self._validate_wwr(value)
         self._wwr_per_segment = {
-            seg.segment_id: wwr.get(seg.segment_id, 0.15)
-            for seg in self.wall_segments
+            segment.segment_id: selected[segment.cardinal_direction]
+            for segment in self.wall_segments if segment.cardinal_direction in selected
         }
-        self._per_segment_to_cardinal()
-    
-    def _cardinal_to_per_segment(self):
-        """Impute per-segment WWR from cardinal WWR."""
+
+    def set_wwr_per_segment(self, wwr: Mapping[int, float | None]) -> None:
+        """Select supplied segment values only; omitted facades remain missing."""
+        if set(wwr) - {segment.segment_id for segment in self.wall_segments}:
+            raise ValueError("Unknown Core facade segment identifier")
         self._wwr_per_segment = {
-            seg.segment_id: self._wwr_cardinal[seg.cardinal_direction]
-            for seg in self.wall_segments
+            key: self._validate_wwr(value) for key, value in wwr.items() if value is not None
         }
-    
-    def _per_segment_to_cardinal(self):
-        """Aggregate per-segment WWR to cardinal directions (area-weighted average)."""
-        # Accumulate area-weighted WWR for each direction
-        cardinal_area = {'N': 0.0, 'S': 0.0, 'E': 0.0, 'W': 0.0}
-        cardinal_wwr_sum = {'N': 0.0, 'S': 0.0, 'E': 0.0, 'W': 0.0}
-        
-        for seg in self.wall_segments:
-            direction = seg.cardinal_direction
-            area = seg.area
-            wwr = self._wwr_per_segment.get(seg.segment_id, 0.15)
-            
-            cardinal_area[direction] += area
-            cardinal_wwr_sum[direction] += wwr * area
-        
-        # Compute weighted average
-        self._wwr_cardinal = {}
-        for direction in ['N', 'S', 'E', 'W']:
-            if cardinal_area[direction] > 0:
-                self._wwr_cardinal[direction] = cardinal_wwr_sum[direction] / cardinal_area[direction]
+
+    @property
+    def wwr_per_segment(self) -> dict[int, float]:
+        return dict(self._wwr_per_segment)
+
+    @property
+    def wwr_cardinal(self) -> dict[str, float | None]:
+        result = {}
+        for direction in "NESW":
+            segments = [s for s in self.wall_segments if s.cardinal_direction == direction]
+            if not segments or any(s.segment_id not in self._wwr_per_segment for s in segments):
+                result[direction] = None
             else:
-                self._wwr_cardinal[direction] = 0.15  # Default if no walls face this direction
-    
-    @property
-    def wwr_per_segment(self) -> Dict[int, float]:
-        """Get per-segment WWR dict."""
-        return self._wwr_per_segment.copy()
-    
-    @property
-    def wwr_cardinal(self) -> Dict[str, float]:
-        """Get cardinal WWR dict."""
-        return self._wwr_cardinal.copy()
-    
-    # =========================================================================
-    # Output for Different Models
-    # =========================================================================
-    
-    def get_wall_areas_by_cardinal(self) -> Dict[str, float]:
-        """Get total wall area by cardinal direction [m²]."""
-        areas = {'N': 0.0, 'S': 0.0, 'E': 0.0, 'W': 0.0}
-        for seg in self.wall_segments:
-            areas[seg.cardinal_direction] += seg.area
-        return areas
-    
-    def get_window_areas_by_cardinal(self) -> Dict[str, float]:
-        """Get window area by cardinal direction [m²]."""
-        window_areas = {'N': 0.0, 'S': 0.0, 'E': 0.0, 'W': 0.0}
-        for seg in self.wall_segments:
-            direction = seg.cardinal_direction
-            wwr = self._wwr_per_segment.get(seg.segment_id, 0.15)
-            window_areas[direction] += seg.area * wwr
-        return window_areas
-    
-    def get_5r1c_params(self) -> Dict[str, float]:
-        """Get parameters needed for 5R1C model.
-        
-        Returns:
-            Dict with window_area_north, window_area_south, etc., plus envelope areas.
-        """
-        window_areas = self.get_window_areas_by_cardinal()
-        wall_areas = self.get_wall_areas_by_cardinal()
-        
-        # Net wall area = gross - windows
-        net_wall_areas = {
-            d: wall_areas[d] - window_areas[d] 
-            for d in ['N', 'S', 'E', 'W']
-        }
-        
+                result[direction] = sum(
+                    s.area * self._wwr_per_segment[s.segment_id] for s in segments
+                ) / sum(s.area for s in segments)
+        return result
+
+    def _require_wwr(self):
+        missing = [s.facade_id for s in self.wall_segments if s.segment_id not in self._wwr_per_segment]
+        if missing:
+            raise ValueError(f"Missing WWR for Core facades: {', '.join(missing)}; supply explicit values")
+
+    def get_wall_areas_by_cardinal(self) -> dict[str, float]:
         return {
-            # Window areas
-            'window_area_north': window_areas['N'],
-            'window_area_south': window_areas['S'],
-            'window_area_east': window_areas['E'],
-            'window_area_west': window_areas['W'],
-            
-            # Total areas
-            'floor_area_m2': self.floor_area,
-            'roof_area_m2': self.footprint_area,
-            'total_wall_area_gross': self.total_wall_area,
-            'total_wall_area_net': sum(net_wall_areas.values()),
-            'total_window_area': sum(window_areas.values()),
-            
-            # Geometry
-            'perimeter': self.perimeter,
-            'num_floors': self.num_floors,
-            'floor_height': self.floor_height,
-            'total_height': self.total_height,
-            'volume': self.volume,
-            'footprint_area': self.footprint_area,
+            direction: sum(s.area for s in self.wall_segments if s.cardinal_direction == direction)
+            for direction in "NESW"
         }
-    
-    def get_eplus_surfaces(self) -> List[Dict]:
-        """Get wall and window surface definitions for EnergyPlus IDF.
-        
-        Returns:
-            List of dicts, each with:
-                - type: 'wall' or 'window'
-                - name: surface name
-                - vertices: list of (x, y, z) tuples
-                - parent: parent wall name (for windows)
-                - segment_id: original segment ID
-        """
-        surfaces = []
-        
-        for seg in self.wall_segments:
-            wall_name = f"Wall_{seg.segment_id}_{seg.cardinal_direction}"
-            wwr = self._wwr_per_segment.get(seg.segment_id, 0.15)
-            
-            # Full wall vertices
-            wall_verts = seg.get_3d_vertices(z_base=0.0)
-            
-            surfaces.append({
-                'type': 'wall',
-                'name': wall_name,
-                'vertices': wall_verts,
-                'segment_id': seg.segment_id,
-                'cardinal': seg.cardinal_direction,
-                'normal_angle': seg.normal_angle,
-            })
-            
-            # Window (if WWR > 0)
-            if wwr > 0.01:
-                window_verts = self._get_window_vertices(seg, wwr)
-                surfaces.append({
-                    'type': 'window',
-                    'name': f"Window_{seg.segment_id}_{seg.cardinal_direction}",
-                    'vertices': window_verts,
-                    'parent': wall_name,
-                    'segment_id': seg.segment_id,
-                    'wwr': wwr,
-                })
-        
-        return surfaces
-    
-    def _get_window_vertices(
-        self, 
-        seg: WallSegment, 
-        wwr: float,
-        sill_height: float = 0.9,
-        head_clearance: float = 0.3,
-    ) -> List[Tuple[float, float, float]]:
-        """Calculate window vertices centered on wall segment.
-        
-        Windows are placed with:
-        - Sill at sill_height (default 0.9m)
-        - Head at (wall_height - head_clearance)
-        - Width calculated from WWR and available wall area
-        """
-        wall_height = seg.height
-        wall_length = seg.length
-        wall_area = seg.area
-        
-        # Window dimensions
-        window_area = wall_area * wwr
-        
-        # Window height: from sill to head
-        max_window_height = wall_height - sill_height - head_clearance
-        window_height = min(max_window_height, 2.4)  # Cap at 2.4m
-        
-        # Window width from area
-        window_width = window_area / window_height
-        window_width = min(window_width, wall_length * 0.9)  # Max 90% of wall length
-        
-        # Recalculate height if width was capped
-        if window_width >= wall_length * 0.9:
-            window_width = wall_length * 0.9
-            window_height = window_area / window_width
-            window_height = min(window_height, max_window_height)
-        
-        # Center the window on the wall
-        offset_along_wall = (wall_length - window_width) / 2
-        
-        # Direction vector along wall
-        dx = seg.end[0] - seg.start[0]
-        dy = seg.end[1] - seg.start[1]
-        length = seg.length
-        ux, uy = dx / length, dy / length  # Unit vector along wall
-        
-        # Window corners (start from bottom-left, going CCW when viewed from outside)
-        x1 = seg.start[0] + ux * offset_along_wall
-        y1 = seg.start[1] + uy * offset_along_wall
-        x2 = x1 + ux * window_width
-        y2 = y1 + uy * window_width
-        
-        z_sill = sill_height
-        z_head = sill_height + window_height
-        
-        # EnergyPlus: UpperLeftCorner, Counterclockwise (viewed from outside)
-        # Order: top-left -> bottom-left -> bottom-right -> top-right
-        return [
-            (x1, y1, z_head),   # Top-left
-            (x1, y1, z_sill),   # Bottom-left
-            (x2, y2, z_sill),   # Bottom-right
-            (x2, y2, z_head),   # Top-right
-        ]
-    
+
+    def get_window_areas_by_cardinal(self) -> dict[str, float]:
+        """Aggregate actual Core window rectangles over explicit storey intervals."""
+        from epsm_core.facades import window_rectangles
+
+        self._require_wwr()
+        areas = dict.fromkeys("NESW", 0.0)
+        for segment in self.wall_segments:
+            elevations = segment.facade.storey_elevations_m
+            for bottom, top in pairwise(elevations):
+                rectangles, _ = window_rectangles(
+                    segment.length, top - bottom,
+                    self._wwr_per_segment[segment.segment_id], self.window_layout,
+                )
+                areas[segment.cardinal_direction] += sum(
+                    (right - left) * (head - sill) for left, sill, right, head in rectangles
+                )
+        return areas
+
+    def get_5r1c_params(self) -> dict[str, float]:
+        """Return legacy area keys from Core geometry and actual Core window placement."""
+        windows = self.get_window_areas_by_cardinal()
+        total_windows = sum(windows.values())
+        return {
+            **{f"window_area_{name}": windows[direction] for direction, name in
+               (("N", "north"), ("E", "east"), ("S", "south"), ("W", "west"))},
+            "floor_area_m2": self.floor_area, "roof_area_m2": self.footprint_area,
+            "total_wall_area_gross": self.total_wall_area,
+            "total_wall_area_net": self.total_wall_area - total_windows,
+            "total_window_area": total_windows, "perimeter": self.perimeter,
+            "num_floors": self.num_floors, "floor_height": self.floor_height,
+            "total_height": self.total_height, "volume": self.volume,
+            "footprint_area": self.footprint_area,
+        }
+
+    def to_core_facade(self, glazing: GlazingSpec | dict) -> FacadeSpec:
+        """Transfer complete selected WWR with explicitly supplied glazing; no physical defaults."""
+        core = _core()
+        self._require_wwr()
+        if glazing is None:
+            raise ValueError("Supply explicit glazing for Core facade authoring")
+        glazing = core.GlazingSpec.model_validate(
+            glazing.model_dump() if hasattr(glazing, "model_dump") else glazing,
+        )
+        return core.FacadeSpec(
+            default_wwr=next(iter(self._wwr_per_segment.values())), glazing=glazing,
+            layout=self.window_layout,
+            overrides=tuple(core.FacadeOverride(
+                facade_id=segment.facade_id, wwr=self._wwr_per_segment[segment.segment_id],
+            ) for segment in self.wall_segments),
+        )
+
+    def to_core_building(
+        self, *, glazing: GlazingSpec | dict | None = None,
+        construction_set=None, hvac=None, operation=None, provenance=None,
+    ) -> Building:
+        """Create a Core empty draft containing only explicitly supplied physical inputs."""
+        if self._wwr_per_segment and glazing is None:
+            raise ValueError("Supply explicit glazing to transfer selected WWR; no glazing is assumed")
+        facade = self.to_core_facade(glazing) if glazing is not None else None
+        core = _core()
+        supplied = core.ProvenanceSpec.model_validate(
+            provenance.model_dump(mode="json") if hasattr(provenance, "model_dump") else provenance or {})
+        records = list(supplied.records)
+        geometry = self.core_geometry
+        if self.height_evidence:
+            parts = []
+            inferred = all(self.height_evidence.get(name) != "caller" for name in (
+                "num_floors_source", "floor_height_source"))
+            for index, part in enumerate(geometry.parts):
+                path = f"geometry.parts.{index}.storey_elevations_m"
+                record = next((r for r in records if r.field_path == path), None)
+                if record is None:
+                    record = core.SourceRecord(field_path=path,
+                        status="inferred" if inferred else "assumed", source="gis_height_selection",
+                        evidence=self.height_evidence)
+                    records.append(record)
+                parts.append(part.updated(height_status=record.status))
+            geometry = geometry.updated(parts=tuple(parts))
+        return core.Building.empty(
+            geometry=geometry, facade=facade, construction_set=construction_set,
+            hvac=hvac, operation=operation, provenance=core.ProvenanceSpec(records=tuple(records)),
+        )
+
+    def get_eplus_surfaces(self):
+        """Fail clearly at the retired surface export; use Core EnergyPlusCompiler."""
+        raise ValueError(
+            "Legacy EnergyPlus surface export is retired. Author an explicit Core Building "
+            "and compile its to_spec(weather) with epsm_core.EnergyPlusCompiler; "
+            "BuildingGeometry.core_geometry preserves all rings and parts."
+        )
+
     def summary(self) -> str:
-        """Return a text summary of the building geometry."""
-        lines = [
-            "Building Geometry Summary",
-            "=" * 40,
-            f"Footprint: {len(self.vertices)} vertices  "
-            f"(valid={self.is_valid})",
-            f"Footprint area: {self.footprint_area:.1f} m2",
-            f"Volume: {self.volume:.1f} m3",
-            f"Floors: {self.num_floors} × {self.floor_height}m = {self.total_height}m",
-            f"Floor area: {self.floor_area:.1f} m²",
-            f"Perimeter: {self.perimeter:.1f} m",
-            f"Total wall area: {self.total_wall_area:.1f} m²",
-            "",
-            "Wall Segments:",
-            "-" * 40,
-        ]
-        
-        for seg in self.wall_segments:
-            wwr = self._wwr_per_segment.get(seg.segment_id, 0.15)
-            lines.append(
-                f"  [{seg.segment_id}] {seg.cardinal_direction}: "
-                f"L={seg.length:.1f}m, A={seg.area:.1f}m², "
-                f"WWR={wwr:.0%}, θ={seg.normal_angle:.0f}°"
-            )
-        
-        lines.extend([
-            "",
-            "Cardinal WWR:",
-            "-" * 40,
-            f"  North: {self._wwr_cardinal['N']:.0%}",
-            f"  South: {self._wwr_cardinal['S']:.0%}",
-            f"  East:  {self._wwr_cardinal['E']:.0%}",
-            f"  West:  {self._wwr_cardinal['W']:.0%}",
-            "",
-            "Window Areas:",
-            "-" * 40,
-        ])
-        
-        window_areas = self.get_window_areas_by_cardinal()
-        for d in ['N', 'S', 'E', 'W']:
-            lines.append(f"  {d}: {window_areas[d]:.1f} m²")
-        lines.append(f"  Total: {sum(window_areas.values()):.1f} m²")
-        
-        return "\n".join(lines)
+        return (
+            f"Core-backed BuildingGeometry: {len(self.core_geometry.parts)} parts, "
+            f"{self.floor_area:g} m² floor area, {self.volume:g} m³ volume; "
+            f"WWR supplied on {len(self._wwr_per_segment)}/{len(self.wall_segments)} facades"
+        )
 
-
-def demo():
-    """Demonstrate the building geometry system."""
-    
-    print("=" * 60)
-    print("DEMO: Modular Building Geometry System")
-    print("=" * 60)
-    
-    # Example 1: Rectangle
-    print("\n1. Simple Rectangle (50m × 20m)")
-    geom = BuildingGeometry.from_rectangle(
-        length=50, width=20, 
-        num_floors=5, floor_height=2.6
-    )
-    geom.set_wwr_uniform(0.20)
-    print(geom.summary())
-    
-    # Example 2: L-shaped building
-    print("\n" + "=" * 60)
-    print("2. L-Shaped Building")
-    l_shape = [
-        (0.0, 0.0), (30.0, 0.0), (30.0, 15.0), (15.0, 15.0), (15.0, 25.0), (0.0, 25.0)
-    ]
-    geom2 = BuildingGeometry.from_polygon(l_shape, num_floors=3, floor_height=3.0)
-    geom2.set_wwr_cardinal({'N': 0.10, 'S': 0.30, 'E': 0.20, 'W': 0.15})
-    print(geom2.summary())
-    
-    # Example 3: Per-segment WWR
-    print("\n" + "=" * 60)
-    print("3. Custom per-segment WWR")
-    geom3 = BuildingGeometry.from_rectangle(40, 30, num_floors=2)
-    geom3.set_wwr_per_segment({0: 0.05, 1: 0.40, 2: 0.05, 3: 0.15})
-    print(geom3.summary())
-    print("\n(Notice cardinal WWR is auto-computed from per-segment)")
-    
-    # Example 4: From Shapely directly
-    print("\n" + "=" * 60)
-    print("4. From Shapely Polygon")
-    poly = ShapelyPolygon([(0, 0), (20, 0), (20, 10), (0, 10)])
-    geom4 = BuildingGeometry.from_shapely(poly, num_floors=2, floor_height=3.0)
-    print(geom4.summary())
-
-
-if __name__ == "__main__":
-    demo()
+    def __repr__(self):
+        return self.summary()

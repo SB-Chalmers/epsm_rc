@@ -14,7 +14,7 @@ This demo shows how to:
 The workflow uses the FootprintImporter to pull building polygons by OSM
 way IDs, then creates Building5R1C models from the derived geometry.
 
-Requirements (install with `pip install epsm_rc[gis]`):
+Requirements (install with `pip install epsm_rc[platform,gis]`):
     - pyproj, requests  (for OSM fetching)
     - pvlib              (for detailed solar gains)
     - matplotlib         (for plotting)
@@ -43,7 +43,7 @@ from epsm_rc.weather import load_epw
 
 # A small neighbourhood in Gothenburg (Majorna).
 # Each entry: (OSM way ID, assumed construction era, number of floors override).
-# Set num_floors=None to let OSM tags decide (defaults to 2 if absent).
+# Set num_floors=None to require source OSM levels; absent levels raise an error.
 BUILDINGS = [
     {"way_id": 90851303, "era": "1960_1975", "num_floors": None, "label": "A"},
     {"way_id": 90851304, "era": "1976_1990", "num_floors": 3, "label": "B"},
@@ -83,7 +83,8 @@ def fetch_buildings(building_defs: list[dict]) -> list[dict]:
     results = []
     for i, bdef in enumerate(building_defs):
         way_id = bdef["way_id"]
-        num_floors = bdef.get("num_floors") or 2  # default for from_osm
+        # Explicit illustrative assumptions for this example; not source evidence.
+        num_floors = bdef.get("num_floors")
         print(f"  Fetching OSM way/{way_id} ...")
 
         if i > 0:
@@ -92,6 +93,7 @@ def fetch_buildings(building_defs: list[dict]) -> list[dict]:
         geom = FootprintImporter.from_osm(
             way_id=way_id,
             num_floors=num_floors,
+            floor_height=2.5,
         )
         geom.set_wwr_cardinal({"N": 0.12, "S": 0.25, "E": 0.15, "W": 0.15})
 
@@ -387,7 +389,7 @@ def main():
 
     # --- 3. Load weather and simulate ---
     print("\n[3/4] Loading weather & running annual simulations ...")
-    epw = load_epw()  # bundled Göteborg TMY
+    epw = load_epw(preset="goteborg")  # explicitly selected illustrative TMY
     t_outdoor = epw.temp_c
     print(f"  Weather: {epw.location}, {len(t_outdoor)} hours, "
           f"mean {t_outdoor.mean():.1f} °C")

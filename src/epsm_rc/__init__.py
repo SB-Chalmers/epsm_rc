@@ -86,12 +86,17 @@ __all__ = [
     "ParametricBuilding",
     "generate_idf",
     "get_5r1c_params",
+    "EngineComparison",
+    "prepare_engine_comparison",
 ]
 
 __version__ = "0.2.0"
 
 # Platform integration imports Core only when explicitly requested.
 def __getattr__(name):
+    if name in {"EngineComparison", "prepare_engine_comparison"}:
+        from . import comparison
+        return getattr(comparison, name)
     if name in {"simulate_building", "RCSettings"}:
         from . import platform
         return getattr(platform, name)

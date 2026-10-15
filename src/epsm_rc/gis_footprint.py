@@ -6,18 +6,22 @@ Three entry-points, one return type:
     from epsm_rc.gis_footprint import FootprintImporter
 
     # 1. OpenStreetMap way/relation ID
-    geom = FootprintImporter.from_osm(way_id=90851303)
+    geom = FootprintImporter.from_osm(way_id=90851303, num_floors=2, floor_height=2.5)
 
     # 2. GeoJSON file or dict
-    geom = FootprintImporter.from_geojson("building.geojson")
-    geom = FootprintImporter.from_geojson({"type": "Feature", ...})
+    geom = FootprintImporter.from_geojson("building.geojson", num_floors=2, floor_height=2.5)
 
     # 3. Shapefile (EPSG:3006 or auto-detected CRS)
-    geoms = FootprintImporter.from_shapefile("footprints.shp")      # all features
-    geoms = FootprintImporter.from_shapefile("footprints.shp", fid=0)  # single
+    geoms = FootprintImporter.from_shapefile("footprints.shp", num_floors=2, floor_height=2.5)
 
 All methods return BuildingGeometry (or list thereof) in a local metric
 coordinate system with the centroid shifted to the origin.
+Polygon holes and MultiPolygon components are preserved in Core geometry,
+with one coordinate transformation shared by every ring and component.
+OSM relations still require exactly one explicitly identified, closed outer way;
+unsupported relation assembly raises an actionable error.
+Height inputs have no defaults: supply explicit assumptions when source levels
+or height are missing. Returned height_evidence records source fields and choices.
 
 Coordinate handling:
 - WGS84 (EPSG:4326) → UTM auto-zone  (for OSM / GeoJSON in lon/lat)
@@ -29,13 +33,14 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 from shapely.geometry import Polygon as ShapelyPolygon
+from shapely.geometry import MultiPolygon as ShapelyMultiPolygon
 from shapely.geometry import shape as shapely_shape
-from shapely.ops import orient
 
 from .building_geometry import BuildingGeometry
 
@@ -115,21 +120,105 @@ def _to_local_metres(
     return [(float(x), float(y)) for x, y in arr]
 
 
+def _resolve_height(
+    properties: dict,
+    num_floors: int | None,
+    floor_height: float | None,
+) -> tuple[int, float, dict]:
+    """Resolve supplied evidence or explicit assumptions, retaining selection sources."""
+    level_keys = ("building:levels", "levels", "floors", "num_floors")
+    floor_height_keys = ("floor_height_m", "storey_height_m", "floor_height")
+    total_height_keys = ("height", "building:height", "height_m")
+
+    def source_value(keys):
+        for key in keys:
+            if properties.get(key) is not None:
+                return properties[key], key
+        return None, None
+
+    def positive_number(value, name, *, metres=False):
+        if metres and isinstance(value, str):
+            value = value.strip().removesuffix("m").strip()
+        try:
+            number = float(value)
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"{name} must be a positive finite number") from error
+        if not math.isfinite(number) or number <= 0 or isinstance(value, bool):
+            raise ValueError(f"{name} must be a positive finite number")
+        return number
+
+    levels_source = "caller"
+    if num_floors is None:
+        num_floors, levels_source = source_value(level_keys)
+    if num_floors is None:
+        raise ValueError("Missing level evidence: supply an explicit num_floors assumption")
+    levels = positive_number(num_floors, levels_source or "num_floors")
+    if not levels.is_integer():
+        raise ValueError("num_floors / source levels must be a positive integer")
+    levels = int(levels)
+
+    height_source = "caller"
+    if floor_height is None:
+        floor_height, height_source = source_value(floor_height_keys)
+    if floor_height is None:
+        total_height, height_source = source_value(total_height_keys)
+        if total_height is None:
+            raise ValueError(
+                "Missing height evidence: supply an explicit floor_height assumption in metres"
+            )
+        floor_height = positive_number(total_height, height_source, metres=True) / levels
+        height_source = f"{height_source} / selected num_floors"
+    floor_height = positive_number(floor_height, height_source or "floor_height", metres=True)
+    evidence = {
+        "num_floors_source": levels_source,
+        "floor_height_source": height_source,
+        "source_properties": {
+            key: properties[key]
+            for key in (*level_keys, *floor_height_keys, *total_height_keys)
+            if key in properties
+        },
+        "selected_num_floors": levels,
+        "selected_floor_height_m": floor_height,
+    }
+    return levels, floor_height, evidence
+
+
 def _polygon_to_geometry(
-    poly: ShapelyPolygon,
+    poly: ShapelyPolygon | ShapelyMultiPolygon,
     source_crs: Optional[str],
-    num_floors: int,
-    floor_height: float,
+    num_floors: int | None,
+    floor_height: float | None,
+    properties: dict | None = None,
 ) -> BuildingGeometry:
-    """Convert a Shapely polygon to BuildingGeometry with CRS handling."""
-    oriented = orient(poly, sign=1.0)  # CCW
-    coords = list(oriented.exterior.coords)[:-1]  # Drop closing vertex
-    local = _to_local_metres(coords, source_crs=source_crs)
-    return BuildingGeometry.from_polygon(
-        vertices=local,
+    """Convert every ring/component in one common frame into Core geometry."""
+    if poly.geom_type not in {"Polygon", "MultiPolygon"}:
+        raise ValueError(
+            f"Core geometry requires Polygon or MultiPolygon, got {poly.geom_type}"
+        )
+    if poly.has_z:
+        raise ValueError("GIS footprints must be two-dimensional (2-D); supply heights separately")
+    num_floors, floor_height, evidence = _resolve_height(
+        properties or {}, num_floors, floor_height,
+    )
+    polygons = [poly] if poly.geom_type == "Polygon" else list(poly.geoms)
+    rings = [
+        [list(ring.coords)[:-1] for ring in (polygon.exterior, *polygon.interiors)]
+        for polygon in polygons
+    ]
+    coordinates = [coordinate for part in rings for ring in part for coordinate in ring]
+    local = iter(_to_local_metres(coordinates, source_crs=source_crs))
+    converted = []
+    for part in rings:
+        converted_rings = [[next(local) for _ in ring] for ring in part]
+        converted.append(ShapelyPolygon(converted_rings[0], converted_rings[1:]))
+    local_shape = converted[0] if len(converted) == 1 else ShapelyMultiPolygon(converted)
+    geometry = BuildingGeometry.from_shapely(
+        local_shape,
         num_floors=num_floors,
         floor_height=floor_height,
     )
+    geometry.height_evidence = evidence
+    return geometry
 
 
 # ---------------------------------------------------------------------------
@@ -147,8 +236,8 @@ class FootprintImporter:
         relation_id: Optional[int] = None,
         url: Optional[str] = None,
         *,
-        num_floors: int = 2,
-        floor_height: float = 2.5,
+        num_floors: int | None = None,
+        floor_height: float | None = None,
     ) -> BuildingGeometry:
         """Fetch a building footprint from OpenStreetMap.
 
@@ -156,15 +245,16 @@ class FootprintImporter:
             way_id: OSM way ID (e.g. 90851303).
             relation_id: OSM relation ID (for multipolygon buildings).
             url: Full OSM URL — way_id/relation_id extracted automatically.
-            num_floors: Number of floors (default 2).
-            floor_height: Floor-to-floor height [m] (default 2.5).
+            num_floors: Explicit floor count, overriding source levels.
+            floor_height: Explicit floor-to-floor height [m], overriding source height.
+                Omitted values require sufficient source evidence.
 
         Returns:
             BuildingGeometry in local metric coordinates.
 
         Example:
-            >>> geom = FootprintImporter.from_osm(way_id=90851303)
-            >>> geom = FootprintImporter.from_osm(url="https://www.openstreetmap.org/way/90851303")
+            >>> geom = FootprintImporter.from_osm(
+            ...     way_id=90851303, num_floors=2, floor_height=2.5)
         """
         import re
         import requests
@@ -200,7 +290,44 @@ class FootprintImporter:
         resp.raise_for_status()
         data = resp.json()
 
-        # Build node lookup
+        # Relations identify courtyard rings by member role. Check this before
+        # extracting any outer way, which cannot retain those holes.
+        if element_type == "relation":
+            for element in data["elements"]:
+                if (
+                    element["type"] == "relation"
+                    and element["id"] == element_id
+                    and any(
+                        member.get("role") == "inner" for member in element.get("members", [])
+                    )
+                ):
+                    raise ValueError(
+                            "OSM relation courtyard/interior ring assembly is unsupported; "
+                            "supply a complete Polygon through from_geojson or from_shapely."
+                    )
+
+        target_way_id = element_id
+        relation_tags = {}
+        if element_type == "relation":
+            relation = next(
+                (element for element in data["elements"]
+                 if element["type"] == "relation" and element["id"] == element_id),
+                None,
+            )
+            if relation is None:
+                raise ValueError(f"OSM relation/{element_id}: relation metadata is missing")
+            members = relation.get("members", [])
+            if len(members) != 1 or members[0].get("type") != "way" or (
+                members[0].get("role") != "outer"
+            ):
+                raise ValueError(
+                    f"OSM relation/{element_id}: only one explicitly identified outer way "
+                    "is supported; multipart or ambiguous relations cannot be imported."
+                )
+            target_way_id = members[0]["ref"]
+            relation_tags = relation.get("tags", {})
+
+        # Build node lookup and select only the declared outer way.
         nodes: Dict[int, Tuple[float, float]] = {}
         way_nodes: Optional[List[int]] = None
         tags: Dict[str, str] = {}
@@ -208,16 +335,17 @@ class FootprintImporter:
         for el in data["elements"]:
             if el["type"] == "node":
                 nodes[el["id"]] = (el["lon"], el["lat"])
-            elif el["type"] == "way" and el["id"] == element_id:
+            elif el["type"] == "way" and el["id"] == target_way_id:
                 way_nodes = el["nodes"]
                 tags = el.get("tags", {})
-            elif el["type"] == "way" and element_type == "relation":
-                # For relations, collect all ways (take outer ring)
-                if way_nodes is None:
-                    way_nodes = el["nodes"]
 
         if way_nodes is None:
             raise ValueError(f"OSM {element_type}/{element_id}: no way nodes found")
+        if element_type == "relation" and (
+            len(way_nodes) < 4 or way_nodes[0] != way_nodes[-1]
+        ):
+            raise ValueError(f"OSM relation/{element_id}: outer way must be a closed ring")
+        tags = {**tags, **relation_tags}
 
         # Resolve coordinates (lon, lat)
         coords = []
@@ -233,21 +361,11 @@ class FootprintImporter:
                 f"OSM {element_type}/{element_id}: only {len(coords)} vertices"
             )
 
-        # Try to get floor count from OSM tags
-        if num_floors == 2:  # only override if user didn't specify
-            for tag in ("building:levels", "levels"):
-                if tag in tags:
-                    try:
-                        num_floors = int(tags[tag])
-                        logger.info("OSM tag %s=%d", tag, num_floors)
-                    except ValueError:
-                        pass
-                    break
-
         poly = ShapelyPolygon(coords)
         geom = _polygon_to_geometry(
             poly, source_crs="EPSG:4326",
             num_floors=num_floors, floor_height=floor_height,
+            properties=tags,
         )
 
         # Attach OSM metadata
@@ -266,8 +384,8 @@ class FootprintImporter:
         source: Union[str, Path, Dict],
         *,
         feature_index: int = 0,
-        num_floors: int = 2,
-        floor_height: float = 2.5,
+        num_floors: int | None = None,
+        floor_height: float | None = None,
         crs: Optional[str] = None,
     ) -> BuildingGeometry:
         """Load a building footprint from GeoJSON.
@@ -275,16 +393,17 @@ class FootprintImporter:
         Args:
             source: File path, or a GeoJSON dict (Feature or FeatureCollection).
             feature_index: Which feature to use (if FeatureCollection).
-            num_floors: Number of floors.
-            floor_height: Floor-to-floor height [m].
+            num_floors: Explicit floor count, overriding source levels. None uses evidence.
+            floor_height: Explicit floor-to-floor height [m]. None uses source height.
+                Missing required evidence raises ValueError.
             crs: Override CRS (default: auto-detect; GeoJSON is typically EPSG:4326).
 
         Returns:
             BuildingGeometry in local metric coordinates.
 
         Example:
-            >>> geom = FootprintImporter.from_geojson("building.geojson")
-            >>> geom = FootprintImporter.from_geojson({"type": "Feature", ...})
+            >>> geom = FootprintImporter.from_geojson(
+            ...     "building.geojson", num_floors=2, floor_height=2.5)
         """
         if isinstance(source, (str, Path)):
             path = Path(source)
@@ -309,36 +428,27 @@ class FootprintImporter:
             raise ValueError(f"Unsupported GeoJSON type: {data.get('type')}")
 
         geom_obj = shapely_shape(feature["geometry"])
-        if geom_obj.geom_type == "MultiPolygon":
-            # Take the largest polygon
-            geom_obj = max(geom_obj.geoms, key=lambda g: g.area)
-        if geom_obj.geom_type != "Polygon":
-            raise ValueError(f"Expected Polygon, got {geom_obj.geom_type}")
+        if geom_obj.geom_type not in {"Polygon", "MultiPolygon"}:
+            raise ValueError(
+                f"Expected Polygon or MultiPolygon, got unsupported {geom_obj.geom_type}"
+            )
 
-        # Try to infer floors from properties
         props = feature.get("properties", {}) or {}
-        if num_floors == 2:
-            for key in ("building:levels", "levels", "floors", "num_floors"):
-                if key in props:
-                    try:
-                        num_floors = int(props[key])
-                    except (ValueError, TypeError):
-                        pass
-                    break
 
         # GeoJSON is EPSG:4326 by spec unless overridden
         effective_crs = crs or "EPSG:4326"
         return _polygon_to_geometry(
             geom_obj, source_crs=effective_crs,
             num_floors=num_floors, floor_height=floor_height,
+            properties=props,
         )
 
     @staticmethod
     def from_geojson_multi(
         source: Union[str, Path, Dict],
         *,
-        num_floors: int = 2,
-        floor_height: float = 2.5,
+        num_floors: int | None = None,
+        floor_height: float | None = None,
         crs: Optional[str] = None,
         max_features: Optional[int] = None,
     ) -> List[BuildingGeometry]:
@@ -379,8 +489,8 @@ class FootprintImporter:
         path: Union[str, Path],
         *,
         fid: Optional[int] = None,
-        num_floors: int = 2,
-        floor_height: float = 2.5,
+        num_floors: int | None = None,
+        floor_height: float | None = None,
         crs_override: Optional[str] = None,
         max_features: Optional[int] = None,
     ) -> Union[BuildingGeometry, List[BuildingGeometry]]:
@@ -392,8 +502,9 @@ class FootprintImporter:
             path: Path to .shp file.
             fid: Feature index to load (returns single BuildingGeometry).
                  If None, loads all features (returns list).
-            num_floors: Number of floors.
-            floor_height: Floor-to-floor height [m].
+            num_floors: Explicit floor count, overriding source levels. None uses evidence.
+            floor_height: Explicit floor-to-floor height [m]. None uses source height.
+                Missing required evidence raises ValueError (or a warning in batch imports).
             crs_override: Force a specific CRS (e.g. "EPSG:3006").
             max_features: Max features to load (when fid is None).
 
@@ -401,8 +512,8 @@ class FootprintImporter:
             Single BuildingGeometry if fid is set, else list.
 
         Example:
-            >>> geom = FootprintImporter.from_shapefile("buildings.shp", fid=0)
-            >>> geoms = FootprintImporter.from_shapefile("buildings.shp")
+            >>> geom = FootprintImporter.from_shapefile(
+            ...     "buildings.shp", fid=0, num_floors=2, floor_height=2.5)
         """
         import fiona
 
@@ -436,11 +547,10 @@ class FootprintImporter:
             if fid is not None:
                 feat = src[fid]
                 geom_obj = shapely_shape(feat["geometry"])
-                if geom_obj.geom_type == "MultiPolygon":
-                    geom_obj = max(geom_obj.geoms, key=lambda g: g.area)
                 return _polygon_to_geometry(
                     geom_obj, source_crs=file_crs,
                     num_floors=num_floors, floor_height=floor_height,
+                    properties=dict(feat["properties"]),
                 )
 
             for i, feat in enumerate(src):
@@ -448,13 +558,10 @@ class FootprintImporter:
                     break
                 try:
                     geom_obj = shapely_shape(feat["geometry"])
-                    if geom_obj.geom_type == "MultiPolygon":
-                        geom_obj = max(geom_obj.geoms, key=lambda g: g.area)
-                    if geom_obj.geom_type != "Polygon":
-                        continue
                     g = _polygon_to_geometry(
                         geom_obj, source_crs=file_crs,
                         num_floors=num_floors, floor_height=floor_height,
+                        properties=dict(feat["properties"]),
                     )
                     results.append(g)
                 except Exception as e:
