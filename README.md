@@ -2,7 +2,8 @@
 
 Reduced-order thermal calculation using the existing ISO 13790 5R1C implementation.
 The package and import are now `epsm_rc` (previously `SweThermalModel` /
-`swethermalmodel`). Numerical solver behavior was preserved during the rename.
+`swethermalmodel`). The rename preserved the original solver; subsequent recovery corrections
+change historical standalone numerical results as described below.
 
 ```python
 from epsm_rc import create_swedish_villa
@@ -55,9 +56,10 @@ another entry point. Batches warn and skip unsupported or incomplete features.
 inputs. Missing constructions, glazing, HVAC and operation stay missing.
 Transferring selected WWR requires explicit glazing rather than a guessed U-value
 or SHGC. `to_core_facade(glazing)` creates the shared facade specification.
-Selected geometry values transfer to Core; original GIS `height_evidence` remains
-on the wrapper because the current Core snapshot has no field for that source
-record. Retain the wrapper evidence alongside the model when needed.
+Selected geometry values and GIS `height_evidence` transfer to Core. Source
+records distinguish inferred heights from caller assumptions and survive snapshot
+roundtrips. Geometry edits invalidate the associated source records; the original
+wrapper also remains available for source inspection.
 
 ```python
 from epsm_rc import BuildingGeometry
@@ -148,8 +150,10 @@ GIS `height_evidence` is transferred into Core `SourceRecord.evidence` by
 assumed, and optional caller-supplied provenance takes precedence. Copying and JSON
 roundtrips retain that evidence; editing geometry invalidates its source records.
 
-The platform extra requires Python 3.11+ and the coordinated Data/Core versions
-on `codex/harmonisation`. Install these repositories first, then this package.
+The platform extra requires Python 3.11+ and compatible Data/Core packages.
+Install the tested dependency wheels first, then `python -m pip install ".[platform]"`.
+Use the tested package combination in the EPSM README for the tested versions and source revisions;
+private dependencies need access through your configured index or local checkouts.
 
 ```python
 from epsm_core import Building, Weather
