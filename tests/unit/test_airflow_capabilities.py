@@ -8,9 +8,9 @@ from epsm_rc import RCSettings, platform, simulate_building
 
 
 @pytest.fixture
-def core_inputs():
+def core_inputs(reference_building):
     core = pytest.importorskip("epsm_core")
-    return core.Building(), core.Weather.from_epw(files("epsm_rc").joinpath("data/epw/goteborg.epw"))
+    return reference_building, core.Weather.from_epw(files("epsm_rc").joinpath("data/epw/goteborg.epw"))
 
 
 @pytest.mark.parametrize("parameters,field", [

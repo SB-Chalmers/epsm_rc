@@ -31,9 +31,8 @@ def weather():
     return core.Weather.from_epw(files("epsm_rc").joinpath("data/epw/goteborg.epw"))
 
 
-def authored_building(case):
+def authored_building(case, building):
     core = pytest.importorskip("epsm_core")
-    building = core.Building()
     building.geometry = core.GeometrySpec.from_footprint(
         geometry_fixture(case), storeys=1, storey_height_m=3,
     )
@@ -41,8 +40,8 @@ def authored_building(case):
 
 
 @pytest.mark.parametrize("case", ["courtyard", "concave", "multipart"])
-def test_affected_geometry_rejected_before_solver(case, weather, monkeypatch):
-    building = authored_building(case)
+def test_affected_geometry_rejected_before_solver(case, weather, monkeypatch, reference_building):
+    building = authored_building(case, reference_building)
 
     def forbidden(*args, **kwargs):
         pytest.fail("Affected geometry reached solver without an omission policy")
@@ -58,9 +57,9 @@ def test_affected_geometry_rejected_before_solver(case, weather, monkeypatch):
 
 
 @pytest.mark.parametrize("case", ["courtyard", "concave", "multipart"])
-def test_explicit_omission_is_reported_for_affected_geometry(case, weather):
+def test_explicit_omission_is_reported_for_affected_geometry(case, weather, reference_building):
     result = simulate_building(
-        authored_building(case), weather=weather,
+        authored_building(case, reference_building), weather=weather,
         settings=RCSettings(
             airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier",
             self_shadowing_policy="ignore",
@@ -74,9 +73,8 @@ def test_explicit_omission_is_reported_for_affected_geometry(case, weather):
     assert result.scalars["space_heating_demand_kwh"] > 0
 
 
-def test_convex_unshaded_case_remains_accepted_and_policy_is_in_identity(weather):
-    core = pytest.importorskip("epsm_core")
-    building = core.Building()
+def test_convex_unshaded_case_remains_accepted_and_policy_is_in_identity(weather, reference_building):
+    building = reference_building
     results = [simulate_building(
         building, weather=weather,
         settings=RCSettings(

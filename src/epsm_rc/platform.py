@@ -249,6 +249,46 @@ def _airflow_capabilities(airflow, settings: RCSettings) -> dict:
     return {"effective_model": settings.airflow_policy, "omitted_inputs": omitted}
 
 
+def _gain_inputs(use, reference_area, year, settings):
+    """Resolve supplied heat channels or the explicitly selected legacy RC policy."""
+    def annual(schedule):
+        return np.asarray(schedule.hourly(year), dtype=float)
+
+    partitions = use.gain_partitions
+    if partitions is not None and partitions.policy == "explicit":
+        from epsm_core.gains import resolve_internal_gains
+
+        channels = resolve_internal_gains(use, reference_area_m2=reference_area, calendar_year=year)
+        if any(channels.unresolved_people_w):
+            raise ValueError("epsm_rc requires an explicit people sensible heat fraction for active people gains")
+        if any(channels.return_air_w):
+            raise ValueError("epsm_rc does not support active lighting return-air heat")
+        convective = np.asarray(channels.convective_w)
+        radiant = np.asarray(channels.radiant_w)
+        report = {
+            "policy": "shared_explicit", "aggregate_split_applied": False,
+            "supplied_partitions": partitions.model_dump(mode="json"),
+            "visible_lighting_treatment": "radiant_heat_deposited_on_room_surfaces",
+            "latent_treatment": "excluded_from_sensible_thermal_network",
+            "channel_energy_kwh": {name: sum(getattr(channels, name)) / 1000 for name in (
+                "convective_w", "radiant_w", "latent_w", "lost_w", "return_air_w")},
+        }
+        return convective + radiant, convective, radiant, report
+
+    activity = annual(use.occupant_activity_schedule) if use.occupant_activity_schedule else use.occupant_activity_w
+    heat = annual(use.equipment_heat_fraction_schedule) if use.equipment_heat_fraction_schedule else use.equipment_heat_fraction
+    gains = reference_area * (
+        use.occupant_density_per_m2 * activity * annual(use.occupancy_fraction)
+        + use.equipment_gain_w_m2 * heat * annual(use.equipment_fraction)
+        + use.lighting_gain_w_m2 * annual(use.lighting_fraction))
+    convective = gains * settings.convective_internal_gains_fraction
+    return gains, convective, gains - convective, {
+        "policy": "legacy_sensible_from_explicit_rc_policy", "aggregate_split_applied": True,
+        "core_policy": partitions.policy if partitions is not None else "legacy_default",
+        "occupant_treatment": "all_activity_treated_as_sensible",
+    }
+
+
 def _ground_reduction(envelope, settings: RCSettings) -> tuple[tuple | None, float, dict]:
     """Preserve prescribed monthly boundaries or require an explicit approximation."""
     requested = envelope.foundation.model_dump(mode="json")
@@ -420,15 +460,24 @@ def simulate_building(
         raise ValueError("EPW contents changed after Weather was created")
     building.readiness(engine="epsm_rc", weather=weather).require()
     spec = building.to_spec(weather)
+    gains, convective_gains, radiant_gains, gain_reduction = _gain_inputs(
+        spec.use, spec.load_reference_area_m2 or spec.geometry.conditioned_floor_area_m2,
+        spec.climate.calendar_year, settings)
     airflow_capabilities = _airflow_capabilities(spec.airflow, settings)
     ground, ground_multiplier, ground_reduction = _ground_reduction(spec.envelope, settings)
     self_shadowing = _self_shadowing_capabilities(spec.geometry, settings)
+    effective_configuration = settings.effective_configuration()
+    effective_configuration["gain_reduction"] = gain_reduction
+    if not gain_reduction["aggregate_split_applied"]:
+        effective_configuration["inactive_coefficients"] = ["convective_internal_gains_fraction"]
+        effective_configuration["methods"]["occupant_gains"] = "supplied_sensible_fraction"
+        effective_configuration["methods"]["gain_partition"] = "shared_hourly_sensible_channels"
     implementation = _implementation_identity()
     run_id = hashlib.sha256(
         json.dumps(
             {
                 "physical_inputs": spec.physical_dict(),
-                "settings": settings.effective_configuration(),
+                "settings": effective_configuration,
                 "implementation": implementation,
             },
             sort_keys=True,
@@ -520,21 +569,6 @@ def simulate_building(
         return np.asarray(schedule.hourly(year), dtype=float)
 
     heat_set, cool_set = annual(use.heating_setpoint), annual(use.cooling_setpoint)
-    people_activity = (
-        annual(use.occupant_activity_schedule)
-        if use.occupant_activity_schedule
-        else np.full(len(heat_set), use.occupant_activity_w)
-    )
-    equipment_fraction = (
-        annual(use.equipment_heat_fraction_schedule)
-        if use.equipment_heat_fraction_schedule
-        else np.full(len(heat_set), use.equipment_heat_fraction)
-    )
-    gains = reference_area * (
-        use.occupant_density_per_m2 * people_activity * annual(use.occupancy_fraction)
-        + use.equipment_gain_w_m2 * equipment_fraction * annual(use.equipment_fraction)
-        + use.lighting_gain_w_m2 * annual(use.lighting_fraction)
-    )
     capacity = sum(c.total_thermal_mass_j_k for c in constructions)
     if not constructions or not np.isfinite(capacity) or capacity <= 0:
         raise ValueError("RC reduction requires positive thermal mass from explicit constructions")
@@ -685,6 +719,9 @@ def simulate_building(
     power, indoor = np.zeros(len(axis)), np.zeros(len(axis))
     model.t_m = model.t_air = model.t_s = float(heat_set[0])
     for hour, temperature in enumerate(temperatures):
+        if not gain_reduction["aggregate_split_applied"]:
+            model.convective_fraction_internal = (
+                float(convective_gains[hour] / gains[hour]) if gains[hour] > 0 else 0.0)
         model.t_set_heating, model.t_set_cooling = heat_set[hour], cool_set[hour]
         correction = (
             coefficients[0]
@@ -713,6 +750,8 @@ def simulate_building(
         "space_heating_demand_kwh": np.maximum(power, 0) / 1000,
         "cooling_demand_kwh": np.maximum(-power, 0) / 1000,
         "indoor_temperature_c": indoor,
+        "internal_gains_convective_w": convective_gains,
+        "internal_gains_radiant_w": radiant_gains,
     }
     dhw = annual(use.dhw_fraction)
     hourly["dhw_load_kwh"] = (
@@ -732,12 +771,13 @@ def simulate_building(
     )
     hourly.update(heating_delivery(spec, hourly["space_heating_demand_kwh"], report))
     scalars = {key: float(values.sum()) for key, values in hourly.items() if key.endswith("kwh")}
-    units = {key: "kWh" if key.endswith("kwh") else "C" for key in hourly}
+    units = {key: "kWh" if key.endswith("kwh") else "W" if key.endswith("_w") else "C" for key in hourly}
     diagnostics = dict(
         accepted=all(np.isfinite(v).all() for v in hourly.values()),
         engine="epsm_rc",
         reduction=asdict(settings),
-        effective_configuration=settings.effective_configuration(),
+        effective_configuration=effective_configuration,
+        gain_reduction=gain_reduction,
         reduced_properties={
             "internal_surface_area_m2": model._a_tot,
             "effective_mass_area_m2": model._mass_area,
@@ -764,7 +804,7 @@ def simulate_building(
             "Ground boundary or conductance multiplier explicitly selected and reported",
             "Solar gains use fixed whole-window SHGC",
             "No fan heat feedback",
-            "Sensible-only model treats all occupant activity as sensible gain",
+            "Explicit gain partitions use supplied sensible heat; legacy gain treatment is separately reported",
             "Internal area, gain split, node transfer and air heat capacity from explicit policy",
             "Fixed sky-air difference and sky exchange coefficients from explicit policy",
             "Heat recovery reduces mechanical conductance once; infiltration is unrecovered",

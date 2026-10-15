@@ -9,9 +9,9 @@ from epsm_rc.platform import _Platform5R1C
 
 
 @pytest.fixture
-def inputs():
+def inputs(reference_building):
     core = pytest.importorskip("epsm_core")
-    return core.Building(), core.Weather.from_epw(files("epsm_rc").joinpath("data/epw/goteborg.epw"))
+    return reference_building, core.Weather.from_epw(files("epsm_rc").joinpath("data/epw/goteborg.epw"))
 
 
 def test_missing_reduction_policy_is_rejected_before_io():
