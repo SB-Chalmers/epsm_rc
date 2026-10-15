@@ -1,5 +1,7 @@
 # EPSM RC
 
+Version **0.3.0**; the shared Building interface requires Core **0.3.0+**.
+
 Reduced-order thermal calculation using the existing ISO 13790 5R1C implementation.
 The package and import are now `epsm_rc` (previously `SweThermalModel` /
 `swethermalmodel`). The rename preserved the original solver; subsequent recovery corrections
@@ -258,3 +260,12 @@ Code includes adaptations credited in the source to DIBS/IWU and
 RC_BuildingSimulator/ETH. Retain their original notices. EPSM-owned additions use
 MIT; see LICENSE. Local ISO reference extracts are excluded from publication.
 Bundled weather inputs retain their source headers.
+
+## Migrating to 0.3.0
+
+Select explicit `RCSettings.from_policy(...)`, weather and physical authoring
+inputs. Courtyard, concave and multipart geometry requires an explicit
+self-shadowing omission; unsupported airflow and ground behavior need the
+corresponding reduction policies. The Core-based geometry and shared gain inputs
+require Core 0.3.0+. Historical standalone recovery results must be recalculated.
+No scientific equivalence with EnergyPlus is implied by this version change.
