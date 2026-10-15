@@ -151,6 +151,10 @@ def operation(event, *, level=logging.INFO, traceback=False):
                 value = vars(result).get(name) if hasattr(result, "__dict__") else None
                 if isinstance(value, (str, int)):
                     details[name] = value
+            if event == "energy.rc" and hasattr(result, "__dict__"):
+                axis = vars(result).get("time_axis")
+                if axis is not None:
+                    details["hours"] = len(axis)
             if isinstance(result, (list, tuple)):
                 details["item_count"] = len(result)
             if isinstance(result, tuple) and result and isinstance(result[0], dict):

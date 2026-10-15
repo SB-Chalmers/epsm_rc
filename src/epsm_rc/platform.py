@@ -39,7 +39,7 @@ from pvlib import atmosphere, irradiance, solarposition
 from pvlib.iotools import read_epw
 from shapely.geometry import Polygon
 
-from epsm_rc._logging import call_with_context, context_logger
+from epsm_rc._logging import bind_context, call_with_context, context_logger
 from epsm_rc._logging import operation as logged_operation
 
 from .iso13790 import Building5R1C, Construction, ConstructionLayer
@@ -491,6 +491,7 @@ def simulate_building(
             allow_nan=False,
         ).encode()
     ).hexdigest()
+    bind_context(run_id=run_id)
     year = spec.climate.calendar_year
     validate_epw_calendar(weather.path, year)
     if spec.zone_uses or spec.common_use or spec.common_airflow or spec.unconditioned_exchange:

@@ -1,6 +1,6 @@
 # EPSM RC
 
-Version **0.3.0**; the shared Building interface requires Core **0.3.0+**.
+Version **0.4.0**; the shared Building interface requires Core **0.3.0+**.
 
 Reduced-order thermal calculation using the existing ISO 13790 5R1C implementation.
 The package and import are now `epsm_rc` (previously `SweThermalModel` /
