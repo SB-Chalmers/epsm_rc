@@ -12,7 +12,7 @@ jobs:
       fail-fast: false
       matrix:
         python: ['3.11', '3.13']
-        core: ['7578fc6f3fd902cb2a46b3f7f45690f602b884ce', 'dev']
+        core: ['4f7f746d1158893f73e0cf601b62fe41c35f5c73', 'dev']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
@@ -65,7 +65,7 @@ jobs:
           repository: SB-Chalmers/epsm_core
           ssh-key: ${{ secrets.EPSM_CORE_DEPLOY_KEY }}
           persist-credentials: false
-          ref: 7578fc6f3fd902cb2a46b3f7f45690f602b884ce
+          ref: 4f7f746d1158893f73e0cf601b62fe41c35f5c73
           path: .ci/epsm_core
       - uses: actions/setup-python@v5
         with:
