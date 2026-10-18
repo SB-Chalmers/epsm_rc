@@ -1,6 +1,12 @@
 # EPSM RC
 
-Version **0.4.0**; the shared Building interface requires Core **0.3.0+**.
+Version **0.6.0**; the shared Building interface requires Core **0.6.x** and Data **0.6.x**.
+
+Caller-owned preparation reuse accelerates independent runs while retaining v1
+results. Explicit `epsm_rc_5r1c_v2` adds midpoint solar sampling and angular glazing
+optics; see [radiation policies, limitations and migration](docs/radiation.md) and
+[installed-wheel benchmarks](benchmarks/README.md). Geometric shading and dynamic
+longwave exchange remain outside this release.
 
 Reduced-order thermal calculation using the existing ISO 13790 5R1C implementation.
 The package and import are now `epsm_rc` (previously `SweThermalModel` /
@@ -137,6 +143,15 @@ print(geometry.height_evidence)
 ```
 
 ## Shared Building interface
+
+Core physical boundaries control which elements exchange heat with outdoors or
+ground. Shared facade contact is adiabatic under an explicit modelling assumption;
+neighbour temperatures are not required. Only the contacting part is removed
+from outdoor transmission, opaque solar absorption and sky radiation. Core places
+windows on the remaining outdoor area. All installed opaque constructions,
+including shared walls and internal elements, retain their depth-limited thermal
+storage. See [boundary reduction](docs/boundaries.md) for the input contract and
+limitations.
 
 Explicit Core gain partitions now drive the RC sensible heat budget and hourly
 convective/radiant split. Equipment latent heat is excluded from that sensible

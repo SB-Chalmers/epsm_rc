@@ -1,3 +1,44 @@
+# Release 0.6.0 — 18 October 2026
+
+Shared Building calculations respect Core's physical element boundaries. Shared
+contact patches contribute no outdoor transmission, opaque solar absorption or
+sky loss; their installed opaque constructions retain thermal capacity. Internal
+walls within the aggregated conditioned domain likewise retain mass without
+outdoor exchange. Core owns partial contact geometry, window placement and one
+physical material owner per internal wall. Neighbour temperature and heating
+evidence are not required for the explicit adiabatic approximation.
+
+Boundary-area diagnostics make the reduction inspectable. Unsupported geometry
+and basement readiness checks still apply. Detached calculations preserve their
+hourly thermal results; input and implementation identities include the changed
+boundary contract. See [boundary reduction](docs/boundaries.md).
+
+The platform extra requires Core >=0.6.0,<0.7 and Data >=0.6.0,<0.7 because these
+versions supply the tested public boundary and construction contracts. Numerical
+standalone imports remain independent of Core. Research runners must additionally
+pin the exact tested package releases or commits; these compatibility ranges are
+not a substitute for study input identities.
+
+# Release 0.5.0 — 18 October 2026
+
+Deterministic Core reductions reuse fixed thermal properties, hourly network
+coefficients and zero-load states. Calendar preparation, NumPy radiation and
+orientation reuse reduce repeated work. Optional caller-owned `PreparationCache`
+reuses weather and radiation preparation while rechecking source/weather contents
+and creating fresh thermal state on every run. The installed-wheel benchmark
+compares every hourly channel and annual total with released v1 behavior.
+
+The explicitly selected `epsm_rc_5r1c_v2` policy adds midpoint solar sampling and
+documented angular simple-glazing optics with nominal inward absorbed solar.
+`epsm_rc_5r1c_v1` preserves its numerical behavior. New radiation components,
+method assumptions and limitations are inspectable. Dynamic longwave and geometric
+shading are excluded. See [radiation and migration](docs/radiation.md).
+
+The platform extra now requires Core >=0.5.0 and Data >=0.6.0. CI records approved
+dependency commits and also tests development dependencies. Third-party optical
+correlation notices ship with the distribution. No measured-building accuracy or
+identical EnergyPlus/RC demand is claimed.
+
 # Release 0.4.0 — 15 October 2026
 
 Physical-model reduction, annual calculations and GIS operations. Completion records retain the calculated run identity.
