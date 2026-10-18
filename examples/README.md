@@ -1,7 +1,7 @@
 # RC examples
 
 Use Python 3.11 or 3.13 for the shared Core interface. The coordinated release
-uses RC 0.5.0, Core 0.5.0 and Data 0.6.0. Install `epsm_rc[platform,gis,notebook]`
+uses RC 0.6.0, Core 0.6.0 and Data 0.6.0. Install `epsm_rc[platform,gis,notebook]`
 in the notebook's kernel; install EnergyPlus 24.2 only for the engine comparison.
 Package installation belongs in the environment, not in notebook cells.
 
@@ -11,6 +11,7 @@ Package installation belongs in the environment, not in notebook cells.
 | `10_osm_neighbourhood_simulation.py` | GIS ingestion; inspect its declared external input/service prerequisites. |
 | `11_core_engine_comparison.py` | A captured physical Core Building through both engines; requires explicit snapshot, weather, RC settings and EnergyPlus. |
 | `12_prepared_radiation.ipynb` | Fresh independent thermal runs with optional preparation reuse, legacy equivalence and explicitly selected angular radiation. Uses one named illustrative Building and the packaged Goteborg EPW; writes no result directory. |
+| `13_shared_wall_boundaries.ipynb` | Partial shared wall from explicit metric neighbour geometry, adiabatic opaque inventory, outdoor-only windows and RC boundary diagnostics. Uses the packaged EPW and writes no result directory. |
 
 Run the notebook from a fresh installed-package kernel. Its assertions check exact
 cache equivalence, calendar preservation and optical heat-gain accounting. Clear

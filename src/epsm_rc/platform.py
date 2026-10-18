@@ -15,6 +15,9 @@ The reduction combines conditioned space into one temperature domain. Material
 inventory remains in Core; only transport/storage equivalents enter this model.
 Solar radiation uses actual facade azimuths and Perez irradiance with the supplied
 scalar window shading factor. Geometric site shading is unsupported.
+Core's physical element boundaries determine exposure. Adiabatic/shared and
+internal opaque elements retain their depth-limited thermal storage but contribute
+no outdoor transmission, absorbed solar radiation or sky exchange.
 Self-shadowing for courtyards, concave footprints or multiple parts requires an
 explicit omission policy, reported in diagnostics and calculation identity.
 Weather is read explicitly; optional output writes hourly arrays. No catalogue loads occur
@@ -264,6 +267,7 @@ class RCSettings:
                 "occupant_gains": "all_activity_treated_as_sensible",
                 "fan_heat": "omitted",
                 "thermal_domain": "one_conditioned_domain",
+                "boundaries": "core_physical_element_boundaries",
                 "initial_temperature": "first_hour_heating_setpoint",
                 "integration": "hourly_crank_nicolson",
                 "control": "air_temperature",
@@ -600,7 +604,11 @@ def simulate_building(
     optical_models = {}
     if settings.window_optics_method == "simple_glazing_angular_v1":
         for element in elements:
-            if element.role.value == "WINDOW" and element.area_m2 > 0:
+            if (
+                element.role.value == "WINDOW"
+                and element.boundary == "Outdoors"
+                and element.area_m2 > 0
+            ):
                 glass = element.construction
                 key = (glass.u_value, glass.shgc)
                 if key not in optical_models:
@@ -620,7 +628,10 @@ def simulate_building(
             if role == "WINDOW"
             else None
         )
-        if key:
+        # The role selects the construction category; the boundary selects the
+        # heat-transfer path. A shared facade keeps its physical construction
+        # below, including mass, without becoming an outdoor wall in the RC model.
+        if key and element.boundary == ("Ground" if key == "ground" else "Outdoors"):
             grouped[key].append(element)
         assembly = element.construction
         if assembly is None:
@@ -778,6 +789,8 @@ def simulate_building(
     )
     for element in elements:
         role = element.role.value
+        if element.boundary != "Outdoors":
+            continue
         if role not in {"WINDOW", "ROOF", "TOP_FLOOR"} and not role.startswith("EXT_WALL"):
             continue
         roof = role in {"ROOF", "TOP_FLOOR"}
@@ -1000,11 +1013,31 @@ def simulate_building(
         },
         "implementation": implementation,
         "physical_inputs_sha256": spec.physical_hash(),
+        "boundary_reduction": {
+            "source": "Core physical element boundaries",
+            "outdoor_opaque_area_m2": areas["wall"] + areas["roof"],
+            "ground_area_m2": areas["ground"],
+            "outdoor_window_area_m2": areas["window"],
+            "adiabatic_opaque_area_m2": sum(
+                element.area_m2 for element in elements
+                if element.boundary == "Adiabatic"
+                and hasattr(element.construction, "components")
+            ),
+            "internal_opaque_area_m2": sum(
+                element.area_m2 for element in elements
+                if element.boundary == "Internal"
+                and hasattr(element.construction, "components")
+            ),
+            "opaque_capacity_basis": "one room-side effective depth per installed opaque element",
+            "internal_active_depth_faces": 1,
+            "neighbor_temperature_modelled": False,
+        },
         "airflow_capabilities": airflow_capabilities,
         "ground_reduction": ground_reduction,
         "self_shadowing": self_shadowing,
         "approximations": [
             "One aggregated conditioned thermal domain",
+            "Shared walls are adiabatic; shared/internal depth-limited opaque storage is retained",
             "Perez solar gains with scalar window shading; no geometric site shading",
             "Room-side mass depth and construction-capacity mass-area rule from explicit policy",
             "Ground boundary or conductance multiplier explicitly selected and reported",
