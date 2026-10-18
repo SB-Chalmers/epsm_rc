@@ -131,6 +131,7 @@ jobs:
           git -C .ci/epsm_core rev-parse HEAD
           git -C .ci/epsm_data rev-parse HEAD
           "$ENERGYPLUS_EXE" --version
+          mkdir -p outputs
           python -m pytest tests/unit/test_annual_engine_integration.py tests/unit/test_core_engine_comparison.py tests/unit/test_radiation_engine_comparison.py --junitxml=integration-results.xml --basetemp=outputs/integration -q
           python - <<'PY'
           import xml.etree.ElementTree as ET
