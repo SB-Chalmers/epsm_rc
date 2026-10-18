@@ -10,8 +10,9 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import OrderedDict
+from collections.abc import Callable
 from copy import deepcopy
-from typing import Callable, TypeVar
+from typing import TypeVar
 
 T = TypeVar("T")
 

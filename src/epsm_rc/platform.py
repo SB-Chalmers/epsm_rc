@@ -43,7 +43,9 @@ from epsm_rc._logging import bind_context, call_with_context, context_logger
 from epsm_rc._logging import operation as logged_operation
 
 from .iso13790 import Building5R1C, Construction, ConstructionLayer
+from .optics import SimpleGlazingOptics
 from .preparation import PreparationCache
+from .radiation import plane_irradiance
 
 if TYPE_CHECKING:
     from epsm_core import Building, Weather
@@ -75,7 +77,7 @@ class RCSettings:
         ``sensible_only_unlimited_supply`` to explicitly omit these fields.
         Omitted requested values are retained in result diagnostics.
     policy_version : str
-        Version of the baseline defaults, ``epsm_rc_5r1c_v1``. Explicit
+        Version of the baseline defaults, ``epsm_rc_5r1c_v1`` or v2. Explicit
         overrides are retained alongside this baseline identity.
     internal_surface_area_factor, mass_area_factors : float or tuple
         Ratios to conditioned floor area. Mass-area factors correspond to
@@ -107,6 +109,13 @@ class RCSettings:
         ``reject`` (default) requires an explicit decision for courtyards,
         concave footprints and multiple parts. ``ignore`` acknowledges omitted
         self-shadowing; it does not enable geometric site shading.
+    solar_time_reference : str
+        ``hour_start`` retains v1; ``interval_midpoint`` samples solar position
+        half an hour into each weather interval without changing result labels.
+    window_optics_method : str
+        ``constant_shgc`` retains v1; ``simple_glazing_angular_v1`` selects the
+        documented specular equivalent-layer approximation with beam/diffuse
+        optics and nominal inward absorption. Explicit v2 selects both upgrades.
 
     Notes
     -----
@@ -142,6 +151,8 @@ class RCSettings:
     monthly_ground_temperatures_c: tuple[float, ...] | None = None
     monthly_ground_temperature_source: str | None = None
     self_shadowing_policy: str = "reject"
+    solar_time_reference: str = "hour_start"
+    window_optics_method: str = "constant_shgc"
 
     def __post_init__(self):
         if not np.isfinite(self.effective_mass_depth_m) or self.effective_mass_depth_m <= 0:
@@ -152,8 +163,12 @@ class RCSettings:
             raise ValueError(
                 "Unknown airflow_policy; choose reject or sensible_only_unlimited_supply"
             )
-        if self.policy_version != "epsm_rc_5r1c_v1":
+        if self.policy_version not in {"epsm_rc_5r1c_v1", "epsm_rc_5r1c_v2"}:
             raise ValueError("Unknown reduction policy version")
+        if self.solar_time_reference not in {"hour_start", "interval_midpoint"}:
+            raise ValueError("Unknown solar_time_reference")
+        if self.window_optics_method not in {"constant_shgc", "simple_glazing_angular_v1"}:
+            raise ValueError("Unknown window_optics_method")
         positive = (
             "internal_surface_area_factor",
             "surface_air_coefficient_w_m2_k",
@@ -216,7 +231,15 @@ class RCSettings:
     @classmethod
     def from_policy(cls, name: str, **overrides) -> RCSettings:
         """Select the named baseline profile with inspectable explicit overrides."""
-        return cls(policy_version=name, **overrides)
+        selected = (
+            {
+                "solar_time_reference": "interval_midpoint",
+                "window_optics_method": "simple_glazing_angular_v1",
+            }
+            if name == "epsm_rc_5r1c_v2"
+            else {}
+        )
+        return cls(policy_version=name, **(selected | overrides))
 
     def effective_configuration(self) -> dict:
         """Return model assumptions, distinct from the supplied physical evidence."""
@@ -233,7 +256,8 @@ class RCSettings:
                 "mass_capacity": "room_side_depth_limited_constructions",
                 "mass_area": "construction_capacity_thresholds",
                 "solar": "perez_with_exact_zero_diffuse_limit",
-                "glazing": "supplied_whole_window_shgc",
+                "glazing": self.window_optics_method,
+                "solar_time_reference": self.solar_time_reference,
                 "occupant_gains": "all_activity_treated_as_sensible",
                 "fan_heat": "omitted",
                 "thermal_domain": "one_conditioned_domain",
@@ -407,7 +431,8 @@ def _implementation_identity() -> dict:
     return {
         "source_sha256": sources,
         "dependencies": {
-            package: metadata.version(package) for package in ("numpy", "pandas", "pvlib")
+            package: metadata.version(package)
+            for package in ("numpy", "pandas", "pvlib", "shapely", "pydantic")
         },
         "python": sys.version.split()[0],
     }
@@ -548,6 +573,7 @@ def simulate_building(
         "year": year,
         "climate": spec.climate.model_dump(mode="json"),
         "implementation": implementation,
+        "solar_time_reference": settings.solar_time_reference,
     }
 
     def prepared(namespace, inputs, compute):
@@ -568,6 +594,14 @@ def simulate_building(
     volume = spec.geometry.conditioned_volume_m3
     reference_area = spec.load_reference_area_m2 or area
     elements = tuple(building.elements)
+    optical_models = {}
+    if settings.window_optics_method == "simple_glazing_angular_v1":
+        for element in elements:
+            if element.role.value == "WINDOW" and element.area_m2 > 0:
+                glass = element.construction
+                key = (glass.u_value, glass.shgc)
+                if key not in optical_models:
+                    optical_models[key] = SimpleGlazingOptics(*key)
     grouped = {"wall": [], "roof": [], "ground": [], "window": []}
     constructions = []
     for element in elements:
@@ -694,13 +728,27 @@ def simulate_building(
         timezone(timedelta(hours=spec.climate.time_zone_hours))
     )
 
+    sun_times = (
+        times + pd.Timedelta(minutes=30)
+        if settings.solar_time_reference == "interval_midpoint"
+        else times
+    )
+    if settings.window_optics_method == "simple_glazing_angular_v1":
+        for name in ("dni", "dhi"):
+            values = data[name].to_numpy()
+            if not np.isfinite(values).all() or ((values < 0) | (values >= 9999)).any():
+                raise ValueError(f"EPW {name} must be complete and nonnegative for angular optics")
+
     def solar_geometry():
         position = solarposition.get_solarposition(
-            times, spec.climate.latitude_deg, spec.climate.longitude_deg, spec.climate.elevation_m
+            sun_times,
+            spec.climate.latitude_deg,
+            spec.climate.longitude_deg,
+            spec.climate.elevation_m,
         )
         return (
             position,
-            irradiance.get_extra_radiation(times),
+            irradiance.get_extra_radiation(sun_times),
             atmosphere.get_relative_airmass(position.apparent_zenith),
         )
 
@@ -711,6 +759,20 @@ def simulate_building(
     facades = {f.facade_id: f for f in facade_catalog(spec.geometry)}
     solar, opaque = np.zeros(len(axis)), np.zeros(len(axis))
     orientation_irradiance = {}
+    radiation_hourly = (
+        {
+            name: np.zeros(len(axis))
+            for name in (
+                "window_incident_beam_w",
+                "window_incident_sky_diffuse_w",
+                "window_incident_ground_diffuse_w",
+                "window_transmitted_solar_w",
+                "window_inward_absorbed_solar_w",
+            )
+        }
+        if settings.window_optics_method == "simple_glazing_angular_v1"
+        else {}
+    )
     for element in elements:
         role = element.role.value
         if role not in {"WINDOW", "ROOF", "TOP_FLOOR"} and not role.startswith("EXT_WALL"):
@@ -719,7 +781,7 @@ def simulate_building(
         azimuth = 180 if roof else facades[element.facade_id].azimuth_deg
         orientation = (0 if roof else 90, azimuth)
         if orientation in orientation_irradiance:
-            poa = orientation_irradiance[orientation]
+            channels = orientation_irradiance[orientation]
         else:
             radiation_key = {
                 **preparation_key,
@@ -728,10 +790,10 @@ def simulate_building(
                 "albedo": settings.ground_reflectance,
             }
 
-            def plane_irradiance():
-                poa = irradiance.get_total_irradiance(
-                    0 if roof else 90,
-                    azimuth,
+            def calculate_plane(tilt=orientation[0], direction=azimuth):
+                return plane_irradiance(
+                    tilt,
+                    direction,
                     zenith,
                     sun_azimuth,
                     dni,
@@ -740,38 +802,37 @@ def simulate_building(
                     dni_extra=extra,
                     airmass=air_mass,
                     albedo=settings.ground_reflectance,
-                    model="perez",
-                )["poa_global"]
-                poa = np.asarray(poa).copy()
-                # Own the array before applying physical limits: pandas may expose a
-                # read-only view of the irradiance provider's storage.
-                # Perez has a 0/0 sky-clearness term when diffuse radiation is zero.
-                # The exact zero-diffuse limit is beam plus ground reflection.
-                zero_diffuse = dhi == 0
-                if zero_diffuse.any():
-                    limit = irradiance.get_total_irradiance(
-                        0 if roof else 90,
-                        azimuth,
-                        zenith,
-                        sun_azimuth,
-                        dni,
-                        ghi,
-                        dhi,
-                        albedo=settings.ground_reflectance,
-                        model="isotropic",
-                    )["poa_global"]
-                    poa[zero_diffuse] = limit[zero_diffuse]
-                poa[(ghi == 0) & (dni == 0) & (dhi == 0)] = 0.0
-                if (np.isnan(poa) & (zenith < 90)).any() or np.isinf(poa).any():
-                    raise ValueError("Solar calculation produced invalid daylight irradiance")
-                return np.nan_to_num(poa, nan=0.0)
+                )
 
-            poa = prepared("plane_irradiance", radiation_key, plane_irradiance)
-            orientation_irradiance[orientation] = poa
+            channels = prepared("plane_irradiance", radiation_key, calculate_plane)
+            orientation_irradiance[orientation] = channels
+        poa = channels["poa_global"]
         if role == "WINDOW":
-            solar += (
-                poa * element.area_m2 * element.construction.shgc * spec.facade.solar_shading_factor
-            )
+            if settings.window_optics_method == "constant_shgc":
+                solar += (
+                    poa
+                    * element.area_m2
+                    * element.construction.shgc
+                    * spec.facade.solar_shading_factor
+                )
+            else:
+                optics = optical_models[(element.construction.u_value, element.construction.shgc)]
+                # At night solar geometry remains finite and incident beam is zero.
+                incidence = irradiance.aoi(orientation[0], azimuth, zenith, sun_azimuth)
+                bt, _, ba = optics.beam_properties(incidence)
+                dt, _, da = optics.diffuse_properties()
+                beam = channels["poa_direct"]
+                sky, reflected = channels["poa_sky_diffuse"], channels["poa_ground_diffuse"]
+                diffuse = sky + reflected
+                area, shade = element.area_m2, spec.facade.solar_shading_factor
+                transmitted = (beam * bt + diffuse * dt) * area * shade
+                absorbed = (beam * ba + diffuse * da) * optics.inward_fraction * area * shade
+                solar += transmitted + absorbed
+                radiation_hourly["window_incident_beam_w"] += beam * area
+                radiation_hourly["window_incident_sky_diffuse_w"] += sky * area
+                radiation_hourly["window_incident_ground_diffuse_w"] += reflected * area
+                radiation_hourly["window_transmitted_solar_w"] += transmitted
+                radiation_hourly["window_inward_absorbed_solar_w"] += absorbed
         else:
             outside = element.construction.components[0].layers[0].layer
             alpha = sum(m.area_fraction * m.material.solar_absorptance for m in outside.materials)
@@ -788,6 +849,12 @@ def simulate_building(
                 * outside_resistance
                 * uplift
             )
+    if radiation_hourly:
+        radiation_hourly["window_solar_heat_gain_w"] = solar.copy()
+        radiation_hourly["opaque_solar_heat_gain_w"] = opaque.copy()
+        radiation_hourly["sky_radiation_loss_w"] = np.full(
+            len(axis), model.calc_sky_radiation_loss()
+        )
     infiltration = (
         airflow.infiltration_design_flow_m3_s(reference_area_m2=reference_area, volume_m3=volume)
         * 3600
@@ -886,6 +953,7 @@ def simulate_building(
         "internal_gains_convective_w": convective_gains,
         "internal_gains_radiant_w": radiant_gains,
     }
+    hourly.update(radiation_hourly)
     dhw = annual(use.dhw_fraction)
     hourly["dhw_load_kwh"] = (
         dhw / dhw.sum() * use.dhw_kwh_m2_year * reference_area if dhw.sum() else dhw
@@ -907,13 +975,13 @@ def simulate_building(
     units = {
         key: "kWh" if key.endswith("kwh") else "W" if key.endswith("_w") else "C" for key in hourly
     }
-    diagnostics = dict(
-        accepted=all(np.isfinite(v).all() for v in hourly.values()),
-        engine="epsm_rc",
-        reduction=asdict(settings),
-        effective_configuration=effective_configuration,
-        gain_reduction=gain_reduction,
-        reduced_properties={
+    diagnostics = {
+        "accepted": all(np.isfinite(v).all() for v in hourly.values()),
+        "engine": "epsm_rc",
+        "reduction": asdict(settings),
+        "effective_configuration": effective_configuration,
+        "gain_reduction": gain_reduction,
+        "reduced_properties": {
             "internal_surface_area_m2": model._a_tot,
             "effective_mass_area_m2": model._mass_area,
             "thermal_capacitance_j_k": model._c_m,
@@ -927,12 +995,12 @@ def simulate_building(
             ),
             "sky_radiation_loss_w": model.calc_sky_radiation_loss(),
         },
-        implementation=implementation,
-        physical_inputs_sha256=spec.physical_hash(),
-        airflow_capabilities=airflow_capabilities,
-        ground_reduction=ground_reduction,
-        self_shadowing=self_shadowing,
-        approximations=[
+        "implementation": implementation,
+        "physical_inputs_sha256": spec.physical_hash(),
+        "airflow_capabilities": airflow_capabilities,
+        "ground_reduction": ground_reduction,
+        "self_shadowing": self_shadowing,
+        "approximations": [
             "One aggregated conditioned thermal domain",
             "Perez solar gains with scalar window shading; no geometric site shading",
             "Room-side mass depth and construction-capacity mass-area rule from explicit policy",
@@ -944,8 +1012,29 @@ def simulate_building(
             "Fixed sky-air difference and sky exchange coefficients from explicit policy",
             "Heat recovery reduces mechanical conductance once; infiltration is unrecovered",
         ],
-        empirical_validation="not_established_by_harmonisation",
-    )
+        "empirical_validation": "not_established_by_harmonisation",
+    }
+    if radiation_hourly:
+        diagnostics["radiation"] = {
+            "solar_time_reference": settings.solar_time_reference,
+            "window_optics_method": settings.window_optics_method,
+            "diffuse_optics": "isotropic_hemispherical_average_of_angular_model",
+            "inward_absorption": "nominal_summer_inward_fraction",
+            "longwave": "unchanged_fixed_sky_air_difference",
+            "annual_kwh": {
+                name: float(values.sum()) / 1000 for name, values in radiation_hourly.items()
+            },
+            "optical_models": [
+                {
+                    "u_value_w_m2k": u,
+                    "shgc": g,
+                    "normal_transmittance": optics.normal_transmittance,
+                    "normal_reflectance": optics.normal_reflectance,
+                    "inward_fraction": optics.inward_fraction,
+                }
+                for (u, g), optics in optical_models.items()
+            ],
+        }
     if not diagnostics["accepted"]:
         raise ValueError("RC calculation produced non-finite output")
     artifacts = {}

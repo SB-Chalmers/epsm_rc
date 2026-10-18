@@ -773,6 +773,7 @@ class Building5R1C:
         self._prepared_surface_ratio = max(
             0.0, 1.0 - self._prepared_mass_ratio - self._prepared_window_ratio)
         self._prepared_hourly = True
+        self._prepared_airflow = None
         self._hour_heat_flows = None
         self._update_ventilation_coefficient()
 
@@ -1007,6 +1008,10 @@ class Building5R1C:
         """
         if ach_total is None:
             ach_total = self.ach_infiltration + self.ach_ventilation
+        if self._prepared_hourly:
+            airflow_key = (ach_total, self.ach_ventilation, self.heat_recovery_efficiency)
+            if airflow_key == self._prepared_airflow:
+                return
         
         if not np.isfinite(ach_total) or ach_total < 0:
             raise ValueError("Total air change rate must be finite and nonnegative")
@@ -1021,6 +1026,7 @@ class Building5R1C:
             * self._building_vol * ach_effective / 3600.0
         )
         if self._prepared_hourly:
+            self._prepared_airflow = airflow_key
             h1 = (1.0 / (1.0 / self._h_ve + 1.0 / self._h_tr_is)
                   if self._h_ve > 0 and self._h_tr_is > 0 else 0.0)
             h2 = h1 + self._h_tr_w
@@ -1578,8 +1584,10 @@ class Building5R1C:
             
             if self._a_tot > 0:
                 # ISO 13790 Eq. C.2 and C.3 area ratios
-                ratio_mass = self._mass_area / self._a_tot
-                ratio_window = self._h_tr_w / (self.h_ms * self._a_tot)
+                ratio_mass = (self._prepared_mass_ratio if self._prepared_hourly
+                              else self._mass_area / self._a_tot)
+                ratio_window = (self._prepared_window_ratio if self._prepared_hourly
+                                else self._h_tr_w / (self.h_ms * self._a_tot))
                 ratio_surface = max(0.0, 1.0 - ratio_mass - ratio_window)
                 
                 # Heat flow to surface node (φ_st) 

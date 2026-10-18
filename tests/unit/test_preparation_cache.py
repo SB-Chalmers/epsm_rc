@@ -4,8 +4,8 @@ from importlib.resources import files
 
 import numpy as np
 import pytest
-
 from epsm_core import ScheduleSpec, Weather
+
 from epsm_rc import PreparationCache, RCSettings, simulate_building
 
 

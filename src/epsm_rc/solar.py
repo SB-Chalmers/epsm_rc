@@ -31,6 +31,8 @@ import pvlib
 from pvlib import solarposition, irradiance, atmosphere
 from pvlib.iotools import read_epw
 
+from .radiation import plane_irradiance
+
 
 def calc_g_value_angle_modifier(
     aoi: np.ndarray,
@@ -250,39 +252,10 @@ class SolarGainsCalculator:
         Returns:
             Total POA irradiance array [W/m²]
         """
-        # Direct beam component
-        beam = irradiance.beam_component(
-            surface_tilt, surface_azimuth, 
-            solar_zenith, solar_azimuth, dni
-        )
-        
-        # Sky diffuse using Perez model
-        # Handle edge cases where airmass or dni_extra are invalid
-        am_safe = np.where(airmass > 0, airmass, 1.0)
-        dni_extra_safe = np.where(dni_extra > 0, dni_extra, 1.0)
-        
-        sky_diffuse = irradiance.perez(
-            surface_tilt, surface_azimuth,
-            dhi, dni, dni_extra_safe,
-            solar_zenith, solar_azimuth,
-            am_safe,
-            model='allsitescomposite1990'
-        )
-        
-        # Handle any NaN values from Perez model edge cases
-        sky_diffuse = np.nan_to_num(sky_diffuse, nan=0.0)
-        
-        # Ground reflected
-        ground_diffuse = irradiance.get_ground_diffuse(
-            surface_tilt, ghi, albedo=self.ground_reflectance
-        )
-        
-        # Total POA
-        poa = beam + sky_diffuse + ground_diffuse
-        
-        # Ensure non-negative
-        return np.maximum(0, poa)
-    
+        return plane_irradiance(surface_tilt, surface_azimuth, solar_zenith,
+            solar_azimuth, dni, ghi, dhi, dni_extra=dni_extra, airmass=airmass,
+            albedo=self.ground_reflectance, legacy_standalone=True)["poa_global"]
+
     def _get_poa_irradiance_isotropic(
         self,
         surface_tilt: float,
@@ -307,25 +280,10 @@ class SolarGainsCalculator:
         Returns:
             Total POA irradiance array [W/m²]
         """
-        # Direct beam component
-        beam = irradiance.beam_component(
-            surface_tilt, surface_azimuth, 
-            solar_zenith, solar_azimuth, dni
-        )
-        
-        # Sky diffuse using isotropic model
-        sky_diffuse = irradiance.isotropic(surface_tilt, dhi)
-        
-        # Ground reflected
-        ground_diffuse = irradiance.get_ground_diffuse(
-            surface_tilt, ghi, albedo=self.ground_reflectance
-        )
-        
-        # Total POA
-        poa = beam + sky_diffuse + ground_diffuse
-        
-        return np.maximum(0, poa)
-    
+        return plane_irradiance(surface_tilt, surface_azimuth, solar_zenith,
+            solar_azimuth, dni, ghi, dhi, albedo=self.ground_reflectance,
+            model="isotropic", legacy_standalone=True)["poa_global"]
+
     def calculate_hourly_solar_gains(
         self,
         ghi: np.ndarray,
