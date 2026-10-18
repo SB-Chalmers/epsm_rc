@@ -1,0 +1,1921 @@
+{
+  "schema": "epsm.rc_benchmark/1",
+  "snapshot": {
+    "construction_set": {
+      "elements": {
+        "BASEMENT_WALL": {
+          "age": 2000,
+          "application": "BASEMENT_WALL",
+          "archetype": "illustrative_reference",
+          "components": [
+            {
+              "application": "BASEMENT_WALL",
+              "archetype": "illustrative_reference",
+              "layers": [
+                {
+                  "layer": {
+                    "is_composite": false,
+                    "layer_code": "reference.BASEMENT_WALL.reference.insulation",
+                    "materials": [
+                      {
+                        "area_fraction": 1,
+                        "material": {
+                          "boverket_id": null,
+                          "conductivity": 0.04,
+                          "density": 35,
+                          "embodied_carbon": null,
+                          "json_id": "reference.insulation",
+                          "material_type": "illustrative",
+                          "name": "Illustrative insulation",
+                          "roughness": "MediumRough",
+                          "solar_absorptance": 0.6,
+                          "specific_heat": 840,
+                          "thermal_absorptance": 0.9,
+                          "uuid": "3bc3f2fc-b136-529b-a4b8-e13043ae29e5",
+                          "visible_absorptance": 0.6
+                        },
+                        "thickness": 0.1
+                      }
+                    ],
+                    "name": "reference.BASEMENT_WALL.reference.insulation",
+                    "thickness": 0.1
+                  },
+                  "position": 0
+                },
+                {
+                  "layer": {
+                    "is_composite": false,
+                    "layer_code": "reference.BASEMENT_WALL.reference.concrete",
+                    "materials": [
+                      {
+                        "area_fraction": 1,
+                        "material": {
+                          "boverket_id": null,
+                          "conductivity": 1.4,
+                          "density": 2200,
+                          "embodied_carbon": null,
+                          "json_id": "reference.concrete",
+                          "material_type": "illustrative",
+                          "name": "Illustrative concrete",
+                          "roughness": "MediumRough",
+                          "solar_absorptance": 0.6,
+                          "specific_heat": 900,
+                          "thermal_absorptance": 0.9,
+                          "uuid": "ce0da7b6-0ca3-501f-8ceb-a1181e6bd767",
+                          "visible_absorptance": 0.6
+                        },
+                        "thickness": 0.15
+                      }
+                    ],
+                    "name": "reference.BASEMENT_WALL.reference.concrete",
+                    "thickness": 0.15
+                  },
+                  "position": 1
+                }
+              ],
+              "name": "reference.BASEMENT_WALL",
+              "shearing_layer": "Structure"
+            }
+          ],
+          "name": "reference.BASEMENT_WALL"
+        },
+        "EXT_WALL": {
+          "age": 2000,
+          "application": "EXT_WALL",
+          "archetype": "illustrative_reference",
+          "components": [
+            {
+              "application": "EXT_WALL",
+              "archetype": "illustrative_reference",
+              "layers": [
+                {
+                  "layer": {
+                    "is_composite": false,
+                    "layer_code": "reference.EXT_WALL.reference.insulation",
+                    "materials": [
+                      {
+                        "area_fraction": 1,
+                        "material": {
+                          "boverket_id": null,
+                          "conductivity": 0.04,
+                          "density": 35,
+                          "embodied_carbon": null,
+                          "json_id": "reference.insulation",
+                          "material_type": "illustrative",
+                          "name": "Illustrative insulation",
+                          "roughness": "MediumRough",
+                          "solar_absorptance": 0.6,
+                          "specific_heat": 840,
+                          "thermal_absorptance": 0.9,
+                          "uuid": "3bc3f2fc-b136-529b-a4b8-e13043ae29e5",
+                          "visible_absorptance": 0.6
+                        },
+                        "thickness": 0.15
+                      }
+                    ],
+                    "name": "reference.EXT_WALL.reference.insulation",
+                    "thickness": 0.15
+                  },
+                  "position": 0
+                },
+                {
+                  "layer": {
+                    "is_composite": false,
+                    "layer_code": "reference.EXT_WALL.reference.concrete",
+                    "materials": [
+                      {
+                        "area_fraction": 1,
+                        "material": {
+                          "boverket_id": null,
+                          "conductivity": 1.4,
+                          "density": 2200,
+                          "embodied_carbon": null,
+                          "json_id": "reference.concrete",
+                          "material_type": "illustrative",
+                          "name": "Illustrative concrete",
+                          "roughness": "MediumRough",
+                          "solar_absorptance": 0.6,
+                          "specific_heat": 900,
+                          "thermal_absorptance": 0.9,
+                          "uuid": "ce0da7b6-0ca3-501f-8ceb-a1181e6bd767",
+                          "visible_absorptance": 0.6
+                        },
+                        "thickness": 0.15
+                      }
+                    ],
+                    "name": "reference.EXT_WALL.reference.concrete",
+                    "thickness": 0.15
+                  },
+                  "position": 1
+                }
+              ],
+              "name": "reference.EXT_WALL",
+              "shearing_layer": "Structure"
+            }
+          ],
+          "name": "reference.EXT_WALL"
+        },
+        "GROUND_FLOOR": {
+          "age": 2000,
+          "application": "GROUND_FLOOR",
+          "archetype": "illustrative_reference",
+          "components": [
+            {
+              "application": "GROUND_FLOOR",
+              "archetype": "illustrative_reference",
+              "layers": [
+                {
+                  "layer": {
+                    "is_composite": false,
+                    "layer_code": "reference.GROUND_FLOOR.reference.insulation",
+                    "materials": [
+                      {
+                        "area_fraction": 1,
+                        "material": {
+                          "boverket_id": null,
+                          "conductivity": 0.04,
+                          "density": 35,
+                          "embodied_carbon": null,
+                          "json_id": "reference.insulation",
+                          "material_type": "illustrative",
+                          "name": "Illustrative insulation",
+                          "roughness": "MediumRough",
+                          "solar_absorptance": 0.6,
+                          "specific_heat": 840,
+                          "thermal_absorptance": 0.9,
+                          "uuid": "3bc3f2fc-b136-529b-a4b8-e13043ae29e5",
+                          "visible_absorptance": 0.6
+                        },
+                        "thickness": 0.15
+                      }
+                    ],
+                    "name": "reference.GROUND_FLOOR.reference.insulation",
+                    "thickness": 0.15
+                  },
+                  "position": 0
+                },
+                {
+                  "layer": {
+                    "is_composite": false,
+                    "layer_code": "reference.GROUND_FLOOR.reference.concrete",
+                    "materials": [
+                      {
+                        "area_fraction": 1,
+                        "material": {
+                          "boverket_id": null,
+                          "conductivity": 1.4,
+                          "density": 2200,
+                          "embodied_carbon": null,
+                          "json_id": "reference.concrete",
+                          "material_type": "illustrative",
+                          "name": "Illustrative concrete",
+                          "roughness": "MediumRough",
+                          "solar_absorptance": 0.6,
+                          "specific_heat": 900,
+                          "thermal_absorptance": 0.9,
+                          "uuid": "ce0da7b6-0ca3-501f-8ceb-a1181e6bd767",
+                          "visible_absorptance": 0.6
+                        },
+                        "thickness": 0.15
+                      }
+                    ],
+                    "name": "reference.GROUND_FLOOR.reference.concrete",
+                    "thickness": 0.15
+                  },
+                  "position": 1
+                }
+              ],
+              "name": "reference.GROUND_FLOOR",
+              "shearing_layer": "Structure"
+            }
+          ],
+          "name": "reference.GROUND_FLOOR"
+        },
+        "INTERMEDIATE_FLOOR": {
+          "age": 2000,
+          "application": "INTERMEDIATE_FLOOR",
+          "archetype": "illustrative_reference",
+          "components": [
+            {
+              "application": "INTERMEDIATE_FLOOR",
+              "archetype": "illustrative_reference",
+              "layers": [
+                {
+                  "layer": {
+                    "is_composite": false,
+                    "layer_code": "reference.INTERMEDIATE_FLOOR.reference.concrete",
+                    "materials": [
+                      {
+                        "area_fraction": 1,
+                        "material": {
+                          "boverket_id": null,
+                          "conductivity": 1.4,
+                          "density": 2200,
+                          "embodied_carbon": null,
+                          "json_id": "reference.concrete",
+                          "material_type": "illustrative",
+                          "name": "Illustrative concrete",
+                          "roughness": "MediumRough",
+                          "solar_absorptance": 0.6,
+                          "specific_heat": 900,
+                          "thermal_absorptance": 0.9,
+                          "uuid": "ce0da7b6-0ca3-501f-8ceb-a1181e6bd767",
+                          "visible_absorptance": 0.6
+                        },
+                        "thickness": 0.15
+                      }
+                    ],
+                    "name": "reference.INTERMEDIATE_FLOOR.reference.concrete",
+                    "thickness": 0.15
+                  },
+                  "position": 0
+                }
+              ],
+              "name": "reference.INTERMEDIATE_FLOOR",
+              "shearing_layer": "Structure"
+            }
+          ],
+          "name": "reference.INTERMEDIATE_FLOOR"
+        },
+        "INT_WALL_LOADBEARING": {
+          "age": 2000,
+          "application": "INT_WALL_LOADBEARING",
+          "archetype": "illustrative_reference",
+          "components": [
+            {
+              "application": "INT_WALL_LOADBEARING",
+              "archetype": "illustrative_reference",
+              "layers": [
+                {
+                  "layer": {
+                    "is_composite": false,
+                    "layer_code": "reference.INT_WALL_LOADBEARING.reference.concrete",
+                    "materials": [
+                      {
+                        "area_fraction": 1,
+                        "material": {
+                          "boverket_id": null,
+                          "conductivity": 1.4,
+                          "density": 2200,
+                          "embodied_carbon": null,
+                          "json_id": "reference.concrete",
+                          "material_type": "illustrative",
+                          "name": "Illustrative concrete",
+                          "roughness": "MediumRough",
+                          "solar_absorptance": 0.6,
+                          "specific_heat": 900,
+                          "thermal_absorptance": 0.9,
+                          "uuid": "ce0da7b6-0ca3-501f-8ceb-a1181e6bd767",
+                          "visible_absorptance": 0.6
+                        },
+                        "thickness": 0.15
+                      }
+                    ],
+                    "name": "reference.INT_WALL_LOADBEARING.reference.concrete",
+                    "thickness": 0.15
+                  },
+                  "position": 0
+                }
+              ],
+              "name": "reference.INT_WALL_LOADBEARING",
+              "shearing_layer": "Structure"
+            }
+          ],
+          "name": "reference.INT_WALL_LOADBEARING"
+        },
+        "INT_WALL_NONLOADBEARING": {
+          "age": 2000,
+          "application": "INT_WALL_NONLOADBEARING",
+          "archetype": "illustrative_reference",
+          "components": [
+            {
+              "application": "INT_WALL_NONLOADBEARING",
+              "archetype": "illustrative_reference",
+              "layers": [
+                {
+                  "layer": {
+                    "is_composite": false,
+                    "layer_code": "reference.INT_WALL_NONLOADBEARING.reference.concrete",
+                    "materials": [
+                      {
+                        "area_fraction": 1,
+                        "material": {
+                          "boverket_id": null,
+                          "conductivity": 1.4,
+                          "density": 2200,
+                          "embodied_carbon": null,
+                          "json_id": "reference.concrete",
+                          "material_type": "illustrative",
+                          "name": "Illustrative concrete",
+                          "roughness": "MediumRough",
+                          "solar_absorptance": 0.6,
+                          "specific_heat": 900,
+                          "thermal_absorptance": 0.9,
+                          "uuid": "ce0da7b6-0ca3-501f-8ceb-a1181e6bd767",
+                          "visible_absorptance": 0.6
+                        },
+                        "thickness": 0.15
+                      }
+                    ],
+                    "name": "reference.INT_WALL_NONLOADBEARING.reference.concrete",
+                    "thickness": 0.15
+                  },
+                  "position": 0
+                }
+              ],
+              "name": "reference.INT_WALL_NONLOADBEARING",
+              "shearing_layer": "Structure"
+            }
+          ],
+          "name": "reference.INT_WALL_NONLOADBEARING"
+        },
+        "ROOF": {
+          "age": 2000,
+          "application": "ROOF",
+          "archetype": "illustrative_reference",
+          "components": [
+            {
+              "application": "ROOF",
+              "archetype": "illustrative_reference",
+              "layers": [
+                {
+                  "layer": {
+                    "is_composite": false,
+                    "layer_code": "reference.ROOF.reference.insulation",
+                    "materials": [
+                      {
+                        "area_fraction": 1,
+                        "material": {
+                          "boverket_id": null,
+                          "conductivity": 0.04,
+                          "density": 35,
+                          "embodied_carbon": null,
+                          "json_id": "reference.insulation",
+                          "material_type": "illustrative",
+                          "name": "Illustrative insulation",
+                          "roughness": "MediumRough",
+                          "solar_absorptance": 0.6,
+                          "specific_heat": 840,
+                          "thermal_absorptance": 0.9,
+                          "uuid": "3bc3f2fc-b136-529b-a4b8-e13043ae29e5",
+                          "visible_absorptance": 0.6
+                        },
+                        "thickness": 0.25
+                      }
+                    ],
+                    "name": "reference.ROOF.reference.insulation",
+                    "thickness": 0.25
+                  },
+                  "position": 0
+                },
+                {
+                  "layer": {
+                    "is_composite": false,
+                    "layer_code": "reference.ROOF.reference.concrete",
+                    "materials": [
+                      {
+                        "area_fraction": 1,
+                        "material": {
+                          "boverket_id": null,
+                          "conductivity": 1.4,
+                          "density": 2200,
+                          "embodied_carbon": null,
+                          "json_id": "reference.concrete",
+                          "material_type": "illustrative",
+                          "name": "Illustrative concrete",
+                          "roughness": "MediumRough",
+                          "solar_absorptance": 0.6,
+                          "specific_heat": 900,
+                          "thermal_absorptance": 0.9,
+                          "uuid": "ce0da7b6-0ca3-501f-8ceb-a1181e6bd767",
+                          "visible_absorptance": 0.6
+                        },
+                        "thickness": 0.15
+                      }
+                    ],
+                    "name": "reference.ROOF.reference.concrete",
+                    "thickness": 0.15
+                  },
+                  "position": 1
+                }
+              ],
+              "name": "reference.ROOF",
+              "shearing_layer": "Structure"
+            }
+          ],
+          "name": "reference.ROOF"
+        },
+        "TOP_FLOOR": {
+          "age": 2000,
+          "application": "TOP_FLOOR",
+          "archetype": "illustrative_reference",
+          "components": [
+            {
+              "application": "TOP_FLOOR",
+              "archetype": "illustrative_reference",
+              "layers": [
+                {
+                  "layer": {
+                    "is_composite": false,
+                    "layer_code": "reference.TOP_FLOOR.reference.insulation",
+                    "materials": [
+                      {
+                        "area_fraction": 1,
+                        "material": {
+                          "boverket_id": null,
+                          "conductivity": 0.04,
+                          "density": 35,
+                          "embodied_carbon": null,
+                          "json_id": "reference.insulation",
+                          "material_type": "illustrative",
+                          "name": "Illustrative insulation",
+                          "roughness": "MediumRough",
+                          "solar_absorptance": 0.6,
+                          "specific_heat": 840,
+                          "thermal_absorptance": 0.9,
+                          "uuid": "3bc3f2fc-b136-529b-a4b8-e13043ae29e5",
+                          "visible_absorptance": 0.6
+                        },
+                        "thickness": 0.25
+                      }
+                    ],
+                    "name": "reference.TOP_FLOOR.reference.insulation",
+                    "thickness": 0.25
+                  },
+                  "position": 0
+                },
+                {
+                  "layer": {
+                    "is_composite": false,
+                    "layer_code": "reference.TOP_FLOOR.reference.concrete",
+                    "materials": [
+                      {
+                        "area_fraction": 1,
+                        "material": {
+                          "boverket_id": null,
+                          "conductivity": 1.4,
+                          "density": 2200,
+                          "embodied_carbon": null,
+                          "json_id": "reference.concrete",
+                          "material_type": "illustrative",
+                          "name": "Illustrative concrete",
+                          "roughness": "MediumRough",
+                          "solar_absorptance": 0.6,
+                          "specific_heat": 900,
+                          "thermal_absorptance": 0.9,
+                          "uuid": "ce0da7b6-0ca3-501f-8ceb-a1181e6bd767",
+                          "visible_absorptance": 0.6
+                        },
+                        "thickness": 0.15
+                      }
+                    ],
+                    "name": "reference.TOP_FLOOR.reference.concrete",
+                    "thickness": 0.15
+                  },
+                  "position": 1
+                }
+              ],
+              "name": "reference.TOP_FLOOR",
+              "shearing_layer": "Structure"
+            }
+          ],
+          "name": "reference.TOP_FLOOR"
+        },
+        "WINDOW": {
+          "application": "WINDOW",
+          "archetype": "illustrative_reference",
+          "boverket_id": null,
+          "name": "reference.WINDOW",
+          "shgc": 0.6,
+          "u_value": 1.6,
+          "vt": 0.65
+        }
+      },
+      "valid_from_year": null,
+      "version_id": "20e40232-2594-512b-930a-62cd8c4cb008"
+    },
+    "context": {
+      "buildings": [],
+      "generation": {},
+      "simplify_small_caps": true
+    },
+    "elements": [
+      {
+        "area_m2": 48.0,
+        "component_ids": [
+          "ab2a2958-59ea-4dd8-81f1-0717f7bdb37d"
+        ],
+        "construction": {
+          "elements": {
+            "GROUND_FLOOR": {
+              "age": 2000,
+              "application": "GROUND_FLOOR",
+              "archetype": "illustrative_reference",
+              "components": [
+                {
+                  "application": "GROUND_FLOOR",
+                  "archetype": "illustrative_reference",
+                  "layers": [
+                    {
+                      "layer": {
+                        "is_composite": false,
+                        "layer_code": "reference.GROUND_FLOOR.reference.insulation",
+                        "materials": [
+                          {
+                            "area_fraction": 1,
+                            "material": {
+                              "boverket_id": null,
+                              "conductivity": 0.04,
+                              "density": 35,
+                              "embodied_carbon": null,
+                              "json_id": "reference.insulation",
+                              "material_type": "illustrative",
+                              "name": "Illustrative insulation",
+                              "roughness": "MediumRough",
+                              "solar_absorptance": 0.6,
+                              "specific_heat": 840,
+                              "thermal_absorptance": 0.9,
+                              "uuid": "3bc3f2fc-b136-529b-a4b8-e13043ae29e5",
+                              "visible_absorptance": 0.6
+                            },
+                            "thickness": 0.15
+                          }
+                        ],
+                        "name": "reference.GROUND_FLOOR.reference.insulation",
+                        "thickness": 0.15
+                      },
+                      "position": 0
+                    },
+                    {
+                      "layer": {
+                        "is_composite": false,
+                        "layer_code": "reference.GROUND_FLOOR.reference.concrete",
+                        "materials": [
+                          {
+                            "area_fraction": 1,
+                            "material": {
+                              "boverket_id": null,
+                              "conductivity": 1.4,
+                              "density": 2200,
+                              "embodied_carbon": null,
+                              "json_id": "reference.concrete",
+                              "material_type": "illustrative",
+                              "name": "Illustrative concrete",
+                              "roughness": "MediumRough",
+                              "solar_absorptance": 0.6,
+                              "specific_heat": 900,
+                              "thermal_absorptance": 0.9,
+                              "uuid": "ce0da7b6-0ca3-501f-8ceb-a1181e6bd767",
+                              "visible_absorptance": 0.6
+                            },
+                            "thickness": 0.15
+                          }
+                        ],
+                        "name": "reference.GROUND_FLOOR.reference.concrete",
+                        "thickness": 0.15
+                      },
+                      "position": 1
+                    }
+                  ],
+                  "name": "reference.GROUND_FLOOR",
+                  "shearing_layer": "Structure"
+                }
+              ],
+              "name": "reference.GROUND_FLOOR"
+            }
+          },
+          "valid_from_year": null,
+          "version_id": "00000000-0000-0000-0000-000000000000"
+        },
+        "elevation_m": 0,
+        "facade_id": null,
+        "identifier": "main.ground_floor",
+        "part_id": "main",
+        "role": "GROUND_FLOOR",
+        "storey": null
+      },
+      {
+        "area_m2": 48.0,
+        "component_ids": [
+          "18734a5f-96c9-46b6-a722-c51246404518"
+        ],
+        "construction": {
+          "elements": {
+            "TOP_FLOOR": {
+              "age": 2000,
+              "application": "TOP_FLOOR",
+              "archetype": "illustrative_reference",
+              "components": [
+                {
+                  "application": "TOP_FLOOR",
+                  "archetype": "illustrative_reference",
+                  "layers": [
+                    {
+                      "layer": {
+                        "is_composite": false,
+                        "layer_code": "reference.TOP_FLOOR.reference.insulation",
+                        "materials": [
+                          {
+                            "area_fraction": 1,
+                            "material": {
+                              "boverket_id": null,
+                              "conductivity": 0.04,
+                              "density": 35,
+                              "embodied_carbon": null,
+                              "json_id": "reference.insulation",
+                              "material_type": "illustrative",
+                              "name": "Illustrative insulation",
+                              "roughness": "MediumRough",
+                              "solar_absorptance": 0.6,
+                              "specific_heat": 840,
+                              "thermal_absorptance": 0.9,
+                              "uuid": "3bc3f2fc-b136-529b-a4b8-e13043ae29e5",
+                              "visible_absorptance": 0.6
+                            },
+                            "thickness": 0.25
+                          }
+                        ],
+                        "name": "reference.TOP_FLOOR.reference.insulation",
+                        "thickness": 0.25
+                      },
+                      "position": 0
+                    },
+                    {
+                      "layer": {
+                        "is_composite": false,
+                        "layer_code": "reference.TOP_FLOOR.reference.concrete",
+                        "materials": [
+                          {
+                            "area_fraction": 1,
+                            "material": {
+                              "boverket_id": null,
+                              "conductivity": 1.4,
+                              "density": 2200,
+                              "embodied_carbon": null,
+                              "json_id": "reference.concrete",
+                              "material_type": "illustrative",
+                              "name": "Illustrative concrete",
+                              "roughness": "MediumRough",
+                              "solar_absorptance": 0.6,
+                              "specific_heat": 900,
+                              "thermal_absorptance": 0.9,
+                              "uuid": "ce0da7b6-0ca3-501f-8ceb-a1181e6bd767",
+                              "visible_absorptance": 0.6
+                            },
+                            "thickness": 0.15
+                          }
+                        ],
+                        "name": "reference.TOP_FLOOR.reference.concrete",
+                        "thickness": 0.15
+                      },
+                      "position": 1
+                    }
+                  ],
+                  "name": "reference.TOP_FLOOR",
+                  "shearing_layer": "Structure"
+                }
+              ],
+              "name": "reference.TOP_FLOOR"
+            }
+          },
+          "valid_from_year": null,
+          "version_id": "00000000-0000-0000-0000-000000000000"
+        },
+        "elevation_m": 3.0,
+        "facade_id": null,
+        "identifier": "main.top",
+        "part_id": "main",
+        "role": "TOP_FLOOR",
+        "storey": null
+      },
+      {
+        "area_m2": 19.200000000000003,
+        "component_ids": [
+          "e93c3719-5ea8-4f4b-acb4-efdaefe58398"
+        ],
+        "construction": {
+          "elements": {
+            "EXT_WALL": {
+              "age": 2000,
+              "application": "EXT_WALL",
+              "archetype": "illustrative_reference",
+              "components": [
+                {
+                  "application": "EXT_WALL",
+                  "archetype": "illustrative_reference",
+                  "layers": [
+                    {
+                      "layer": {
+                        "is_composite": false,
+                        "layer_code": "reference.EXT_WALL.reference.insulation",
+                        "materials": [
+                          {
+                            "area_fraction": 1,
+                            "material": {
+                              "boverket_id": null,
+                              "conductivity": 0.04,
+                              "density": 35,
+                              "embodied_carbon": null,
+                              "json_id": "reference.insulation",
+                              "material_type": "illustrative",
+                              "name": "Illustrative insulation",
+                              "roughness": "MediumRough",
+                              "solar_absorptance": 0.6,
+                              "specific_heat": 840,
+                              "thermal_absorptance": 0.9,
+                              "uuid": "3bc3f2fc-b136-529b-a4b8-e13043ae29e5",
+                              "visible_absorptance": 0.6
+                            },
+                            "thickness": 0.15
+                          }
+                        ],
+                        "name": "reference.EXT_WALL.reference.insulation",
+                        "thickness": 0.15
+                      },
+                      "position": 0
+                    },
+                    {
+                      "layer": {
+                        "is_composite": false,
+                        "layer_code": "reference.EXT_WALL.reference.concrete",
+                        "materials": [
+                          {
+                            "area_fraction": 1,
+                            "material": {
+                              "boverket_id": null,
+                              "conductivity": 1.4,
+                              "density": 2200,
+                              "embodied_carbon": null,
+                              "json_id": "reference.concrete",
+                              "material_type": "illustrative",
+                              "name": "Illustrative concrete",
+                              "roughness": "MediumRough",
+                              "solar_absorptance": 0.6,
+                              "specific_heat": 900,
+                              "thermal_absorptance": 0.9,
+                              "uuid": "ce0da7b6-0ca3-501f-8ceb-a1181e6bd767",
+                              "visible_absorptance": 0.6
+                            },
+                            "thickness": 0.15
+                          }
+                        ],
+                        "name": "reference.EXT_WALL.reference.concrete",
+                        "thickness": 0.15
+                      },
+                      "position": 1
+                    }
+                  ],
+                  "name": "reference.EXT_WALL",
+                  "shearing_layer": "Structure"
+                }
+              ],
+              "name": "reference.EXT_WALL"
+            }
+          },
+          "valid_from_year": null,
+          "version_id": "00000000-0000-0000-0000-000000000000"
+        },
+        "elevation_m": null,
+        "facade_id": "main.r0.e0",
+        "identifier": "main.r0.e0.storey.0.wall",
+        "part_id": "main",
+        "role": "EXT_WALL",
+        "storey": 0
+      },
+      {
+        "area_m2": 4.799999999999998,
+        "component_ids": [
+          "a6cc3004-c2dd-4a3c-ad6a-cfe2a655b923"
+        ],
+        "construction": {
+          "elements": {
+            "WINDOW": {
+              "application": "WINDOW",
+              "archetype": "illustrative_reference",
+              "boverket_id": null,
+              "name": "reference.WINDOW",
+              "shgc": 0.6,
+              "u_value": 1.6,
+              "vt": 0.65
+            }
+          },
+          "valid_from_year": null,
+          "version_id": "00000000-0000-0000-0000-000000000000"
+        },
+        "elevation_m": null,
+        "facade_id": "main.r0.e0",
+        "identifier": "main.r0.e0.storey.0.window",
+        "part_id": "main",
+        "role": "WINDOW",
+        "storey": 0
+      },
+      {
+        "area_m2": 14.400000000000002,
+        "component_ids": [
+          "14101f00-dc91-45e5-aca5-f62457c841ef"
+        ],
+        "construction": {
+          "elements": {
+            "EXT_WALL": {
+              "age": 2000,
+              "application": "EXT_WALL",
+              "archetype": "illustrative_reference",
+              "components": [
+                {
+                  "application": "EXT_WALL",
+                  "archetype": "illustrative_reference",
+                  "layers": [
+                    {
+                      "layer": {
+                        "is_composite": false,
+                        "layer_code": "reference.EXT_WALL.reference.insulation",
+                        "materials": [
+                          {
+                            "area_fraction": 1,
+                            "material": {
+                              "boverket_id": null,
+                              "conductivity": 0.04,
+                              "density": 35,
+                              "embodied_carbon": null,
+                              "json_id": "reference.insulation",
+                              "material_type": "illustrative",
+                              "name": "Illustrative insulation",
+                              "roughness": "MediumRough",
+                              "solar_absorptance": 0.6,
+                              "specific_heat": 840,
+                              "thermal_absorptance": 0.9,
+                              "uuid": "3bc3f2fc-b136-529b-a4b8-e13043ae29e5",
+                              "visible_absorptance": 0.6
+                            },
+                            "thickness": 0.15
+                          }
+                        ],
+                        "name": "reference.EXT_WALL.reference.insulation",
+                        "thickness": 0.15
+                      },
+                      "position": 0
+                    },
+                    {
+                      "layer": {
+                        "is_composite": false,
+                        "layer_code": "reference.EXT_WALL.reference.concrete",
+                        "materials": [
+                          {
+                            "area_fraction": 1,
+                            "material": {
+                              "boverket_id": null,
+                              "conductivity": 1.4,
+                              "density": 2200,
+                              "embodied_carbon": null,
+                              "json_id": "reference.concrete",
+                              "material_type": "illustrative",
+                              "name": "Illustrative concrete",
+                              "roughness": "MediumRough",
+                              "solar_absorptance": 0.6,
+                              "specific_heat": 900,
+                              "thermal_absorptance": 0.9,
+                              "uuid": "ce0da7b6-0ca3-501f-8ceb-a1181e6bd767",
+                              "visible_absorptance": 0.6
+                            },
+                            "thickness": 0.15
+                          }
+                        ],
+                        "name": "reference.EXT_WALL.reference.concrete",
+                        "thickness": 0.15
+                      },
+                      "position": 1
+                    }
+                  ],
+                  "name": "reference.EXT_WALL",
+                  "shearing_layer": "Structure"
+                }
+              ],
+              "name": "reference.EXT_WALL"
+            }
+          },
+          "valid_from_year": null,
+          "version_id": "00000000-0000-0000-0000-000000000000"
+        },
+        "elevation_m": null,
+        "facade_id": "main.r0.e1",
+        "identifier": "main.r0.e1.storey.0.wall",
+        "part_id": "main",
+        "role": "EXT_WALL",
+        "storey": 0
+      },
+      {
+        "area_m2": 3.599999999999998,
+        "component_ids": [
+          "51ad849d-b60f-4ab5-a7e7-7a5d745c4427"
+        ],
+        "construction": {
+          "elements": {
+            "WINDOW": {
+              "application": "WINDOW",
+              "archetype": "illustrative_reference",
+              "boverket_id": null,
+              "name": "reference.WINDOW",
+              "shgc": 0.6,
+              "u_value": 1.6,
+              "vt": 0.65
+            }
+          },
+          "valid_from_year": null,
+          "version_id": "00000000-0000-0000-0000-000000000000"
+        },
+        "elevation_m": null,
+        "facade_id": "main.r0.e1",
+        "identifier": "main.r0.e1.storey.0.window",
+        "part_id": "main",
+        "role": "WINDOW",
+        "storey": 0
+      },
+      {
+        "area_m2": 19.200000000000003,
+        "component_ids": [
+          "d276d61c-0ca0-43bf-b1d8-c8a7b053e6a4"
+        ],
+        "construction": {
+          "elements": {
+            "EXT_WALL": {
+              "age": 2000,
+              "application": "EXT_WALL",
+              "archetype": "illustrative_reference",
+              "components": [
+                {
+                  "application": "EXT_WALL",
+                  "archetype": "illustrative_reference",
+                  "layers": [
+                    {
+                      "layer": {
+                        "is_composite": false,
+                        "layer_code": "reference.EXT_WALL.reference.insulation",
+                        "materials": [
+                          {
+                            "area_fraction": 1,
+                            "material": {
+                              "boverket_id": null,
+                              "conductivity": 0.04,
+                              "density": 35,
+                              "embodied_carbon": null,
+                              "json_id": "reference.insulation",
+                              "material_type": "illustrative",
+                              "name": "Illustrative insulation",
+                              "roughness": "MediumRough",
+                              "solar_absorptance": 0.6,
+                              "specific_heat": 840,
+                              "thermal_absorptance": 0.9,
+                              "uuid": "3bc3f2fc-b136-529b-a4b8-e13043ae29e5",
+                              "visible_absorptance": 0.6
+                            },
+                            "thickness": 0.15
+                          }
+                        ],
+                        "name": "reference.EXT_WALL.reference.insulation",
+                        "thickness": 0.15
+                      },
+                      "position": 0
+                    },
+                    {
+                      "layer": {
+                        "is_composite": false,
+                        "layer_code": "reference.EXT_WALL.reference.concrete",
+                        "materials": [
+                          {
+                            "area_fraction": 1,
+                            "material": {
+                              "boverket_id": null,
+                              "conductivity": 1.4,
+                              "density": 2200,
+                              "embodied_carbon": null,
+                              "json_id": "reference.concrete",
+                              "material_type": "illustrative",
+                              "name": "Illustrative concrete",
+                              "roughness": "MediumRough",
+                              "solar_absorptance": 0.6,
+                              "specific_heat": 900,
+                              "thermal_absorptance": 0.9,
+                              "uuid": "ce0da7b6-0ca3-501f-8ceb-a1181e6bd767",
+                              "visible_absorptance": 0.6
+                            },
+                            "thickness": 0.15
+                          }
+                        ],
+                        "name": "reference.EXT_WALL.reference.concrete",
+                        "thickness": 0.15
+                      },
+                      "position": 1
+                    }
+                  ],
+                  "name": "reference.EXT_WALL",
+                  "shearing_layer": "Structure"
+                }
+              ],
+              "name": "reference.EXT_WALL"
+            }
+          },
+          "valid_from_year": null,
+          "version_id": "00000000-0000-0000-0000-000000000000"
+        },
+        "elevation_m": null,
+        "facade_id": "main.r0.e2",
+        "identifier": "main.r0.e2.storey.0.wall",
+        "part_id": "main",
+        "role": "EXT_WALL",
+        "storey": 0
+      },
+      {
+        "area_m2": 4.799999999999998,
+        "component_ids": [
+          "8dbe9fe2-9fdd-4f2a-a590-8eac51319179"
+        ],
+        "construction": {
+          "elements": {
+            "WINDOW": {
+              "application": "WINDOW",
+              "archetype": "illustrative_reference",
+              "boverket_id": null,
+              "name": "reference.WINDOW",
+              "shgc": 0.6,
+              "u_value": 1.6,
+              "vt": 0.65
+            }
+          },
+          "valid_from_year": null,
+          "version_id": "00000000-0000-0000-0000-000000000000"
+        },
+        "elevation_m": null,
+        "facade_id": "main.r0.e2",
+        "identifier": "main.r0.e2.storey.0.window",
+        "part_id": "main",
+        "role": "WINDOW",
+        "storey": 0
+      },
+      {
+        "area_m2": 14.400000000000002,
+        "component_ids": [
+          "88c7ca07-017b-4489-bb71-777f7313ca7b"
+        ],
+        "construction": {
+          "elements": {
+            "EXT_WALL": {
+              "age": 2000,
+              "application": "EXT_WALL",
+              "archetype": "illustrative_reference",
+              "components": [
+                {
+                  "application": "EXT_WALL",
+                  "archetype": "illustrative_reference",
+                  "layers": [
+                    {
+                      "layer": {
+                        "is_composite": false,
+                        "layer_code": "reference.EXT_WALL.reference.insulation",
+                        "materials": [
+                          {
+                            "area_fraction": 1,
+                            "material": {
+                              "boverket_id": null,
+                              "conductivity": 0.04,
+                              "density": 35,
+                              "embodied_carbon": null,
+                              "json_id": "reference.insulation",
+                              "material_type": "illustrative",
+                              "name": "Illustrative insulation",
+                              "roughness": "MediumRough",
+                              "solar_absorptance": 0.6,
+                              "specific_heat": 840,
+                              "thermal_absorptance": 0.9,
+                              "uuid": "3bc3f2fc-b136-529b-a4b8-e13043ae29e5",
+                              "visible_absorptance": 0.6
+                            },
+                            "thickness": 0.15
+                          }
+                        ],
+                        "name": "reference.EXT_WALL.reference.insulation",
+                        "thickness": 0.15
+                      },
+                      "position": 0
+                    },
+                    {
+                      "layer": {
+                        "is_composite": false,
+                        "layer_code": "reference.EXT_WALL.reference.concrete",
+                        "materials": [
+                          {
+                            "area_fraction": 1,
+                            "material": {
+                              "boverket_id": null,
+                              "conductivity": 1.4,
+                              "density": 2200,
+                              "embodied_carbon": null,
+                              "json_id": "reference.concrete",
+                              "material_type": "illustrative",
+                              "name": "Illustrative concrete",
+                              "roughness": "MediumRough",
+                              "solar_absorptance": 0.6,
+                              "specific_heat": 900,
+                              "thermal_absorptance": 0.9,
+                              "uuid": "ce0da7b6-0ca3-501f-8ceb-a1181e6bd767",
+                              "visible_absorptance": 0.6
+                            },
+                            "thickness": 0.15
+                          }
+                        ],
+                        "name": "reference.EXT_WALL.reference.concrete",
+                        "thickness": 0.15
+                      },
+                      "position": 1
+                    }
+                  ],
+                  "name": "reference.EXT_WALL",
+                  "shearing_layer": "Structure"
+                }
+              ],
+              "name": "reference.EXT_WALL"
+            }
+          },
+          "valid_from_year": null,
+          "version_id": "00000000-0000-0000-0000-000000000000"
+        },
+        "elevation_m": null,
+        "facade_id": "main.r0.e3",
+        "identifier": "main.r0.e3.storey.0.wall",
+        "part_id": "main",
+        "role": "EXT_WALL",
+        "storey": 0
+      },
+      {
+        "area_m2": 3.599999999999998,
+        "component_ids": [
+          "dd3cc131-45d3-4c9f-8d29-4b3ae65391ff"
+        ],
+        "construction": {
+          "elements": {
+            "WINDOW": {
+              "application": "WINDOW",
+              "archetype": "illustrative_reference",
+              "boverket_id": null,
+              "name": "reference.WINDOW",
+              "shgc": 0.6,
+              "u_value": 1.6,
+              "vt": 0.65
+            }
+          },
+          "valid_from_year": null,
+          "version_id": "00000000-0000-0000-0000-000000000000"
+        },
+        "elevation_m": null,
+        "facade_id": "main.r0.e3",
+        "identifier": "main.r0.e3.storey.0.window",
+        "part_id": "main",
+        "role": "WINDOW",
+        "storey": 0
+      }
+    ],
+    "facade": {
+      "balconies": [],
+      "default_wwr": 0.2,
+      "glazing": {
+        "solar_heat_gain_coefficient": 0.6,
+        "u_value_w_m2k": 1.6,
+        "visible_transmittance": 0.65
+      },
+      "layout": {
+        "center_spacing_m": null,
+        "high": {
+          "end_m": 0.05,
+          "gap_m": 0.05,
+          "head_m": 0.05,
+          "height_m": null,
+          "max_height_m": null,
+          "max_sill_m": 0.3,
+          "max_spacing_m": 4.5,
+          "max_width_m": 3.0,
+          "min_height_m": 0.6,
+          "min_sill_m": 0.05,
+          "min_width_m": 0.6,
+          "sill_m": 0.05,
+          "spacing_m": 3.5,
+          "width_m": 1.5
+        },
+        "high_threshold": 0.6,
+        "low": {
+          "end_m": 0.1,
+          "gap_m": 0.2,
+          "head_m": 0.2,
+          "height_m": 0.8,
+          "max_height_m": 1.2,
+          "max_sill_m": 1.8,
+          "max_spacing_m": 4.5,
+          "max_width_m": 1.2,
+          "min_height_m": 0.3,
+          "min_sill_m": 1.2,
+          "min_width_m": 0.3,
+          "sill_m": 1.4,
+          "spacing_m": 3.5,
+          "width_m": 0.8
+        },
+        "low_threshold": 0.15,
+        "mid": {
+          "end_m": 0.1,
+          "gap_m": 0.2,
+          "head_m": 0.2,
+          "height_m": null,
+          "max_height_m": null,
+          "max_sill_m": 1.1,
+          "max_spacing_m": 4.5,
+          "max_width_m": 2.0,
+          "min_height_m": 0.6,
+          "min_sill_m": 0.6,
+          "min_width_m": 0.6,
+          "sill_m": 0.9,
+          "spacing_m": 3.5,
+          "width_m": 1.2
+        },
+        "mode": "scaled",
+        "pattern": "auto",
+        "sill_height_m": null,
+        "sill_height_ratio": null,
+        "window_height_m": null,
+        "window_width_m": null
+      },
+      "overhang": {
+        "continuous": false,
+        "depth_m": 0.0,
+        "offset_above_m": 0.0,
+        "side_extension_m": 0.0
+      },
+      "overrides": [],
+      "reveal_depth_m": 0.0,
+      "solar_shading_factor": 1.0
+    },
+    "foundation": {
+      "method": "prescribed_temperature"
+    },
+    "geometry": {
+      "basement_conditioned": false,
+      "basement_depth_m": 0.0,
+      "footprint_cleanup": {
+        "enabled": true,
+        "implementation_version": "footprint-cleanup-2",
+        "max_area_change_fraction": 0.001,
+        "max_perimeter_change_fraction": 0.01,
+        "max_symmetric_difference_fraction": 0.001,
+        "tolerance_m": 0.01
+      },
+      "orientation_deg": 0.0,
+      "parts": [
+        {
+          "conditioned": true,
+          "footprint": {
+            "exterior": [
+              [
+                0.0,
+                0.0
+              ],
+              [
+                8.0,
+                0.0
+              ],
+              [
+                8.0,
+                6.0
+              ],
+              [
+                0.0,
+                6.0
+              ]
+            ],
+            "holes": []
+          },
+          "height_status": "assumed",
+          "identifier": "main",
+          "outline_kind": "facade",
+          "outline_reviewed": false,
+          "roof": null,
+          "storey_elevations_m": [
+            0.0,
+            3.0
+          ]
+        }
+      ],
+      "party_walls": [],
+      "roof": {
+        "attic_height_m": 1.5,
+        "direction_deg": null,
+        "pitch_deg": null,
+        "shape": "flat",
+        "topology": "compact"
+      },
+      "source_crs": "local_metres",
+      "zoning": {
+        "mode": "per_storey"
+      }
+    },
+    "ground_temperature": {
+      "monthly_temperatures_c": [
+        18.0,
+        18.0,
+        18.0,
+        18.0,
+        18.0,
+        18.0,
+        18.0,
+        18.0,
+        18.0,
+        18.0,
+        18.0,
+        18.0
+      ],
+      "source": "explicit controlled comparison boundary; not a site measurement"
+    },
+    "hvac": {
+      "airflow": {
+        "cooling_availability": {
+          "annual_values": null,
+          "calendar_year": null,
+          "periods": [],
+          "source": null,
+          "values": [
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          "weekday_values": null
+        },
+        "envelope_infiltration_ach": 0.2,
+        "envelope_infiltration_l_s_m2": null,
+        "heating_availability": {
+          "annual_values": null,
+          "calendar_year": null,
+          "periods": [],
+          "source": null,
+          "values": [
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          "weekday_values": null
+        },
+        "infiltration_coefficients": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "infiltration_fraction": {
+          "annual_values": null,
+          "calendar_year": null,
+          "periods": [],
+          "source": null,
+          "values": [
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          "weekday_values": null
+        },
+        "infiltration_source": null,
+        "latent_recovery_effectiveness": 0.0,
+        "maximum_heating_supply_temperature_c": 50.0,
+        "mechanical_vent_fraction": {
+          "annual_values": null,
+          "calendar_year": null,
+          "periods": [],
+          "source": null,
+          "values": [
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          "weekday_values": null
+        },
+        "mechanical_vent_l_s_m2": 0.35,
+        "minimum_cooling_supply_temperature_c": 13.0,
+        "natural_exchange_ach": 0.0,
+        "natural_exchange_fraction": {
+          "annual_values": null,
+          "calendar_year": null,
+          "periods": [],
+          "source": null,
+          "values": [
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          "weekday_values": null
+        },
+        "sensible_recovery_effectiveness": 0.7,
+        "topology": "FTX"
+      },
+      "delivery": {
+        "fvp": null,
+        "heating": {
+          "carrier": "district_heat",
+          "efficiency": 1.0,
+          "heat_pump_cop": null,
+          "loss_fraction": {
+            "annual_values": null,
+            "calendar_year": null,
+            "periods": [],
+            "source": null,
+            "values": [
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "weekday_values": null
+          },
+          "net_distribution_loss_kwh_m2_year": 0.0,
+          "source": "epsm_data:illustrative-reference",
+          "specific_fan_power_w_per_l_s": 1.5
+        }
+      },
+      "equipment": [
+        {
+          "count": 1.0,
+          "description": "Illustrative FTX system",
+          "factor_refs": {},
+          "identifier": "ventilation",
+          "occurrence_id": "6e5a577d-1757-4a3b-a36b-b44532b46650",
+          "product_id": "reference.ftx"
+        },
+        {
+          "count": 1.0,
+          "description": "Illustrative district heating substation",
+          "factor_refs": {},
+          "identifier": "heating",
+          "occurrence_id": "82a944be-b6e7-4232-a322-048e78ee9093",
+          "product_id": "reference.district_heat_substation"
+        }
+      ],
+      "renewables": {
+        "pv_systems": []
+      }
+    },
+    "identifier": "building",
+    "load_reference_area_m2": 40.0,
+    "load_reference_area_policy": null,
+    "operation": {
+      "cooling_enabled": false,
+      "cooling_setpoint": {
+        "annual_values": null,
+        "calendar_year": null,
+        "periods": [],
+        "source": null,
+        "values": [
+          25.0,
+          25.0,
+          25.0,
+          25.0,
+          25.0,
+          25.0,
+          25.0,
+          25.0,
+          25.0,
+          25.0,
+          25.0,
+          25.0,
+          25.0,
+          25.0,
+          25.0,
+          25.0,
+          25.0,
+          25.0,
+          25.0,
+          25.0,
+          25.0,
+          25.0,
+          25.0,
+          25.0
+        ],
+        "weekday_values": null
+      },
+      "dhw_fraction": {
+        "annual_values": null,
+        "calendar_year": null,
+        "periods": [],
+        "source": null,
+        "values": [
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "weekday_values": null
+      },
+      "dhw_kwh_m2_year": 21.0,
+      "equipment_fraction": {
+        "annual_values": null,
+        "calendar_year": null,
+        "periods": [],
+        "source": null,
+        "values": [
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5,
+          0.5
+        ],
+        "weekday_values": null
+      },
+      "equipment_gain_w_m2": 1.68,
+      "equipment_heat_fraction": 1.0,
+      "equipment_heat_fraction_schedule": {
+        "annual_values": null,
+        "calendar_year": null,
+        "periods": [],
+        "source": null,
+        "values": [
+          0.5,
+          0.8,
+          0.5,
+          0.8,
+          0.5,
+          0.8,
+          0.5,
+          0.8,
+          0.5,
+          0.8,
+          0.5,
+          0.8,
+          0.5,
+          0.8,
+          0.5,
+          0.8,
+          0.5,
+          0.8,
+          0.5,
+          0.8,
+          0.5,
+          0.8,
+          0.5,
+          0.8
+        ],
+        "weekday_values": null
+      },
+      "gain_partitions": {
+        "equipment_fraction_latent": 0.1,
+        "equipment_fraction_radiant": 0.2,
+        "lighting_fraction_radiant": 0.3,
+        "lighting_fraction_visible": 0.2,
+        "lighting_return_air_fraction": 0.0,
+        "people_fraction_radiant": 0.25,
+        "people_sensible_heat_fraction": 1.0,
+        "policy": "explicit"
+      },
+      "heating_setpoint": {
+        "annual_values": null,
+        "calendar_year": null,
+        "periods": [],
+        "source": null,
+        "values": [
+          21.0,
+          21.0,
+          21.0,
+          21.0,
+          21.0,
+          21.0,
+          21.0,
+          21.0,
+          21.0,
+          21.0,
+          21.0,
+          21.0,
+          21.0,
+          21.0,
+          21.0,
+          21.0,
+          21.0,
+          21.0,
+          21.0,
+          21.0,
+          21.0,
+          21.0,
+          21.0,
+          21.0
+        ],
+        "weekday_values": null
+      },
+      "lighting_fraction": {
+        "annual_values": null,
+        "calendar_year": null,
+        "periods": [],
+        "source": null,
+        "values": [
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "weekday_values": null
+      },
+      "lighting_gain_w_m2": 1.0,
+      "occupancy_category": "residential",
+      "occupancy_fraction": {
+        "annual_values": null,
+        "calendar_year": null,
+        "periods": [],
+        "source": null,
+        "values": [
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "weekday_values": null
+      },
+      "occupant_activity_schedule": null,
+      "occupant_activity_w": 80.0,
+      "occupant_density_per_m2": 0.017
+    },
+    "preset": "illustrative-reference",
+    "preset_revision": "5",
+    "provenance": {
+      "records": [
+        {
+          "assumption_profile": "illustrative-reference@5",
+          "confidence": null,
+          "evidence": null,
+          "field_path": "construction_set",
+          "source": "illustrative-reference@5",
+          "status": "assumed"
+        },
+        {
+          "assumption_profile": "illustrative-reference@5",
+          "confidence": null,
+          "evidence": null,
+          "field_path": "facade",
+          "source": "illustrative-reference@5",
+          "status": "assumed"
+        },
+        {
+          "assumption_profile": "illustrative-reference@5",
+          "confidence": null,
+          "evidence": null,
+          "field_path": "hvac",
+          "source": "illustrative-reference@5",
+          "status": "assumed"
+        },
+        {
+          "assumption_profile": "illustrative-reference@5",
+          "confidence": null,
+          "evidence": null,
+          "field_path": "thermal_bridge_uplift_fraction",
+          "source": "illustrative-reference@5",
+          "status": "assumed"
+        }
+      ]
+    },
+    "schema": "epsm.building/6",
+    "thermal_bridge_uplift_fraction": 0.0
+  },
+  "weather": "controlled",
+  "year": 2023
+}

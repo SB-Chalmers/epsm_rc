@@ -1,6 +1,12 @@
 # EPSM RC
 
-Version **0.4.0**; the shared Building interface requires Core **0.3.0+**.
+Version **0.5.0**; the shared Building interface requires Core **0.5.0+** and Data **0.6.0+**.
+
+Caller-owned preparation reuse accelerates independent runs while retaining v1
+results. Explicit `epsm_rc_5r1c_v2` adds midpoint solar sampling and angular glazing
+optics; see [radiation policies, limitations and migration](docs/radiation.md) and
+[installed-wheel benchmarks](benchmarks/README.md). Geometric shading and dynamic
+longwave exchange remain outside this release.
 
 Reduced-order thermal calculation using the existing ISO 13790 5R1C implementation.
 The package and import are now `epsm_rc` (previously `SweThermalModel` /
