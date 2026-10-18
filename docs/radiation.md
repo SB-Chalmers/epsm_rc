@@ -105,9 +105,13 @@ Material and schedule assignments remain current. Cache use does not change
 scientific identity or results. Source fingerprinting therefore remains a cost
 even in warm runs. `clear()` releases entries and resets counters.
 
-Use `preparation_cache` for this operation: the umbrella `epsm.Building.simulate`
-already uses `cache` for retained evaluation results. Worker scheduling and durable
-result caching remain outside RC. See [benchmarks](../benchmarks/README.md) for
+Use `preparation_cache` on RC's direct `simulate_building` API. The existing
+umbrella `epsm.Building.simulate` serializes all calculation options and cannot
+accept this transient cache object; its `cache` argument is for retained evaluation
+results. Ordinary umbrella calls with explicit v1/v2 RC settings remain supported.
+Exposing preparation reuse there requires a separate EPSM wrapper change; it is
+outside this Core/RC release. Worker scheduling and durable result caching remain
+outside RC. See [benchmarks](../benchmarks/README.md) for
 installed-wheel regressions and separate cold/repeated/warm measurements.
 
 ## Sources and terms

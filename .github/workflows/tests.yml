@@ -33,7 +33,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Install platform dependencies and test tools
-        run: python -m pip install build .ci/epsm_data '.ci/epsm_core[geometry]' '.[platform,dev,gis,notebook]'
+        run: python -m pip install build setuptools wheel .ci/epsm_data '.ci/epsm_core[geometry]' '.[platform,dev,gis,notebook]'
       - name: Record tested revisions
         run: |
           git rev-parse HEAD
