@@ -43,6 +43,7 @@ from epsm_rc._logging import bind_context, call_with_context, context_logger
 from epsm_rc._logging import operation as logged_operation
 
 from .iso13790 import Building5R1C, Construction, ConstructionLayer
+from .preparation import PreparationCache
 
 if TYPE_CHECKING:
     from epsm_core import Building, Weather
@@ -148,16 +149,22 @@ class RCSettings:
         if not 0 <= self.ground_coupling_factor <= 1 or not 0 <= self.ground_reflectance <= 1:
             raise ValueError("Ground coupling and reflectance must be fractions")
         if self.airflow_policy not in {"reject", "sensible_only_unlimited_supply"}:
-            raise ValueError("Unknown airflow_policy; choose reject or sensible_only_unlimited_supply")
+            raise ValueError(
+                "Unknown airflow_policy; choose reject or sensible_only_unlimited_supply"
+            )
         if self.policy_version != "epsm_rc_5r1c_v1":
             raise ValueError("Unknown reduction policy version")
         positive = (
-            "internal_surface_area_factor", "surface_air_coefficient_w_m2_k",
-            "mass_surface_coefficient_w_m2_k", "air_volumetric_heat_capacity_j_m3_k",
+            "internal_surface_area_factor",
+            "surface_air_coefficient_w_m2_k",
+            "mass_surface_coefficient_w_m2_k",
+            "air_volumetric_heat_capacity_j_m3_k",
         )
         nonnegative = (
-            "outside_wall_resistance_m2_k_w", "outside_roof_resistance_m2_k_w",
-            "sky_radiation_coefficient_w_m2_k", "sky_air_temperature_difference_k",
+            "outside_wall_resistance_m2_k_w",
+            "outside_roof_resistance_m2_k_w",
+            "sky_radiation_coefficient_w_m2_k",
+            "sky_air_temperature_difference_k",
         )
         for name in (*positive, *nonnegative):
             value = getattr(self, name)
@@ -165,7 +172,9 @@ class RCSettings:
                 constraint = "positive" if name in positive else "nonnegative"
                 raise ValueError(f"{name} must be finite and {constraint}")
         for name in (
-            "convective_internal_gains_fraction", "wall_sky_view_factor", "roof_sky_view_factor",
+            "convective_internal_gains_fraction",
+            "wall_sky_view_factor",
+            "roof_sky_view_factor",
         ):
             if not 0 <= getattr(self, name) <= 1:
                 raise ValueError(f"{name} must be a finite fraction")
@@ -179,7 +188,9 @@ class RCSettings:
         if max(self.mass_area_factors) > self.internal_surface_area_factor:
             raise ValueError("Effective mass area cannot exceed the internal surface area")
         if self.ground_policy not in {
-            "reject", "conductance_multiplier", "prescribed_monthly_temperature",
+            "reject",
+            "conductance_multiplier",
+            "prescribed_monthly_temperature",
         }:
             raise ValueError("Unknown ground_policy")
         if self.ground_policy == "prescribed_monthly_temperature":
@@ -189,12 +200,16 @@ class RCSettings:
             if not isinstance(self.monthly_ground_temperature_source, str) or not (
                 self.monthly_ground_temperature_source.strip()
             ):
-                raise ValueError("Monthly ground boundary requires an explicit source or assumption")
+                raise ValueError(
+                    "Monthly ground boundary requires an explicit source or assumption"
+                )
             object.__setattr__(self, "monthly_ground_temperatures_c", values)
         elif self.monthly_ground_temperatures_c is not None or (
             self.monthly_ground_temperature_source is not None
         ):
-            raise ValueError("Select ground_policy='prescribed_monthly_temperature' for monthly inputs")
+            raise ValueError(
+                "Select ground_policy='prescribed_monthly_temperature' for monthly inputs"
+            )
         if self.self_shadowing_policy not in {"reject", "ignore"}:
             raise ValueError("Unknown self_shadowing_policy; choose reject or ignore")
 
@@ -253,6 +268,7 @@ def _airflow_capabilities(airflow, settings: RCSettings) -> dict:
 
 def _gain_inputs(use, reference_area, year, settings):
     """Resolve supplied heat channels or the explicitly selected legacy RC policy."""
+
     def annual(schedule):
         return np.asarray(schedule.hourly(year), dtype=float)
 
@@ -262,33 +278,53 @@ def _gain_inputs(use, reference_area, year, settings):
 
         channels = resolve_internal_gains(use, reference_area_m2=reference_area, calendar_year=year)
         if any(channels.unresolved_people_w):
-            raise ValueError("epsm_rc requires an explicit people sensible heat fraction for active people gains")
+            raise ValueError(
+                "epsm_rc requires an explicit people sensible heat fraction for active people gains"
+            )
         if any(channels.return_air_w):
             raise ValueError("epsm_rc does not support active lighting return-air heat")
         convective = np.asarray(channels.convective_w)
         radiant = np.asarray(channels.radiant_w)
         report = {
-            "policy": "shared_explicit", "aggregate_split_applied": False,
+            "policy": "shared_explicit",
+            "aggregate_split_applied": False,
             "supplied_partitions": partitions.model_dump(mode="json"),
             "visible_lighting_treatment": "radiant_heat_deposited_on_room_surfaces",
             "latent_treatment": "excluded_from_sensible_thermal_network",
-            "channel_energy_kwh": {name: sum(getattr(channels, name)) / 1000 for name in (
-                "convective_w", "radiant_w", "latent_w", "lost_w", "return_air_w")},
+            "channel_energy_kwh": {
+                name: sum(getattr(channels, name)) / 1000
+                for name in ("convective_w", "radiant_w", "latent_w", "lost_w", "return_air_w")
+            },
         }
         return convective + radiant, convective, radiant, report
 
-    activity = annual(use.occupant_activity_schedule) if use.occupant_activity_schedule else use.occupant_activity_w
-    heat = annual(use.equipment_heat_fraction_schedule) if use.equipment_heat_fraction_schedule else use.equipment_heat_fraction
+    activity = (
+        annual(use.occupant_activity_schedule)
+        if use.occupant_activity_schedule
+        else use.occupant_activity_w
+    )
+    heat = (
+        annual(use.equipment_heat_fraction_schedule)
+        if use.equipment_heat_fraction_schedule
+        else use.equipment_heat_fraction
+    )
     gains = reference_area * (
         use.occupant_density_per_m2 * activity * annual(use.occupancy_fraction)
         + use.equipment_gain_w_m2 * heat * annual(use.equipment_fraction)
-        + use.lighting_gain_w_m2 * annual(use.lighting_fraction))
+        + use.lighting_gain_w_m2 * annual(use.lighting_fraction)
+    )
     convective = gains * settings.convective_internal_gains_fraction
-    return gains, convective, gains - convective, {
-        "policy": "legacy_sensible_from_explicit_rc_policy", "aggregate_split_applied": True,
-        "core_policy": partitions.policy if partitions is not None else "legacy_default",
-        "occupant_treatment": "all_activity_treated_as_sensible",
-    }
+    return (
+        gains,
+        convective,
+        gains - convective,
+        {
+            "policy": "legacy_sensible_from_explicit_rc_policy",
+            "aggregate_split_applied": True,
+            "core_policy": partitions.policy if partitions is not None else "legacy_default",
+            "occupant_treatment": "all_activity_treated_as_sensible",
+        },
+    )
 
 
 def _ground_reduction(envelope, settings: RCSettings) -> tuple[tuple | None, float, dict]:
@@ -384,6 +420,7 @@ def simulate_building(
     weather: Weather | str | Path,
     directory: str | Path | None = None,
     settings: RCSettings | dict | None = None,
+    preparation_cache: PreparationCache | None = None,
 ) -> SimulationResult:
     """Calculate one full year from a Core physical Building.
 
@@ -401,6 +438,9 @@ def simulate_building(
     settings : RCSettings or dict
         Required explicit reduction assumptions. ``RCSettings.from_policy``
         selects versioned baseline defaults and accepts explicit overrides.
+    preparation_cache : PreparationCache or None
+        Explicit bounded preparation reuse across independent runs. Weather and
+        source contents are still verified; each run creates fresh thermal state.
         The default airflow policy rejects unsupported latent/supply controls.
 
     Returns
@@ -452,6 +492,8 @@ def simulate_building(
     settings = RCSettings(**settings) if isinstance(settings, dict) else settings
     if not isinstance(settings, RCSettings):
         raise TypeError("settings must be RCSettings or an explicit settings dictionary")
+    if preparation_cache is not None and not isinstance(preparation_cache, PreparationCache):
+        raise TypeError("preparation_cache must be a PreparationCache")
 
     from epsm_core import Weather
     from epsm_core.geometry import facade_catalog
@@ -465,10 +507,18 @@ def simulate_building(
     if file_sha256(weather.path) != weather.sha256:
         raise ValueError("EPW contents changed after Weather was created")
     building.readiness(engine="epsm_rc", weather=weather).require()
-    spec = call_with_context(building.to_spec, weather)
+    geometry_options = (
+        {"geometry_cache": preparation_cache.geometry_cache}
+        if preparation_cache is not None
+        else {}
+    )
+    spec = call_with_context(building.to_spec, weather, **geometry_options)
     gains, convective_gains, radiant_gains, gain_reduction = _gain_inputs(
-        spec.use, spec.load_reference_area_m2 or spec.geometry.conditioned_floor_area_m2,
-        spec.climate.calendar_year, settings)
+        spec.use,
+        spec.load_reference_area_m2 or spec.geometry.conditioned_floor_area_m2,
+        spec.climate.calendar_year,
+        settings,
+    )
     airflow_capabilities = _airflow_capabilities(spec.airflow, settings)
     ground, ground_multiplier, ground_reduction = _ground_reduction(spec.envelope, settings)
     self_shadowing = _self_shadowing_capabilities(spec.geometry, settings)
@@ -493,7 +543,19 @@ def simulate_building(
     ).hexdigest()
     bind_context(run_id=run_id)
     year = spec.climate.calendar_year
-    validate_epw_calendar(weather.path, year)
+    preparation_key = {
+        "weather_sha256": weather.sha256,
+        "year": year,
+        "climate": spec.climate.model_dump(mode="json"),
+        "implementation": implementation,
+    }
+
+    def prepared(namespace, inputs, compute):
+        if preparation_cache is None:
+            return compute()
+        return preparation_cache.get_or_compute(namespace, inputs, compute)
+
+    prepared("weather_calendar", preparation_key, lambda: validate_epw_calendar(weather.path, year))
     if spec.zone_uses or spec.common_use or spec.common_airflow or spec.unconditioned_exchange:
         raise ValueError("epsm_rc currently requires one common operating/airflow domain")
     if spec.delivery.fvp or spec.renewables.pv_systems:
@@ -621,64 +683,91 @@ def simulate_building(
     model.u_walls *= uplift
     model.u_roof *= uplift
     model.u_floor *= uplift
-    data, _ = read_epw(str(weather.path), coerce_year=year)
+    model._prepare_deterministic_hourly()
+    data, _ = prepared(
+        "weather_data", preparation_key, lambda: read_epw(str(weather.path), coerce_year=year)
+    )
     if not np.isfinite(data.ghi).all() or ((data.ghi < 0) | (data.ghi >= 9999)).any():
         raise ValueError("EPW global horizontal radiation must be complete and nonnegative")
     axis = hourly_axis(year)
     times = pd.DatetimeIndex(axis).tz_localize(
         timezone(timedelta(hours=spec.climate.time_zone_hours))
     )
-    sun = solarposition.get_solarposition(
-        times, spec.climate.latitude_deg, spec.climate.longitude_deg, spec.climate.elevation_m
-    )
-    extra = irradiance.get_extra_radiation(times)
-    air_mass = atmosphere.get_relative_airmass(sun.apparent_zenith)
+
+    def solar_geometry():
+        position = solarposition.get_solarposition(
+            times, spec.climate.latitude_deg, spec.climate.longitude_deg, spec.climate.elevation_m
+        )
+        return (
+            position,
+            irradiance.get_extra_radiation(times),
+            atmosphere.get_relative_airmass(position.apparent_zenith),
+        )
+
+    sun, extra, air_mass = prepared("solar_geometry", preparation_key, solar_geometry)
+    zenith, sun_azimuth = sun.apparent_zenith.to_numpy(), sun.azimuth.to_numpy()
+    extra, air_mass = np.asarray(extra), np.asarray(air_mass)
+    dni, ghi, dhi = data.dni.to_numpy(), data.ghi.to_numpy(), data.dhi.to_numpy()
     facades = {f.facade_id: f for f in facade_catalog(spec.geometry)}
     solar, opaque = np.zeros(len(axis)), np.zeros(len(axis))
+    orientation_irradiance = {}
     for element in elements:
         role = element.role.value
         if role not in {"WINDOW", "ROOF", "TOP_FLOOR"} and not role.startswith("EXT_WALL"):
             continue
         roof = role in {"ROOF", "TOP_FLOOR"}
         azimuth = 180 if roof else facades[element.facade_id].azimuth_deg
-        poa = irradiance.get_total_irradiance(
-            0 if roof else 90,
-            azimuth,
-            sun.apparent_zenith,
-            sun.azimuth,
-            data.dni.to_numpy(),
-            data.ghi.to_numpy(),
-            data.dhi.to_numpy(),
-            dni_extra=extra,
-            airmass=air_mass,
-            albedo=settings.ground_reflectance,
-            model="perez",
-        )["poa_global"].to_numpy(copy=True)
-        # Own the array before applying physical limits: pandas may expose a
-        # read-only view of the irradiance provider's storage.
-        # Perez has a 0/0 sky-clearness term when diffuse radiation is zero.
-        # The exact zero-diffuse limit is beam plus ground reflection.
-        zero_diffuse = data.dhi.to_numpy() == 0
-        if zero_diffuse.any():
-            limit = irradiance.get_total_irradiance(
-                0 if roof else 90,
-                azimuth,
-                sun.apparent_zenith,
-                sun.azimuth,
-                data.dni.to_numpy(),
-                data.ghi.to_numpy(),
-                data.dhi.to_numpy(),
-                albedo=settings.ground_reflectance,
-                model="isotropic",
-            )["poa_global"].to_numpy()
-            poa[zero_diffuse] = limit[zero_diffuse]
-        no_radiation = (
-            (data.ghi.to_numpy() == 0) & (data.dni.to_numpy() == 0) & (data.dhi.to_numpy() == 0)
-        )
-        poa[no_radiation] = 0.0
-        if (np.isnan(poa) & (sun.apparent_zenith.to_numpy() < 90)).any() or np.isinf(poa).any():
-            raise ValueError("Solar calculation produced invalid daylight irradiance")
-        poa = np.nan_to_num(poa, nan=0.0)
+        orientation = (0 if roof else 90, azimuth)
+        if orientation in orientation_irradiance:
+            poa = orientation_irradiance[orientation]
+        else:
+            radiation_key = {
+                **preparation_key,
+                "tilt": orientation[0],
+                "azimuth": azimuth,
+                "albedo": settings.ground_reflectance,
+            }
+
+            def plane_irradiance():
+                poa = irradiance.get_total_irradiance(
+                    0 if roof else 90,
+                    azimuth,
+                    zenith,
+                    sun_azimuth,
+                    dni,
+                    ghi,
+                    dhi,
+                    dni_extra=extra,
+                    airmass=air_mass,
+                    albedo=settings.ground_reflectance,
+                    model="perez",
+                )["poa_global"]
+                poa = np.asarray(poa).copy()
+                # Own the array before applying physical limits: pandas may expose a
+                # read-only view of the irradiance provider's storage.
+                # Perez has a 0/0 sky-clearness term when diffuse radiation is zero.
+                # The exact zero-diffuse limit is beam plus ground reflection.
+                zero_diffuse = dhi == 0
+                if zero_diffuse.any():
+                    limit = irradiance.get_total_irradiance(
+                        0 if roof else 90,
+                        azimuth,
+                        zenith,
+                        sun_azimuth,
+                        dni,
+                        ghi,
+                        dhi,
+                        albedo=settings.ground_reflectance,
+                        model="isotropic",
+                    )["poa_global"]
+                    poa[zero_diffuse] = limit[zero_diffuse]
+                poa[(ghi == 0) & (dni == 0) & (dhi == 0)] = 0.0
+                if (np.isnan(poa) & (zenith < 90)).any() or np.isinf(poa).any():
+                    raise ValueError("Solar calculation produced invalid daylight irradiance")
+                return np.nan_to_num(poa, nan=0.0)
+
+            poa = prepared("plane_irradiance", radiation_key, plane_irradiance)
+            orientation_irradiance[orientation] = poa
         if role == "WINDOW":
             solar += (
                 poa * element.area_m2 * element.construction.shgc * spec.facade.solar_shading_factor
@@ -687,12 +776,17 @@ def simulate_building(
             outside = element.construction.components[0].layers[0].layer
             alpha = sum(m.area_fraction * m.material.solar_absorptance for m in outside.materials)
             outside_resistance = (
-                settings.outside_roof_resistance_m2_k_w if roof
+                settings.outside_roof_resistance_m2_k_w
+                if roof
                 else settings.outside_wall_resistance_m2_k_w
             )
             opaque += (
-                poa * element.area_m2 * element.construction.u_value
-                * alpha * outside_resistance * uplift
+                poa
+                * element.area_m2
+                * element.construction.u_value
+                * alpha
+                * outside_resistance
+                * uplift
             )
     infiltration = (
         airflow.infiltration_design_flow_m3_s(reference_area_m2=reference_area, volume_m3=volume)
@@ -717,10 +811,51 @@ def simulate_building(
     )
     power, indoor = np.zeros(len(axis)), np.zeros(len(axis))
     model.t_m = model.t_air = model.t_s = float(heat_set[0])
+    month_offsets = tuple(
+        sum((744, 672, 744, 720, 744, 720, 744, 744, 720, 744, 720, 744)[:m]) for m in range(12)
+    )
+    month_hours = tuple(month_offsets[int(month) - 1] for month in times.month)
+    # Array preparation stays vectorized; the recurrence uses Python doubles to
+    # avoid NumPy scalar dispatch without changing floating-point operation order.
+    (
+        temperatures,
+        scalar_gains,
+        scalar_convective,
+        heat_set,
+        cool_set,
+        wind,
+        infiltration,
+        natural,
+        ventilation,
+        solar,
+        opaque,
+        heating_on,
+        cooling_on,
+    ) = (
+        values.tolist()
+        for values in (
+            temperatures,
+            gains,
+            convective_gains,
+            heat_set,
+            cool_set,
+            wind,
+            infiltration,
+            natural,
+            ventilation,
+            solar,
+            opaque,
+            heating_on,
+            cooling_on,
+        )
+    )
     for hour, temperature in enumerate(temperatures):
         if not gain_reduction["aggregate_split_applied"]:
             model.convective_fraction_internal = (
-                float(convective_gains[hour] / gains[hour]) if gains[hour] > 0 else 0.0)
+                float(scalar_convective[hour] / scalar_gains[hour])
+                if scalar_gains[hour] > 0
+                else 0.0
+            )
         model.t_set_heating, model.t_set_cooling = heat_set[hour], cool_set[hour]
         correction = (
             coefficients[0]
@@ -730,15 +865,14 @@ def simulate_building(
         )
         model.ach_infiltration = infiltration[hour] * correction + natural[hour]
         model.ach_ventilation = ventilation[hour]
-        model._calculate_thermal_properties()
+        model._update_ventilation_coefficient()
         # The legacy ground helper uses a non-leap month index. Passing a
         # representative hour within the actual month preserves leap-day input.
-        month = times[hour].month
-        month_hour = sum([744, 672, 744, 720, 744, 720, 744, 744, 720, 744, 720, 744][: month - 1])
+        month_hour = month_hours[hour]
         power[hour] = model.calc_heating_demand(
             temperature,
             solar[hour],
-            gains[hour],
+            scalar_gains[hour],
             solar_gains_opaque=opaque[hour],
             max_heating_power=np.inf if heating_on[hour] else 0,
             max_cooling_power=-np.inf if use.cooling_enabled and cooling_on[hour] else 0,
@@ -770,7 +904,9 @@ def simulate_building(
     )
     hourly.update(heating_delivery(spec, hourly["space_heating_demand_kwh"], report))
     scalars = {key: float(values.sum()) for key, values in hourly.items() if key.endswith("kwh")}
-    units = {key: "kWh" if key.endswith("kwh") else "W" if key.endswith("_w") else "C" for key in hourly}
+    units = {
+        key: "kWh" if key.endswith("kwh") else "W" if key.endswith("_w") else "C" for key in hourly
+    }
     diagnostics = dict(
         accepted=all(np.isfinite(v).all() for v in hourly.values()),
         engine="epsm_rc",

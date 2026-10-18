@@ -754,6 +754,28 @@ class Building5R1C:
     _solar_calc: Optional["SolarGainsCalculator"] = field(default=None, init=False, repr=False)
     _window_areas_by_orientation: Optional[dict] = field(default=None, init=False, repr=False)
     
+    # Enabled only on a fresh deterministic Core-adapter model. Ordinary mutable
+    # standalone instances retain uncached property evaluation and public API.
+    _prepared_hourly = False
+
+    def _prepare_deterministic_hourly(self):
+        """Prepare fixed coefficients after Core's declared U-value uplift.
+
+        The adapter owns this model for one run, uses one-hour steps, and disables
+        stochastic windows. Only airflow, gains and setpoints change thereafter.
+        Rebuilding physical properties disables this specialization again.
+        """
+        self._calculate_thermal_properties()
+        self._prepared_sky = self.calc_sky_radiation_loss()
+        self._prepared_mass_ratio = self._mass_area / self._a_tot if self._a_tot > 0 else 0.0
+        self._prepared_window_ratio = (
+            self._h_tr_w / (self.h_ms * self._a_tot) if self._a_tot > 0 else 0.0)
+        self._prepared_surface_ratio = max(
+            0.0, 1.0 - self._prepared_mass_ratio - self._prepared_window_ratio)
+        self._prepared_hourly = True
+        self._hour_heat_flows = None
+        self._update_ventilation_coefficient()
+
     def __post_init__(self):
         """Calculate derived thermal properties."""
         for name in ("h_ms", "air_volumetric_heat_capacity_j_m3_k"):
@@ -817,6 +839,7 @@ class Building5R1C:
             - H_tr,is: Surface-air coupling [Section 7.2.2.2, Eq. (9)]
             - H_tr,em: Mass-exterior coupling [Section 12.2.2, Eq. (64)]
         """
+        self._prepared_hourly = False
         A_f = self.floor_area_m2
         
         # Building volume [m³]
@@ -997,6 +1020,16 @@ class Building5R1C:
             self.air_volumetric_heat_capacity_j_m3_k
             * self._building_vol * ach_effective / 3600.0
         )
+        if self._prepared_hourly:
+            h1 = (1.0 / (1.0 / self._h_ve + 1.0 / self._h_tr_is)
+                  if self._h_ve > 0 and self._h_tr_is > 0 else 0.0)
+            h2 = h1 + self._h_tr_w
+            h3 = (1.0 / (1.0 / h2 + 1.0 / self._h_tr_ms)
+                  if h2 > 0 and self._h_tr_ms > 0 else 0.0)
+            self._prepared_network = h1, h2, h3
+            c_dt = self._c_m / 3600.0
+            h_sum = h3 + self._h_tr_em
+            self._prepared_cn = c_dt - 0.5 * h_sum, c_dt + 0.5 * h_sum
 
     def _handle_window_opening(self, t_out: float) -> float:
         """Determine additional ventilation from window opening (stochastic).
@@ -1147,6 +1180,8 @@ class Building5R1C:
         This represents the parallel combination of ventilation and
         surface-air heat transfer paths.
         """
+        if self._prepared_hourly:
+            return self._prepared_network[0]
         if self._h_ve > 0 and self._h_tr_is > 0:
             return 1.0 / (1.0 / self._h_ve + 1.0 / self._h_tr_is)
         return 0.0
@@ -1160,6 +1195,8 @@ class Building5R1C:
         
         This adds window transmission to the air-side conductance path.
         """
+        if self._prepared_hourly:
+            return self._prepared_network[1]
         return self.h_tr_1 + self._h_tr_w
     
     @property
@@ -1172,6 +1209,8 @@ class Building5R1C:
         This represents the parallel combination of window/air and
         mass-surface heat transfer paths.
         """
+        if self._prepared_hourly:
+            return self._prepared_network[2]
         if self.h_tr_2 > 0 and self._h_tr_ms > 0:
             return 1.0 / (1.0 / self.h_tr_2 + 1.0 / self._h_tr_ms)
         return 0.0
@@ -1220,6 +1259,8 @@ class Building5R1C:
         Returns:
             Sky radiation heat loss [W] (positive = heat loss)
         """
+        if self._prepared_hourly:
+            return self._prepared_sky
         # Roof contribution (horizontal surface, Fr = 1.0)
         phi_r_roof = (
             self.r_se_roof * 
@@ -1493,6 +1534,10 @@ class Building5R1C:
         Returns:
             Tuple of (Φ_ia, Φ_st, Φ_m) heat flows to air, surface, mass nodes [W]
         """
+        if self._prepared_hourly and self._hour_heat_flows is not None:
+            phi_ia, phi_st, phi_m = self._hour_heat_flows
+            return (phi_ia + energy_demand, phi_st, phi_m) if energy_demand else (
+                phi_ia, phi_st, phi_m)
         # Total solar gains (windows + opaque)
         phi_sol_total = solar_gains + solar_gains_opaque
         
@@ -1505,8 +1550,10 @@ class Building5R1C:
             
             if self._a_tot > 0:
                 # Area ratios per ISO 13790
-                ratio_mass = self._mass_area / self._a_tot
-                ratio_window = self._h_tr_w / (self.h_ms * self._a_tot)
+                ratio_mass = (self._prepared_mass_ratio if self._prepared_hourly
+                              else self._mass_area / self._a_tot)
+                ratio_window = (self._prepared_window_ratio if self._prepared_hourly
+                                else self._h_tr_w / (self.h_ms * self._a_tot))
                 ratio_surface = max(0.0, 1.0 - ratio_mass - ratio_window)
                 
                 # Eq. (C.2): Φ_m = (A_m/A_t) × 0.5 × (Φ_int + Φ_sol)
@@ -1550,6 +1597,8 @@ class Building5R1C:
             phi_r_sky = self.calc_sky_radiation_loss()
             phi_st -= phi_r_sky  # Negative because it's a loss
         
+        if self._prepared_hourly:
+            self._hour_heat_flows = phi_ia + 0.0, phi_st, phi_m
         # Add heating/cooling to air node (assumes radiator/convective heating)
         phi_ia += energy_demand
         
@@ -1660,6 +1709,9 @@ class Building5R1C:
         Returns:
             Mass temperature at end of timestep θ_m,t [°C]
         """
+        if self._prepared_hourly and dt_hours == 1.0:
+            a, b = self._prepared_cn
+            return (t_m_prev * a + phi_m_tot) / b
         dt_seconds = dt_hours * 3600.0
         
         # C.4: T_m(t+1) = [T_m(t).(C_m/dt - 0.5.(H3+H_em)) + φ_m_tot] / 
@@ -1882,6 +1934,8 @@ class Building5R1C:
         Returns:
             Heating demand Φ_H,nd [W] (positive) or cooling demand Φ_C,nd [W] (negative)
         """
+        if self._prepared_hourly:
+            self._hour_heat_flows = None
         if internal_gains is None:
             internal_gains = self.internal_gains_w_per_m2 * self.floor_area_m2
         
@@ -1897,6 +1951,7 @@ class Building5R1C:
                   dt_hours=dt_hours, solar_gains_opaque=solar_gains_opaque,
                   hour_of_year=hour_of_year)
         
+        free_state = self.t_air, self.t_s, self.t_m
         # Get control temperature based on mode
         if self.use_operative_temperature:
             t_ctrl_0 = self.t_operative
@@ -1963,6 +2018,9 @@ class Building5R1C:
             # No heating or cooling needed
             q_demand = 0.0
         
+        if self._prepared_hourly and q_demand == 0.0:
+            self.t_air, self.t_s, self.t_m = free_state
+            return q_demand
         # Step 3/4: Apply the calculated demand and update state
         self.step(t_out, solar_gains, internal_gains, energy_demand=q_demand, 
                   dt_hours=dt_hours, solar_gains_opaque=solar_gains_opaque,

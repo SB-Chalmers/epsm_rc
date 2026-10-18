@@ -49,6 +49,7 @@ except ImportError:
 __all__ = [
     "simulate_building",
     "RCSettings",
+    "PreparationCache",
     # Core model
     "Building5R1C",
     "BuildingClass",
@@ -92,6 +93,9 @@ __version__ = "0.4.0"
 
 # Platform integration imports Core only when explicitly requested.
 def __getattr__(name):
+    if name == "PreparationCache":
+        from .preparation import PreparationCache
+        return PreparationCache
     if name in {"EngineComparison", "prepare_engine_comparison"}:
         from . import comparison
         return getattr(comparison, name)

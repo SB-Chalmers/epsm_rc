@@ -120,18 +120,12 @@ def test_solar_limits_accept_read_only_provider_arrays(monkeypatch, reference_bu
     original = platform.irradiance.get_total_irradiance
     supplied = []
 
-    class IrradianceSeries:
-        def __init__(self, series):
-            self.values = series.to_numpy(copy=True)
-            supplied.append((self.values, self.values.copy()))
-            self.values.flags.writeable = False
-
-        def to_numpy(self, *, copy=False):
-            return self.values.copy() if copy else self.values
-
     def readonly_irradiance(*args, **kwargs):
         values = original(*args, **kwargs)
-        return {"poa_global": IrradianceSeries(values["poa_global"])}
+        array = np.array(values["poa_global"], copy=True)
+        supplied.append((array, array.copy()))
+        array.flags.writeable = False
+        return {"poa_global": array}
 
     monkeypatch.setattr(platform.irradiance, "get_total_irradiance", readonly_irradiance)
     weather = core.Weather.from_epw(files("epsm_rc").joinpath("data/epw/goteborg.epw"))
