@@ -151,8 +151,8 @@ class RCSettings:
     monthly_ground_temperatures_c: tuple[float, ...] | None = None
     monthly_ground_temperature_source: str | None = None
     self_shadowing_policy: str = "reject"
-    solar_time_reference: str = "hour_start"
-    window_optics_method: str = "constant_shgc"
+    solar_time_reference: str | None = None
+    window_optics_method: str | None = None
 
     def __post_init__(self):
         if not np.isfinite(self.effective_mass_depth_m) or self.effective_mass_depth_m <= 0:
@@ -165,6 +165,17 @@ class RCSettings:
             )
         if self.policy_version not in {"epsm_rc_5r1c_v1", "epsm_rc_5r1c_v2"}:
             raise ValueError("Unknown reduction policy version")
+        angular = self.policy_version == "epsm_rc_5r1c_v2"
+        if self.solar_time_reference is None:
+            object.__setattr__(
+                self, "solar_time_reference", "interval_midpoint" if angular else "hour_start"
+            )
+        if self.window_optics_method is None:
+            object.__setattr__(
+                self,
+                "window_optics_method",
+                "simple_glazing_angular_v1" if angular else "constant_shgc",
+            )
         if self.solar_time_reference not in {"hour_start", "interval_midpoint"}:
             raise ValueError("Unknown solar_time_reference")
         if self.window_optics_method not in {"constant_shgc", "simple_glazing_angular_v1"}:
@@ -231,15 +242,7 @@ class RCSettings:
     @classmethod
     def from_policy(cls, name: str, **overrides) -> RCSettings:
         """Select the named baseline profile with inspectable explicit overrides."""
-        selected = (
-            {
-                "solar_time_reference": "interval_midpoint",
-                "window_optics_method": "simple_glazing_angular_v1",
-            }
-            if name == "epsm_rc_5r1c_v2"
-            else {}
-        )
-        return cls(policy_version=name, **(selected | overrides))
+        return cls(policy_version=name, **overrides)
 
     def effective_configuration(self) -> dict:
         """Return model assumptions, distinct from the supplied physical evidence."""

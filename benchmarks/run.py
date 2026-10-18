@@ -27,7 +27,7 @@ from pathlib import Path
 import numpy as np
 from epsm_core import Building, Weather
 
-from epsm_rc import RCSettings, simulate_building
+from epsm_rc import RCSettings, SolarGainsCalculator, simulate_building
 
 
 def controlled_weather(path):
@@ -167,6 +167,30 @@ def main(argv=None):
             summary.get("exact_reference_match"),
             flush=True,
         )
+    # Both public radiation entry points must retain their own legacy arithmetic,
+    # including standalone midpoint timing and direct/diffuse angular modifiers.
+    calculator = SolarGainsCalculator.from_epw(
+        files("epsm_rc").joinpath("data/epw/goteborg.epw"), ground_reflectance=0.2
+    )
+    standalone = {}
+    for label, use_perez, coefficients in (
+        ("perez", True, None),
+        ("isotropic", False, None),
+        ("angular_perez", True, (1.0, -0.189, 0.644, -0.596)),
+    ):
+        standalone[label] = calculator.calculate_from_epw(
+            {"south": 12.0, "north": 8.0, "east": 6.0, "west": 7.0},
+            g_value=0.6,
+            frame_factor=1.0,
+            use_perez=use_perez,
+            g_value_angle_coefficients=coefficients,
+        )
+    np.savez_compressed(args.directory / "standalone.npz", **standalone)
+    if reference:
+        expected = np.load(reference / "standalone.npz")
+        for key, values in standalone.items():
+            np.testing.assert_array_equal(values, expected[key], err_msg=f"standalone: {key}")
+        report["standalone_exact_reference_match"] = True
     (args.directory / "report.json").write_text(json.dumps(report, indent=2) + "\n")
 
 

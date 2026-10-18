@@ -17,6 +17,7 @@ def test_named_radiation_policy_is_explicit_and_legacy_stays_unchanged():
     assert legacy.window_optics_method == "constant_shgc"
     assert current.solar_time_reference == "interval_midpoint"
     assert current.window_optics_method == "simple_glazing_angular_v1"
+    assert RCSettings(policy_version="epsm_rc_5r1c_v2") == current
     assert current.effective_configuration()["methods"]["glazing"] == current.window_optics_method
     for kwargs in ({"solar_time_reference": "guess"}, {"window_optics_method": "guess"}):
         with pytest.raises(ValueError):
