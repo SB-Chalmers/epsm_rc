@@ -374,32 +374,16 @@ class SolarGainsCalculator:
                 g_value_beam = g_value * g_modifier
                 g_value_diffuse = g_value  # Use normal g-value for diffuse
                 
-                # Get beam component
-                beam = irradiance.beam_component(
-                    surface_tilt, surface_azimuth,
-                    solar_zenith, solar_azimuth, dni
-                )
-                beam = np.maximum(0, beam)
-                
-                # Get diffuse components (sky + ground)
-                if use_perez:
-                    am_safe = np.where(airmass > 0, airmass, 1.0)
-                    dni_extra_safe = np.where(dni_extra > 0, dni_extra, 1.0)
-                    sky_diffuse = irradiance.perez(
-                        surface_tilt, surface_azimuth,
-                        dhi, dni, dni_extra_safe,
-                        solar_zenith, solar_azimuth,
-                        am_safe, model='allsitescomposite1990'
-                    )
-                    sky_diffuse = np.nan_to_num(sky_diffuse, nan=0.0)
-                else:
-                    sky_diffuse = irradiance.isotropic(surface_tilt, dhi)
-                
-                ground_diffuse = irradiance.get_ground_diffuse(
-                    surface_tilt, ghi, albedo=self.ground_reflectance
-                )
-                diffuse = np.maximum(0, sky_diffuse + ground_diffuse)
-                
+                channels = plane_irradiance(surface_tilt, surface_azimuth,
+                    solar_zenith, solar_azimuth, dni, ghi, dhi,
+                    albedo=self.ground_reflectance,
+                    dni_extra=dni_extra if use_perez else None,
+                    airmass=airmass if use_perez else None,
+                    model="perez" if use_perez else "isotropic", legacy_standalone=True)
+                beam = np.maximum(0, channels["poa_direct"])
+                diffuse = np.maximum(0, channels["poa_sky_diffuse"]
+                                     + channels["poa_ground_diffuse"])
+
                 # Apply different g-values to beam and diffuse
                 solar_gains += (beam * g_value_beam + diffuse * g_value_diffuse) * area * frame_factor
             else:

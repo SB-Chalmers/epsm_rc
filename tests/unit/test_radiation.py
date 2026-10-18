@@ -11,6 +11,32 @@ from epsm_rc import PreparationCache, RCSettings, simulate_building
 from epsm_rc.radiation import plane_irradiance
 
 
+def test_legacy_standalone_keeps_direct_beam_projection():
+    from pvlib import irradiance
+
+    zenith, azimuth = np.array([30.1234, 72.1123]), np.array([173.4, 241.7])
+    dni, ghi, dhi = np.array([700.0, 510.0]), np.array([600.0, 300.0]), np.array([100.0, 80.0])
+    channels = plane_irradiance(
+        90,
+        180,
+        zenith,
+        azimuth,
+        dni,
+        ghi,
+        dhi,
+        albedo=0.2,
+        dni_extra=np.full(2, 1367.0),
+        airmass=np.array([1.2, 3.1]),
+        legacy_standalone=True,
+    )
+    expected = irradiance.beam_component(90, 180, zenith, azimuth, dni)
+    np.testing.assert_array_equal(channels["poa_direct"], expected)
+    np.testing.assert_array_equal(
+        channels["poa_global"],
+        np.maximum(0, expected + channels["poa_sky_diffuse"] + channels["poa_ground_diffuse"]),
+    )
+
+
 @pytest.mark.parametrize("dhi", [np.array([100.0, 40.0, 0.0]), np.zeros(3)])
 def test_plane_components_are_finite_conserved_and_detached(dhi):
     zenith = np.array([30.0, 89.9, 105.0])

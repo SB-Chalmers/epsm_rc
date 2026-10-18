@@ -47,19 +47,29 @@ def plane_irradiance(
                 dni_extra=np.where(dni_extra > 0, dni_extra, 1.0),
                 airmass=np.where(airmass > 0, airmass, 1.0),
             )
+    if legacy_standalone:
+        # get_total_irradiance roundtrips projection -> acos -> cos for beam.
+        # The legacy standalone API used beam_component's direct projection;
+        # preserve it even though the difference is only a few floating-point ulps.
+        beam = irradiance.beam_component(tilt, azimuth, zenith, sun_azimuth, dni)
+        sky_kwargs = {name: value for name, value in kwargs.items() if name != "albedo"}
+        sky = irradiance.get_sky_diffuse(
+            tilt, azimuth, zenith, sun_azimuth, dni, ghi, dhi, **sky_kwargs
+        )
+        if model == "perez":
+            sky = np.nan_to_num(sky, nan=0.0)
+        ground = irradiance.get_ground_diffuse(tilt, ghi, albedo=albedo)
+        return {
+            "poa_direct": beam,
+            "poa_sky_diffuse": sky,
+            "poa_ground_diffuse": ground,
+            "poa_diffuse": sky + ground,
+            "poa_global": np.maximum(0, beam + sky + ground),
+        }
     supplied = irradiance.get_total_irradiance(
         tilt, azimuth, zenith, sun_azimuth, dni, ghi, dhi, **kwargs
     )
     channels = {name: np.asarray(values).copy() for name, values in supplied.items()}
-    if legacy_standalone:
-        sky = channels["poa_sky_diffuse"]
-        if model == "perez":
-            sky = np.nan_to_num(sky, nan=0.0)
-        channels["poa_sky_diffuse"] = sky
-        channels["poa_global"] = np.maximum(
-            0, channels["poa_direct"] + sky + channels["poa_ground_diffuse"]
-        )
-        return channels
     zero_diffuse = dhi == 0
     if model == "perez" and zero_diffuse.any():
         limit = irradiance.get_total_irradiance(
