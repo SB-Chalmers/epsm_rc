@@ -12,7 +12,7 @@ jobs:
       fail-fast: false
       matrix:
         python: ['3.11', '3.13']
-        core: ['4f7f746d1158893f73e0cf601b62fe41c35f5c73', 'dev']
+        dependencies: ['pinned', 'dev']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
@@ -20,14 +20,14 @@ jobs:
           repository: SB-Chalmers/epsm_data
           ssh-key: ${{ secrets.EPSM_DATA_DEPLOY_KEY }}
           persist-credentials: false
-          ref: ${{ matrix.dependencies == 'dev' && 'dev' || 'd7b19688ae7bb73dbbc4bc12afa83a6bcc67ae48' }}
+          ref: ${{ matrix.dependencies == 'dev' && 'dev' || 'bc8449402b9e0dbe0ea85ff76c954cf36d209f86' }}
           path: .ci/epsm_data
       - uses: actions/checkout@v4
         with:
           repository: SB-Chalmers/epsm_core
           ssh-key: ${{ secrets.EPSM_CORE_DEPLOY_KEY }}
           persist-credentials: false
-          ref: ${{ matrix.core }}
+          ref: ${{ matrix.dependencies == 'dev' && 'dev' || '76b9c93978d26d5f27f0616b51fbb1ca19fb6801' }}
           path: .ci/epsm_core
       - uses: actions/setup-python@v5
         with:
@@ -58,14 +58,14 @@ jobs:
           repository: SB-Chalmers/epsm_data
           ssh-key: ${{ secrets.EPSM_DATA_DEPLOY_KEY }}
           persist-credentials: false
-          ref: d7b19688ae7bb73dbbc4bc12afa83a6bcc67ae48
+          ref: bc8449402b9e0dbe0ea85ff76c954cf36d209f86
           path: .ci/epsm_data
       - uses: actions/checkout@v4
         with:
           repository: SB-Chalmers/epsm_core
           ssh-key: ${{ secrets.EPSM_CORE_DEPLOY_KEY }}
           persist-credentials: false
-          ref: 4f7f746d1158893f73e0cf601b62fe41c35f5c73
+          ref: 76b9c93978d26d5f27f0616b51fbb1ca19fb6801
           path: .ci/epsm_core
       - uses: actions/setup-python@v5
         with:
