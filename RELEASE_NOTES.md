@@ -1,3 +1,23 @@
+# Release 0.5.0 — 18 October 2026
+
+Deterministic Core reductions reuse fixed thermal properties, hourly network
+coefficients and zero-load states. Calendar preparation, NumPy radiation and
+orientation reuse reduce repeated work. Optional caller-owned `PreparationCache`
+reuses weather and radiation preparation while rechecking source/weather contents
+and creating fresh thermal state on every run. The installed-wheel benchmark
+compares every hourly channel and annual total with released v1 behavior.
+
+The explicitly selected `epsm_rc_5r1c_v2` policy adds midpoint solar sampling and
+documented angular simple-glazing optics with nominal inward absorbed solar.
+`epsm_rc_5r1c_v1` preserves its numerical behavior. New radiation components,
+method assumptions and limitations are inspectable. Dynamic longwave and geometric
+shading are excluded. See [radiation and migration](docs/radiation.md).
+
+The platform extra now requires Core >=0.5.0 and Data >=0.6.0. CI records approved
+dependency commits and also tests development dependencies. Third-party optical
+correlation notices ship with the distribution. No measured-building accuracy or
+identical EnergyPlus/RC demand is claimed.
+
 # Release 0.4.0 — 15 October 2026
 
 Physical-model reduction, annual calculations and GIS operations. Completion records retain the calculated run identity.
