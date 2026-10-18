@@ -88,7 +88,7 @@ __all__ = [
     "prepare_engine_comparison",
 ]
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 
 # Platform integration imports Core only when explicitly requested.

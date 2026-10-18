@@ -1,3 +1,24 @@
+# Release 0.6.0 — 18 October 2026
+
+Shared Building calculations respect Core's physical element boundaries. Shared
+contact patches contribute no outdoor transmission, opaque solar absorption or
+sky loss; their installed opaque constructions retain thermal capacity. Internal
+walls within the aggregated conditioned domain likewise retain mass without
+outdoor exchange. Core owns partial contact geometry, window placement and one
+physical material owner per internal wall. Neighbour temperature and heating
+evidence are not required for the explicit adiabatic approximation.
+
+Boundary-area diagnostics make the reduction inspectable. Unsupported geometry
+and basement readiness checks still apply. Detached calculations preserve their
+hourly thermal results; input and implementation identities include the changed
+boundary contract. See [boundary reduction](docs/boundaries.md).
+
+The platform extra requires Core >=0.6.0,<0.7 and Data >=0.6.0,<0.7 because these
+versions supply the tested public boundary and construction contracts. Numerical
+standalone imports remain independent of Core. Research runners must additionally
+pin the exact tested package releases or commits; these compatibility ranges are
+not a substitute for study input identities.
+
 # Release 0.5.0 — 18 October 2026
 
 Deterministic Core reductions reuse fixed thermal properties, hourly network
