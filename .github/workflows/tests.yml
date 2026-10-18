@@ -27,13 +27,13 @@ jobs:
           repository: SB-Chalmers/epsm_core
           ssh-key: ${{ secrets.EPSM_CORE_DEPLOY_KEY }}
           persist-credentials: false
-          ref: ${{ matrix.dependencies == 'dev' && 'dev' || '76b9c93978d26d5f27f0616b51fbb1ca19fb6801' }}
+          ref: ${{ matrix.dependencies == 'dev' && 'dev' || '4730e55ab47d1982e482aeaff8ae5d7016bc2d40' }}
           path: .ci/epsm_core
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
       - name: Install platform dependencies and test tools
-        run: python -m pip install build .ci/epsm_data '.ci/epsm_core[geometry]' '.[platform,dev,gis]'
+        run: python -m pip install build .ci/epsm_data '.ci/epsm_core[geometry]' '.[platform,dev,gis,notebook]'
       - name: Record tested revisions
         run: |
           git rev-parse HEAD
@@ -43,14 +43,57 @@ jobs:
         run: python -m pytest -q
       - name: Build and check installed wheel
         run: |
-          python -m build --wheel
+          python -m build
           python -m pip install --no-deps --force-reinstall dist/epsm_rc-*.whl
           python -m pip check
           cd /tmp
           python -c 'from epsm_rc import RCSettings, simulate_building; print(RCSettings, simulate_building)'
+      - uses: actions/checkout@v4
+        if: matrix.dependencies == 'pinned'
+        with:
+          repository: SB-Chalmers/epsm_core
+          ssh-key: ${{ secrets.EPSM_CORE_DEPLOY_KEY }}
+          persist-credentials: false
+          ref: 76b9c93978d26d5f27f0616b51fbb1ca19fb6801
+          path: .ci/core_reference
+      - uses: actions/checkout@v4
+        if: matrix.dependencies == 'pinned'
+        with:
+          ref: d8f42ab69e61cfe580f234b20ddc47cf6d056e59
+          path: .ci/rc_reference
+      - name: Compare released and candidate installed calculations exactly
+        if: matrix.dependencies == 'pinned'
+        run: |
+          python -m venv --system-site-packages .ci/reference_venv
+          .ci/reference_venv/bin/python -m pip install --ignore-installed --no-deps --no-build-isolation .ci/core_reference .ci/rc_reference
+          python benchmarks/run.py --directory outputs/legacy-regression --reference-python .ci/reference_venv/bin/python --repeats 2
+          python benchmarks/run.py --directory outputs/prepared-regression --warm --reference-directory outputs/legacy-regression/reference --repeats 2
+      - name: Execute installed-package notebook in a fresh kernel
+        run: |
+          python - <<'PY'
+          import nbformat
+          from pathlib import Path
+          from nbclient import NotebookClient
+          Path('outputs').mkdir(exist_ok=True)
+          book = nbformat.read('examples/12_prepared_radiation.ipynb', as_version=4)
+          NotebookClient(book, timeout=120, kernel_name='python3').execute()
+          nbformat.write(book, 'outputs/executed-radiation.ipynb')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc-package-${{ matrix.python }}-${{ matrix.dependencies }}
+          path: |
+            outputs/
+            dist/
 
   annual-integration:
     runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.13']
+        dependencies: ['pinned', 'dev']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
@@ -58,18 +101,18 @@ jobs:
           repository: SB-Chalmers/epsm_data
           ssh-key: ${{ secrets.EPSM_DATA_DEPLOY_KEY }}
           persist-credentials: false
-          ref: bc8449402b9e0dbe0ea85ff76c954cf36d209f86
+          ref: ${{ matrix.dependencies == 'dev' && 'dev' || 'bc8449402b9e0dbe0ea85ff76c954cf36d209f86' }}
           path: .ci/epsm_data
       - uses: actions/checkout@v4
         with:
           repository: SB-Chalmers/epsm_core
           ssh-key: ${{ secrets.EPSM_CORE_DEPLOY_KEY }}
           persist-credentials: false
-          ref: 76b9c93978d26d5f27f0616b51fbb1ca19fb6801
+          ref: ${{ matrix.dependencies == 'dev' && 'dev' || '4730e55ab47d1982e482aeaff8ae5d7016bc2d40' }}
           path: .ci/epsm_core
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: ${{ matrix.python }}
       - name: Install coordinated inputs and test tools
         run: python -m pip install build .ci/epsm_data '.ci/epsm_core[dev,geometry]' '.[platform,dev,gis]'
       - name: Install EnergyPlus 24.2
@@ -88,9 +131,16 @@ jobs:
           git -C .ci/epsm_core rev-parse HEAD
           git -C .ci/epsm_data rev-parse HEAD
           "$ENERGYPLUS_EXE" --version
-          python -m pytest tests/unit/test_annual_engine_integration.py tests/unit/test_core_engine_comparison.py --junitxml=integration-results.xml -q
+          python -m pytest tests/unit/test_annual_engine_integration.py tests/unit/test_core_engine_comparison.py tests/unit/test_radiation_engine_comparison.py --junitxml=integration-results.xml --basetemp=outputs/integration -q
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse('integration-results.xml').getroot()
+          assert not root.findall('.//skipped'), 'Required real-engine integration cases must execute'
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: annual-integration-results
-          path: integration-results.xml
+          name: annual-integration-${{ matrix.python }}-${{ matrix.dependencies }}
+          path: |
+            integration-results.xml
+            outputs/integration/
