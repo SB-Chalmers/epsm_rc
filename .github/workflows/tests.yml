@@ -27,7 +27,7 @@ jobs:
           repository: SB-Chalmers/epsm_core
           ssh-key: ${{ secrets.EPSM_CORE_DEPLOY_KEY }}
           persist-credentials: false
-          ref: ${{ matrix.dependencies == 'dev' && 'dev' || '4730e55ab47d1982e482aeaff8ae5d7016bc2d40' }}
+          ref: ${{ matrix.dependencies == 'dev' && 'dev' || '3288cc4c149493ed2764b54f8bb317214570a8eb' }}
           path: .ci/epsm_core
       - uses: actions/setup-python@v5
         with:
@@ -108,7 +108,7 @@ jobs:
           repository: SB-Chalmers/epsm_core
           ssh-key: ${{ secrets.EPSM_CORE_DEPLOY_KEY }}
           persist-credentials: false
-          ref: ${{ matrix.dependencies == 'dev' && 'dev' || '4730e55ab47d1982e482aeaff8ae5d7016bc2d40' }}
+          ref: ${{ matrix.dependencies == 'dev' && 'dev' || '3288cc4c149493ed2764b54f8bb317214570a8eb' }}
           path: .ci/epsm_core
       - uses: actions/setup-python@v5
         with:
