@@ -8,7 +8,7 @@ without contributing outdoor heat loss.
 | Core boundary | RC transmission and radiation | RC thermal storage |
 | --- | --- | --- |
 | `Outdoors` | Wall, roof and window areas contribute their corresponding outdoor paths; walls and roofs receive solar and sky exchange | Installed opaque construction contributes |
-| `Ground` | Ground floor contributes the explicitly selected ground approximation | Installed opaque construction contributes |
+| `Ground` | Ground floor and buried basement walls contribute the explicitly selected ground approximation | Installed opaque construction contributes |
 | `Adiabatic` | No outdoor or ground transmission, solar absorption or sky exchange | Installed opaque construction contributes |
 | `Internal` | No transmission out of the aggregated conditioned domain | Installed opaque construction contributes once per owned physical element |
 
@@ -32,9 +32,10 @@ internal-surface-area factor. Thermal storage keeps the existing single room-sid
 effective-depth traversal per installed opaque element, including internal walls
 and intermediate floors. It does not infer an additional active depth from the
 second conditioned face. This reduction assumption is separate from retaining
-all installed material in Core quantities. It does not calculate heat exchange with an
-adjacent unconditioned space or a neighbouring building. An adiabatic neighbour
+all installed material in Core quantities. Cold attics and separately controlled conditioned basements use the explicit
+[roof and basement reductions](roofs-and-basements.md). It does not calculate
+heat exchange with an unconditioned basement or a neighbouring building. An adiabatic neighbour
 is an explicit single-building approximation, not evidence that its temperature
-equals the simulated building's. Unsupported physical geometry and basements
+equals the simulated building's. Unsupported physical geometry and unconditioned basements
 remain subject to Core readiness checks. Shared-wall support does not bypass
 those checks or establish agreement with measured energy certificates.
