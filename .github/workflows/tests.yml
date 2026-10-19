@@ -27,7 +27,7 @@ jobs:
           repository: SB-Chalmers/epsm_core
           ssh-key: ${{ secrets.EPSM_CORE_DEPLOY_KEY }}
           persist-credentials: false
-          ref: ${{ matrix.dependencies == 'dev' && 'dev' || 'aca61a285ea7934251c14dee6e806fa055063939' }}
+          ref: ${{ matrix.dependencies == 'dev' && 'dev' || '22cf2f19d8b50bba4f33d631f0a9d5bbdb5edd96' }}
           path: .ci/epsm_core
       - uses: actions/setup-python@v5
         with:
@@ -75,7 +75,7 @@ jobs:
           from pathlib import Path
           from nbclient import NotebookClient
           Path('outputs').mkdir(exist_ok=True)
-          for name in ('12_prepared_radiation', '13_shared_wall_boundaries'):
+          for name in ('12_prepared_radiation', '13_shared_wall_boundaries', '14_roofs_and_basements'):
               book = nbformat.read(f'examples/{name}.ipynb', as_version=4)
               NotebookClient(book, timeout=120, kernel_name='python3').execute()
               nbformat.write(book, f'outputs/executed-{name}.ipynb')
@@ -109,7 +109,7 @@ jobs:
           repository: SB-Chalmers/epsm_core
           ssh-key: ${{ secrets.EPSM_CORE_DEPLOY_KEY }}
           persist-credentials: false
-          ref: ${{ matrix.dependencies == 'dev' && 'dev' || 'aca61a285ea7934251c14dee6e806fa055063939' }}
+          ref: ${{ matrix.dependencies == 'dev' && 'dev' || '22cf2f19d8b50bba4f33d631f0a9d5bbdb5edd96' }}
           path: .ci/epsm_core
       - uses: actions/setup-python@v5
         with:
@@ -133,7 +133,7 @@ jobs:
           git -C .ci/epsm_data rev-parse HEAD
           "$ENERGYPLUS_EXE" --version
           mkdir -p outputs
-          python -m pytest tests/unit/test_annual_engine_integration.py tests/unit/test_core_engine_comparison.py tests/unit/test_radiation_engine_comparison.py --junitxml=integration-results.xml --basetemp=outputs/integration -q
+          python -m pytest tests/unit/test_annual_engine_integration.py tests/unit/test_core_engine_comparison.py tests/unit/test_radiation_engine_comparison.py tests/unit/test_geometry_sensitivity_engine_integration.py --junitxml=integration-results.xml --basetemp=outputs/integration -q
           python - <<'PY'
           import xml.etree.ElementTree as ET
           root = ET.parse('integration-results.xml').getroot()

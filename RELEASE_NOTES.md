@@ -1,3 +1,30 @@
+# Release 0.7.0 — roofs and separately controlled basements
+
+Core 0.7.0 physical Buildings can retain a main conditioned domain and a heated
+basement with separate declared operating schedules. RC advances a 5R1C state for
+each domain, couples them through the separating floor resistance and conserves
+their equal and opposite inter-domain exchange. The internal floor remains one
+installed element; the existing active-storage equivalent is shared between the
+two domains. Basement ground walls and the bottom slab contribute to ground
+exchange, with the selected ground reduction applied once.
+
+Cold attics require explicit `cold_attic_policy="quasi_steady_buffer"` and a
+declared outdoor exchange rate in Core. The finite attic balance combines ceiling,
+weather-shell and ventilation conductances, passing shell solar/sky forcing to
+conditioned space. Attic air and shell storage are omitted explicitly. This is a
+reduced-order approximation, not a measured attic-temperature model. Ordinary
+one-domain Buildings retain their existing calculation path.
+
+Unsupported unheated basements, arbitrary conditioned-domain controls and attic
+interfaces outside the supported finite-buffer topology still fail explicitly.
+No geometry, basement setpoint, ventilation rate or neighbour temperature is
+invented to gain readiness. Simulation support does not establish EPC accuracy.
+
+The platform extra requires Core `>=0.7.0,<0.8` and unchanged Data
+`>=0.6.0,<0.7`. Research runs additionally pin exact tested releases and sources.
+See [geometry reduction](docs/roofs-and-basements.md) and the
+[public example](examples/14_roofs_and_basements.ipynb).
+
 # Release 0.6.0 — 18 October 2026
 
 Shared Building calculations respect Core's physical element boundaries. Shared
