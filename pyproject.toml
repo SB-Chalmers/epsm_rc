@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "epsm_rc"
-version = "0.6.0"
+version = "0.7.0"
 description = "ISO 13790:2008 5R1C Building Thermal Model for Swedish Buildings"
 readme = "README.md"
 license = {text = "MIT"}
@@ -40,7 +40,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-platform = ["epsm_core>=0.6.0,<0.7", "epsm_data>=0.6.0,<0.7"]
+platform = ["epsm_core>=0.7.0,<0.8", "epsm_data>=0.6.0,<0.7"]
 heatpump = [
     "hplib>=1.9",
 ]

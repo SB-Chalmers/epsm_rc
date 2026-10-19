@@ -1,6 +1,6 @@
 # EPSM RC
 
-Version **0.6.0**; the shared Building interface requires Core **0.6.x** and Data **0.6.x**.
+Version **0.7.0**; the shared Building interface requires Core **0.7.x** and Data **0.6.x**.
 
 Caller-owned preparation reuse accelerates independent runs while retaining v1
 results. Explicit `epsm_rc_5r1c_v2` adds midpoint solar sampling and angular glazing
@@ -194,9 +194,12 @@ injected into this path. Detailed material quantities remain in the Building.
 
 ### Reduction assumptions
 
-The 5R1C calculation uses one common temperature domain, area-weighted thermal
-conductance and the first 0.1 m of construction from the room side for effective
-mass. Explicit `settings` are required; missing settings fail before input I/O.
+The ordinary 5R1C calculation uses one common temperature domain. A conditioned
+basement uses two coupled domains with separate controls; an explicitly selected
+cold-attic buffer adds a finite quasi-steady boundary. Each conditioned domain
+uses area-weighted thermal conductance and the first 0.1 m of construction from
+the room side for effective mass. Explicit `settings` are required; missing
+settings fail before input I/O.
 `RCSettings.from_policy("epsm_rc_5r1c_v1", ...)` selects the versioned baseline
 profile. `RCSettings(...)` also explicitly selects that baseline. Both retain
 caller overrides as the effective configuration. The profile identifies model
@@ -243,6 +246,8 @@ the solver. Diagnostics identify affected parts and the selected omission, and
 run identity includes the policy. One convex part remains supported with the
 default policy. Explicit neighbour and facade shading geometry remain unsupported
 even when self-shadowing is ignored.
+
+See [roofs and basements](docs/roofs-and-basements.md) for explicit cold-attic buffers and coupled conditioned-basement controls.
 
 Readiness explicitly rejects unsupported geometry, site shading, unconditioned
 parts, FVP/PV delivery and detailed zone controls. This is a reduced calculation,
