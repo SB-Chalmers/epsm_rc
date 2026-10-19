@@ -1,6 +1,6 @@
 # EPSM RC
 
-Version **0.7.0**; the shared Building interface requires Core **0.7.x** and Data **0.6.x**.
+Version **0.7.1**; the shared Building interface requires Core **0.7.x** and Data **0.6.x**.
 
 Caller-owned preparation reuse accelerates independent runs while retaining v1
 results. Explicit `epsm_rc_5r1c_v2` adds midpoint solar sampling and angular glazing
@@ -191,6 +191,31 @@ The adapter reads the same physical constructions, schedules and weather as Core
 It uses Core's explicit carrier and fan accounting; thermal demand and delivered
 energy remain separate. No construction defaults from the legacy factories are
 injected into this path. Detailed material quantities remain in the Building.
+
+### Sequential preparation reuse
+
+For sequential batches, reuse preparation explicitly:
+
+```python
+from epsm_rc import PreparationCache, simulate_building
+
+cache = PreparationCache()
+with cache.batch():
+    results = [
+        simulate_building(building, weather=weather, settings=settings, preparation_cache=cache)
+        for building in buildings
+    ]
+```
+
+Each call checks weather bytes, source-file and directory metadata, and numerical
+dependency versions. Unchanged source hashes are reused only within the batch;
+edits, additions, removals and replacements trigger fresh hashes. This requires a
+filesystem that reports edits normally; install packages outside active runs.
+Use a separate cache in each worker. Preparation arrays have immutable storage;
+thermal states and returned results remain independent. The public
+`cache.get_or_compute()` continues returning detached writable copies.
+`cache.clear()` releases preparation and source reuse. Batch exit releases source
+reuse even on failure, retaining bounded weather/geometry preparation.
 
 ### Reduction assumptions
 

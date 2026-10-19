@@ -1,5 +1,6 @@
 """Preparation reuse must never reuse a thermal state or conceal input edits."""
 
+from contextlib import nullcontext
 from importlib.resources import files
 
 import numpy as np
@@ -74,23 +75,25 @@ def test_preparation_cache_is_bounded_and_copies_arrays():
             PreparationCache(max_entries=size)
 
 
+@pytest.mark.parametrize("batch", [False, True])
 def test_source_identity_changes_invalidate_prepared_weather(
-    reference_building, synthetic_weather, monkeypatch
+    reference_building, synthetic_weather, monkeypatch, batch
 ):
     from epsm_rc import platform
 
     weather = Weather.from_epw(synthetic_weather)
     cache = PreparationCache()
-    first = simulate_building(
-        reference_building, weather=weather, settings=settings(), preparation_cache=cache
-    )
-    misses = cache.misses
-    original = platform._implementation_identity()
-    monkeypatch.setattr(
-        platform, "_implementation_identity", lambda: original | {"test_source": "changed"}
-    )
-    second = simulate_building(
-        reference_building, weather=weather, settings=settings(), preparation_cache=cache
-    )
+    with cache.batch() if batch else nullcontext():
+        first = simulate_building(
+            reference_building, weather=weather, settings=settings(), preparation_cache=cache
+        )
+        misses = cache.misses
+        original = platform._implementation_identity()
+        monkeypatch.setattr(
+            platform, "_implementation_identity", lambda *args: original | {"test_source": "changed"}
+        )
+        second = simulate_building(
+            reference_building, weather=weather, settings=settings(), preparation_cache=cache
+        )
     assert second.run_id != first.run_id
     assert cache.misses > misses

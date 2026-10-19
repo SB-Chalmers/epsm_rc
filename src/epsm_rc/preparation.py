@@ -10,9 +10,13 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import OrderedDict
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from contextlib import contextmanager
 from copy import deepcopy
+from types import MappingProxyType
 from typing import TypeVar
+
+import numpy as np
 
 T = TypeVar("T")
 
@@ -29,9 +33,11 @@ class PreparationCache:
     Notes
     -----
     Construction performs no preparation or file access. Every simulation still
-    verifies weather bytes and installed source identity. Keys include that
-    identity, the weather checksum and every relevant calculation setting.
-    Returned values are detached copies; no Building5R1C state is ever retained.
+    verifies weather bytes and installed source identity. ``batch()`` can reuse
+    source hashes while checking file/directory metadata on every evaluation.
+    Keys include that identity, the weather checksum and calculation settings.
+    The adapter shares immutable numeric preparation; ``get_or_compute`` retains
+    detached writable copies. No Building5R1C state is ever retained.
     Use one instance per sequential caller, and one per worker in parallel work.
     Cache contents are runtime accelerators, not portable scientific artifacts.
     """
@@ -42,7 +48,30 @@ class PreparationCache:
         self.max_entries = max_entries
         self._entries = OrderedDict()
         self._geometry_cache = None
+        self._source_cache = None
         self.hits = self.misses = 0
+
+    @contextmanager
+    def batch(self):
+        """Reuse unchanged source hashes during a sequential batch of runs.
+
+        Yield this cache for use as ``preparation_cache``. Each evaluation checks
+        known source files/directories and numerical dependency versions. Changed
+        metadata triggers fresh content hashes; weather bytes are always checked.
+        This assumes a local filesystem reporting edits normally; do not install
+        packages concurrently with simulations. No I/O occurs on entry. Source
+        reuse ends on exit, including exceptions; nested scopes share it. Prepared
+        weather/geometry entries remain available until eviction or ``clear()``.
+        """
+        from ._identity import SourceFingerprintCache
+
+        previous = self._source_cache
+        if previous is None:
+            self._source_cache = SourceFingerprintCache()
+        try:
+            yield self
+        finally:
+            self._source_cache = previous
 
     @property
     def geometry_cache(self):
@@ -64,6 +93,8 @@ class PreparationCache:
         self._entries.clear()
         if self._geometry_cache is not None:
             self._geometry_cache.clear()
+        if self._source_cache is not None:
+            self._source_cache.clear()
         self.hits = self.misses = 0
 
     def get_or_compute(self, namespace: str, inputs: dict, compute: Callable[[], T]) -> T:
@@ -73,19 +104,49 @@ class PreparationCache:
         ``compute``, whose file access or calculations belong to the requesting
         operation. Exceptions are propagated and never cached.
         """
+        return self._get_or_compute(namespace, inputs, compute, readonly=False)
+
+    def _get_or_compute_readonly(self, namespace, inputs, compute):
+        """Share immutable numeric preparation; never share caller-owned buffers."""
+        return self._get_or_compute(namespace, inputs, compute, readonly=True)
+
+    def _get_or_compute(self, namespace, inputs, compute, *, readonly):
         key = (
             namespace,
             hashlib.sha256(
                 json.dumps(inputs, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
             ).hexdigest(),
+            readonly,
         )
         if key in self._entries:
             self.hits += 1
             self._entries.move_to_end(key)
-            return deepcopy(self._entries[key])
+            value = self._entries[key]
+            return value if readonly else deepcopy(value)
         self.misses += 1
         value = compute()
-        self._entries[key] = deepcopy(value)
+        if readonly:
+            value = _readonly(value)
+        self._entries[key] = value if readonly else deepcopy(value)
         while len(self._entries) > self.max_entries:
             self._entries.popitem(last=False)
         return value
+
+
+def _readonly(value):
+    """Freeze numeric arrays onto bytes, mappings and sequences recursively.
+
+    A writable owner cannot be recovered through ``array.base`` or ``setflags``.
+    Pandas/custom objects and object arrays require the ordinary detached route.
+    """
+    if isinstance(value, np.ndarray):
+        if value.dtype.hasobject:
+            raise TypeError("Readonly preparation cannot contain object arrays")
+        return np.frombuffer(value.tobytes(order="C"), dtype=value.dtype).reshape(value.shape)
+    if isinstance(value, Mapping):
+        return MappingProxyType({key: _readonly(item) for key, item in value.items()})
+    if isinstance(value, (tuple, list)):
+        return tuple(_readonly(item) for item in value)
+    if value is None or isinstance(value, (str, bytes, bool, int, float, complex, np.number)):
+        return value
+    raise TypeError(f"Unsupported readonly preparation type: {type(value).__name__}")

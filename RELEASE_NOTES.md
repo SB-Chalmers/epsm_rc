@@ -1,3 +1,21 @@
+# Release 0.7.1 — 19 October 2026
+
+Deterministic runs skip reference heating/cooling trials when the relevant system
+is unavailable, keeping the exact free-running state. Ordinary standalone and
+stochastic-window paths retain their trial behaviour.
+
+`PreparationCache.batch()` reuses unchanged installed-source hashes across
+sequential runs. Every run checks source-file/directory metadata and dependency
+versions; changed trees are rescanned and rehashed. Weather contents are still
+verified each run. Use a filesystem that reports edits normally and install
+packages outside active runs. No global source identity or thermal state is cached.
+
+Weather, solar-position and orientation preparation now share immutable numeric
+buffers instead of deep-copying pandas objects and arrays on every cache hit.
+The existing public writable cache operation retains detached copies. Hourly and
+annual legacy outputs are unchanged; implementation hashes identify the new code.
+See [benchmarks](benchmarks/README.md) for exact comparison and batch commands.
+
 # Release 0.7.0 — roofs and separately controlled basements
 
 Core 0.7.0 physical Buildings can retain a main conditioned domain and a heated

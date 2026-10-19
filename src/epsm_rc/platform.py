@@ -29,10 +29,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sys
 from dataclasses import asdict, dataclass
 from datetime import timedelta, timezone
-from importlib import import_module, metadata
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
@@ -46,6 +44,7 @@ from shapely.geometry import Polygon
 from epsm_rc._logging import bind_context, call_with_context, context_logger
 from epsm_rc._logging import operation as logged_operation
 
+from ._identity import implementation_identity
 from .iso13790 import Building5R1C, Construction, ConstructionLayer
 from .optics import SimpleGlazingOptics
 from .preparation import PreparationCache
@@ -437,31 +436,15 @@ def _self_shadowing_capabilities(geometry, settings: RCSettings) -> dict:
     }
 
 
-def _implementation_identity() -> dict:
+def _implementation_identity(source_cache=None) -> dict:
     """Fingerprint installed source and numerical dependency versions.
 
     Development checkouts can change without a distribution version bump.
     Source hashes therefore identify the actual adapter, Core delivery and Data
-    object behavior. This reads installed source files only when evaluating.
+    object behavior. Batch reuse checks file/directory metadata before reusing
+    content hashes; ordinary evaluations read the installed sources in full.
     """
-    sources = {}
-    for package in ("epsm_rc", "epsm_core", "epsm_data"):
-        root = Path(import_module(package).__file__).parent
-        digest = hashlib.sha256()
-        for path in sorted(root.rglob("*.py")):
-            digest.update(path.relative_to(root).as_posix().encode())
-            digest.update(b"\0")
-            digest.update(path.read_bytes())
-            digest.update(b"\0")
-        sources[package] = digest.hexdigest()
-    return {
-        "source_sha256": sources,
-        "dependencies": {
-            package: metadata.version(package)
-            for package in ("numpy", "pandas", "pvlib", "shapely", "pydantic")
-        },
-        "python": sys.version.split()[0],
-    }
+    return implementation_identity(source_cache)
 
 
 def _simulate_building(
@@ -527,7 +510,11 @@ def _simulate_building(
         effective_configuration["inactive_coefficients"] = ["convective_internal_gains_fraction"]
         effective_configuration["methods"]["occupant_gains"] = "supplied_sensible_fraction"
         effective_configuration["methods"]["gain_partition"] = "shared_hourly_sensible_channels"
-    implementation = _implementation_identity()
+    implementation = (
+        _implementation_identity(preparation_cache._source_cache)
+        if preparation_cache is not None and preparation_cache._source_cache is not None
+        else _implementation_identity()
+    )
     run_id = hashlib.sha256(
         json.dumps(
             {
@@ -551,9 +538,11 @@ def _simulate_building(
         "solar_time_reference": settings.solar_time_reference,
     }
 
-    def prepared(namespace, inputs, compute):
+    def prepared(namespace, inputs, compute, *, readonly=False):
         if preparation_cache is None:
             return compute()
+        if readonly:
+            return preparation_cache._get_or_compute_readonly(namespace, inputs, compute)
         return preparation_cache.get_or_compute(namespace, inputs, compute)
 
     prepared("weather_calendar", preparation_key, lambda: validate_epw_calendar(weather.path, year))
@@ -749,10 +738,16 @@ def _simulate_building(
             * settings.roof_sky_view_factor
             + sum(term["sky_loss_w"] * term["transmission_fraction"] for term in attic.shell_terms)
         )
-    data, _ = prepared(
-        "weather_data", preparation_key, lambda: read_epw(str(weather.path), coerce_year=year)
-    )
-    if not np.isfinite(data.ghi).all() or ((data.ghi < 0) | (data.ghi >= 9999)).any():
+    def weather_arrays():
+        frame, _ = read_epw(str(weather.path), coerce_year=year)
+        return {
+            name: frame[name].to_numpy()
+            for name in ("temp_air", "wind_speed", "dni", "ghi", "dhi")
+        }
+
+    data = prepared("weather_data", preparation_key, weather_arrays, readonly=True)
+    ghi = data["ghi"]
+    if not np.isfinite(ghi).all() or ((ghi < 0) | (ghi >= 9999)).any():
         raise ValueError("EPW global horizontal radiation must be complete and nonnegative")
     axis = hourly_axis(year)
     times = pd.DatetimeIndex(axis).tz_localize(
@@ -766,7 +761,7 @@ def _simulate_building(
     )
     if settings.window_optics_method == "simple_glazing_angular_v1":
         for name in ("dni", "dhi"):
-            values = data[name].to_numpy()
+            values = data[name]
             if not np.isfinite(values).all() or ((values < 0) | (values >= 9999)).any():
                 raise ValueError(f"EPW {name} must be complete and nonnegative for angular optics")
 
@@ -778,15 +773,16 @@ def _simulate_building(
             spec.climate.elevation_m,
         )
         return (
-            position,
-            irradiance.get_extra_radiation(sun_times),
-            atmosphere.get_relative_airmass(position.apparent_zenith),
+            position.apparent_zenith.to_numpy(),
+            position.azimuth.to_numpy(),
+            np.asarray(irradiance.get_extra_radiation(sun_times)),
+            np.asarray(atmosphere.get_relative_airmass(position.apparent_zenith)),
         )
 
-    sun, extra, air_mass = prepared("solar_geometry", preparation_key, solar_geometry)
-    zenith, sun_azimuth = sun.apparent_zenith.to_numpy(), sun.azimuth.to_numpy()
-    extra, air_mass = np.asarray(extra), np.asarray(air_mass)
-    dni, ghi, dhi = data.dni.to_numpy(), data.ghi.to_numpy(), data.dhi.to_numpy()
+    zenith, sun_azimuth, extra, air_mass = prepared(
+        "solar_geometry", preparation_key, solar_geometry, readonly=True
+    )
+    dni, dhi = data["dni"], data["dhi"]
     facades = {f.facade_id: f for f in facade_catalog(spec.geometry)}
     solar, opaque = np.zeros(len(axis)), np.zeros(len(axis))
     orientation_irradiance = {}
@@ -839,7 +835,7 @@ def _simulate_building(
                     albedo=settings.ground_reflectance,
                 )
 
-            channels = prepared("plane_irradiance", radiation_key, calculate_plane)
+            channels = prepared("plane_irradiance", radiation_key, calculate_plane, readonly=True)
             orientation_irradiance[orientation] = channels
         poa = channels["poa_global"]
         if role == "WINDOW":
@@ -927,7 +923,7 @@ def _simulate_building(
         * annual(airflow.infiltration_fraction)
     )
     coefficients = airflow.infiltration_coefficients
-    wind = data.wind_speed.to_numpy()
+    wind = data["wind_speed"]
     ventilation = (
         airflow.mechanical_vent_l_s_m2
         * reference_area
@@ -936,7 +932,7 @@ def _simulate_building(
         * annual(airflow.mechanical_vent_fraction)
     )
     natural = airflow.natural_exchange_ach * annual(airflow.natural_exchange_fraction)
-    temperatures = data.temp_air.to_numpy()
+    temperatures = data["temp_air"]
     heating_on, cooling_on = (
         annual(airflow.heating_availability),
         annual(airflow.cooling_availability),
@@ -1216,6 +1212,8 @@ def simulate_building(building, *, weather, directory=None, settings=None, prepa
     preparation_cache : PreparationCache or None
         Explicit bounded preparation reuse across independent runs. Weather and
         source contents are still verified; each run creates fresh thermal state.
+        ``with preparation_cache.batch():`` additionally reuses source hashes
+        while checking file/directory metadata and dependency versions per call.
         The default airflow policy rejects unsupported latent/supply controls.
 
     Returns
@@ -1237,7 +1235,8 @@ def simulate_building(building, *, weather, directory=None, settings=None, prepa
     -----
     Run identity includes the complete physical inputs, weather checksum,
     reduction settings, installed package source hashes and numerical dependency
-    versions. Installed Python sources are read for these hashes on evaluation.
+    versions. Installed Python sources are read for these hashes on evaluation;
+    an explicit batch scope reuses hashes while source metadata is unchanged.
     Each call creates fresh thermal state. Buildings without basements retain
     one conditioned 5R1C domain. Conditioned basements use separately controlled
     main/basement domains with conservative physical floor exchange. Cold attics
