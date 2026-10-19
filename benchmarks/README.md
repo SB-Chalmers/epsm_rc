@@ -16,6 +16,7 @@ dependencies. Run this checkout's script with the candidate interpreter:
 ```sh
 python benchmarks/run.py --directory outputs/benchmark-independent --reference-python /path/to/reference/bin/python
 python benchmarks/run.py --directory outputs/benchmark-prepared --warm --reference-directory outputs/benchmark-independent/reference
+python benchmarks/run.py --directory outputs/benchmark-batch --warm --batch --reference-directory outputs/benchmark-independent/reference
 ```
 
 Each directory must be new. Every hourly channel, calendar, annual total,
@@ -24,3 +25,9 @@ is used. Installed implementation identities are retained and intentionally
 differ between reference and candidate. First-call and repeated timings are
 reported separately. Preparation reuse is not a cached final simulation result.
 No absolute timing threshold is imposed on shared CI runners.
+
+`--warm --batch` additionally scopes source-hash reuse to this sequential batch.
+Source-file/directory metadata and dependency versions are still checked per run.
+The first call includes initial preparation; repeated timings exclude that fill.
+Warm repetitions reuse the same physical fixture, so these are not measured
+throughput for a stock of different buildings or parallel worker processes.

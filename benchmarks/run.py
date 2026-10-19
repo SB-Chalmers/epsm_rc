@@ -19,6 +19,7 @@ import statistics
 import subprocess
 import sys
 import time
+from contextlib import nullcontext
 from datetime import datetime, timedelta
 from importlib import metadata
 from importlib.resources import files
@@ -71,9 +72,23 @@ def main(argv=None):
     parser.add_argument("--reference-directory", type=Path)
     parser.add_argument("--repeats", type=int, default=9)
     parser.add_argument("--warm", action="store_true")
+    parser.add_argument("--batch", action="store_true", help="Reuse source hashes within --warm")
     args = parser.parse_args(argv)
     if args.repeats < 2:
         parser.error("--repeats must be at least 2 (first call is reported separately)")
+    if args.batch and not args.warm:
+        parser.error("--batch requires --warm")
+    cache = None
+    if args.warm:
+        from epsm_rc import PreparationCache
+
+        cache = PreparationCache()
+    with cache.batch() if args.batch else nullcontext():
+        return run(args, cache)
+
+
+def run(args, cache):
+    """Run installed calculations inside the explicitly selected preparation scope."""
     args.directory.mkdir(parents=True, exist_ok=False)
     reference = args.reference_directory
     if args.reference_python:
@@ -89,11 +104,6 @@ def main(argv=None):
             ],
             check=True,
         )
-    cache = None
-    if args.warm:
-        from epsm_rc import PreparationCache
-
-        cache = PreparationCache()
     synthetic = controlled_weather(args.directory / "controlled.epw")
     settings = RCSettings.from_policy(
         "epsm_rc_5r1c_v1",
@@ -103,6 +113,7 @@ def main(argv=None):
     report = {
         "python": sys.version,
         "warm_preparation": args.warm,
+        "batch_source_reuse": args.batch,
         "versions": {
             name: metadata.version(name)
             for name in ("epsm_core", "epsm_rc", "epsm_data", "numpy", "pandas", "pvlib")

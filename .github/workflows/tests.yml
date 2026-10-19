@@ -68,6 +68,7 @@ jobs:
           .ci/reference_venv/bin/python -m pip install --ignore-installed --no-deps --no-build-isolation .ci/core_reference .ci/rc_reference
           python benchmarks/run.py --directory outputs/legacy-regression --reference-python .ci/reference_venv/bin/python --repeats 2
           python benchmarks/run.py --directory outputs/prepared-regression --warm --reference-directory outputs/legacy-regression/reference --repeats 2
+          python benchmarks/run.py --directory outputs/batch-regression --warm --batch --reference-directory outputs/legacy-regression/reference --repeats 2
       - name: Execute installed-package notebook in a fresh kernel
         run: |
           python - <<'PY'
