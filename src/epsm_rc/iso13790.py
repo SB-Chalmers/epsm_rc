@@ -1972,6 +1972,9 @@ class Building5R1C:
         # Check if heating or cooling needed (using active setpoints)
         if t_ctrl_0 < t_set_heat:
             # Heating needed
+            if self._prepared_hourly and self.ventilation_behaviour <= 0 and max_heating_power == 0:
+                self.t_air, self.t_s, self.t_m = free_state
+                return 0.0
             t_ctrl_set = t_set_heat
             
             # Step 2: Calculate with reference heating (10 W/m^2)
@@ -1998,6 +2001,9 @@ class Building5R1C:
             
         elif t_ctrl_0 > t_set_cool:
             # Cooling needed
+            if self._prepared_hourly and self.ventilation_behaviour <= 0 and max_cooling_power == 0:
+                self.t_air, self.t_s, self.t_m = free_state
+                return 0.0
             t_ctrl_set = t_set_cool
             
             # Step 2: Calculate with reference cooling
