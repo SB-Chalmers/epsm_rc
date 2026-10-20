@@ -111,10 +111,10 @@ jobs:
         run: |
           python -m venv --system-site-packages .ci/reference_venv
           .ci/reference_venv/bin/python -m pip install --ignore-installed --no-deps --no-build-isolation .ci/core_reference .ci/rc_reference
-          python benchmarks/run.py --directory outputs/legacy-regression --reference-python .ci/reference_venv/bin/python --repeats 1
-          python benchmarks/run.py --directory outputs/prepared-regression --warm --reference-directory outputs/legacy-regression/reference --repeats 1
-          python benchmarks/run.py --directory outputs/angular-regression --policy 2 --reference-python .ci/reference_venv/bin/python --repeats 1
-          python benchmarks/run.py --directory outputs/angular-prepared-regression --policy 2 --warm --reference-directory outputs/angular-regression/reference --repeats 1
+          python benchmarks/run.py --directory outputs/legacy-regression --reference-python .ci/reference_venv/bin/python --repeats 2
+          python benchmarks/run.py --directory outputs/prepared-regression --warm --reference-directory outputs/legacy-regression/reference --repeats 2
+          python benchmarks/run.py --directory outputs/angular-regression --policy 2 --reference-python .ci/reference_venv/bin/python --repeats 2
+          python benchmarks/run.py --directory outputs/angular-prepared-regression --policy 2 --warm --reference-directory outputs/angular-regression/reference --repeats 2
       - name: Execute installed-package notebooks in fresh kernels
         if: matrix.python == '3.13'
         run: |
