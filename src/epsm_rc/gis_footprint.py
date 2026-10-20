@@ -1,3 +1,11 @@
+# File: src/epsm_rc/gis_footprint.py
+# Purpose: Explicit GIS footprint readers preserving geometry and height evidence.
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 EPSM Development contributors
+# License: See LICENSE at the project root.
+# Date modified: 2026-10-20
+# Changelog:
+#   2026-10-20 - Document explicit inputs, units, mutation and I/O boundaries.
 """
 Import building footprints from GIS sources → BuildingGeometry.
 
@@ -59,15 +67,23 @@ def _to_local_metres(
 ) -> list[tuple[float, float]]:
     """Convert coordinates to local metric system centred on centroid.
 
-    Args:
-        coords: List of (x, y) or (lon, lat) tuples (exterior ring, no closing point).
-        source_crs: EPSG string like "EPSG:4326" or "EPSG:3006".
-                     If None, auto-detect from coordinate magnitude.
+    Parameters
+    ----------
+    coords : Sequence[tuple[float, float]]
+        List of (x, y) or (lon, lat) tuples (exterior ring, no closing point).
+    source_crs : str | None
+        EPSG string like "EPSG:4326" or "EPSG:3006".
+                 If None, auto-detect from coordinate magnitude.
 
-    Returns:
+    Returns
+    -------
+    list[tuple[float, float]]
         List of (x, y) in metres, centroid-shifted to origin.
     """
-    from pyproj import CRS, Transformer
+    try:
+        from pyproj import CRS, Transformer
+    except ImportError as error:
+        raise ImportError("GIS coordinate conversion requires epsm_rc[platform,gis]") from error
 
     arr = np.array(coords, dtype=float)
 
@@ -101,7 +117,8 @@ def _to_local_metres(
         # Non-metric projected CRS — try reprojecting to UTM
         logger.warning(
             "CRS %s has non-metre units (%s), reprojecting to UTM",
-            source_crs, crs_obj.axis_info[0].unit_name,
+            source_crs,
+            crs_obj.axis_info[0].unit_name,
         )
         mean_x, mean_y = arr[:, 0].mean(), arr[:, 1].mean()
         # Convert to WGS84 first, then UTM
@@ -195,13 +212,13 @@ def _polygon_to_geometry(
 ) -> BuildingGeometry:
     """Convert every ring/component in one common frame into Core geometry."""
     if poly.geom_type not in {"Polygon", "MultiPolygon"}:
-        raise ValueError(
-            f"Core geometry requires Polygon or MultiPolygon, got {poly.geom_type}"
-        )
+        raise ValueError(f"Core geometry requires Polygon or MultiPolygon, got {poly.geom_type}")
     if poly.has_z:
         raise ValueError("GIS footprints must be two-dimensional (2-D); supply heights separately")
     num_floors, floor_height, evidence = _resolve_height(
-        properties or {}, num_floors, floor_height,
+        properties or {},
+        num_floors,
+        floor_height,
     )
     polygons = [poly] if poly.geom_type == "Polygon" else list(poly.geoms)
     rings = [
@@ -230,7 +247,16 @@ def _polygon_to_geometry(
 
 
 class FootprintImporter:
-    """Import building footprints from OSM, GeoJSON, or Shapefile."""
+    """Read explicit footprint files or a requested OSM object into Core geometry.
+
+    Notes
+    -----
+    Requires ``epsm_rc[platform,gis]``. GeoJSON dictionaries can be converted offline;
+    path inputs read local files, OSM explicitly contacts Overpass, and shapefiles
+    require Fiona. All rings and parts share one metric coordinate transform.
+    Source height fields and caller selections remain on ``height_evidence``.
+    These operations do not select constructions, glazing, HVAC or operation.
+    """
 
     # ----- OpenStreetMap -----
 
@@ -244,26 +270,59 @@ class FootprintImporter:
         num_floors: int | None = None,
         floor_height: float | None = None,
     ) -> BuildingGeometry:
-        """Fetch a building footprint from OpenStreetMap.
+        """Fetch one explicitly requested OpenStreetMap footprint through Overpass.
 
-        Args:
-            way_id: OSM way ID (e.g. 90851303).
-            relation_id: OSM relation ID (for multipolygon buildings).
-            url: Full OSM URL — way_id/relation_id extracted automatically.
-            num_floors: Explicit floor count, overriding source levels.
-            floor_height: Explicit floor-to-floor height [m], overriding source height.
-                Omitted values require sufficient source evidence.
+        Parameters
+        ----------
+        way_id : int, optional
+            Requested OSM way identifier; supply this, relation_id or url.
+        relation_id : int, optional
+            Relation identifier. Only one explicitly closed outer way is supported;
+            assembled holes/multipart relations must be supplied through another reader.
+        url : str, optional
+            OSM way/relation URL from which an identifier is extracted.
+        num_floors : int, optional
+            Explicit positive storey-count override. Otherwise sufficient source levels
+            or height evidence must exist.
+        floor_height : float, optional
+            Explicit positive floor-to-floor height in metres, overriding source height.
 
-        Returns:
-            BuildingGeometry in local metric coordinates.
+        Returns
+        -------
+        BuildingGeometry
+            New centred local metric geometry, preserving height evidence and selections.
 
-        Example:
-            >>> geom = FootprintImporter.from_osm(
-            ...     way_id=90851303, num_floors=2, floor_height=2.5)
+        Raises
+        ------
+        ValueError
+            Identifier, geometry, relation assembly or required height evidence is invalid.
+        requests.RequestException
+            Overpass request fails or times out.
+        ImportError
+            Required platform/GIS dependencies are unavailable.
+
+        Notes
+        -----
+        Contacts ``https://overpass-api.de/api/interpreter`` with a 30-second HTTP timeout.
+        No local files are written. Caller inputs are not mutated.
+
+        Examples
+        --------
+        This recipe requires network access and the referenced OSM feature:
+
+        .. code-block:: python
+
+            from epsm_rc import FootprintImporter
+            geometry = FootprintImporter.from_osm(
+                way_id=90851303, num_floors=2, floor_height=2.5,
+            )
         """
         import re
 
-        import requests
+        try:
+            import requests
+        except ImportError as error:
+            raise ImportError("OSM retrieval requires epsm_rc[platform,gis]") from error
 
         # Parse URL if given
         if url is not None:
@@ -303,28 +362,31 @@ class FootprintImporter:
                 if (
                     element["type"] == "relation"
                     and element["id"] == element_id
-                    and any(
-                        member.get("role") == "inner" for member in element.get("members", [])
-                    )
+                    and any(member.get("role") == "inner" for member in element.get("members", []))
                 ):
                     raise ValueError(
-                            "OSM relation courtyard/interior ring assembly is unsupported; "
-                            "supply a complete Polygon through from_geojson or from_shapely."
+                        "OSM relation courtyard/interior ring assembly is unsupported; "
+                        "supply a complete Polygon through from_geojson or from_shapely."
                     )
 
         target_way_id = element_id
         relation_tags = {}
         if element_type == "relation":
             relation = next(
-                (element for element in data["elements"]
-                 if element["type"] == "relation" and element["id"] == element_id),
+                (
+                    element
+                    for element in data["elements"]
+                    if element["type"] == "relation" and element["id"] == element_id
+                ),
                 None,
             )
             if relation is None:
                 raise ValueError(f"OSM relation/{element_id}: relation metadata is missing")
             members = relation.get("members", [])
-            if len(members) != 1 or members[0].get("type") != "way" or (
-                members[0].get("role") != "outer"
+            if (
+                len(members) != 1
+                or members[0].get("type") != "way"
+                or (members[0].get("role") != "outer")
             ):
                 raise ValueError(
                     f"OSM relation/{element_id}: only one explicitly identified outer way "
@@ -347,9 +409,7 @@ class FootprintImporter:
 
         if way_nodes is None:
             raise ValueError(f"OSM {element_type}/{element_id}: no way nodes found")
-        if element_type == "relation" and (
-            len(way_nodes) < 4 or way_nodes[0] != way_nodes[-1]
-        ):
+        if element_type == "relation" and (len(way_nodes) < 4 or way_nodes[0] != way_nodes[-1]):
             raise ValueError(f"OSM relation/{element_id}: outer way must be a closed ring")
         tags = {**tags, **relation_tags}
 
@@ -363,14 +423,14 @@ class FootprintImporter:
             coords = coords[:-1]
 
         if len(coords) < 3:
-            raise ValueError(
-                f"OSM {element_type}/{element_id}: only {len(coords)} vertices"
-            )
+            raise ValueError(f"OSM {element_type}/{element_id}: only {len(coords)} vertices")
 
         poly = ShapelyPolygon(coords)
         geom = _polygon_to_geometry(
-            poly, source_crs="EPSG:4326",
-            num_floors=num_floors, floor_height=floor_height,
+            poly,
+            source_crs="EPSG:4326",
+            num_floors=num_floors,
+            floor_height=floor_height,
             properties=tags,
         )
 
@@ -378,8 +438,11 @@ class FootprintImporter:
         geom._osm_tags = tags  # type: ignore[attr-defined]
         logger.info(
             "Imported OSM %s/%d: %.0f m² footprint, %d vertices, tags=%s",
-            element_type, element_id, geom.footprint_area,
-            len(geom.vertices), {k: tags[k] for k in list(tags)[:5]},
+            element_type,
+            element_id,
+            geom.footprint_area,
+            len(geom.vertices),
+            {k: tags[k] for k in list(tags)[:5]},
         )
         return geom
 
@@ -395,22 +458,51 @@ class FootprintImporter:
         floor_height: float | None = None,
         crs: str | None = None,
     ) -> BuildingGeometry:
-        """Load a building footprint from GeoJSON.
+        """Read one GeoJSON footprint or convert a supplied mapping in memory.
 
-        Args:
-            source: File path, or a GeoJSON dict (Feature or FeatureCollection).
-            feature_index: Which feature to use (if FeatureCollection).
-            num_floors: Explicit floor count, overriding source levels. None uses evidence.
-            floor_height: Explicit floor-to-floor height [m]. None uses source height.
-                Missing required evidence raises ValueError.
-            crs: Override CRS (default: auto-detect; GeoJSON is typically EPSG:4326).
+        Parameters
+        ----------
+        source : str, pathlib.Path or dict
+            Explicit local file or GeoJSON Feature/FeatureCollection/Polygon/MultiPolygon.
+        feature_index : int, default 0
+            Feature position selected from a collection.
+        num_floors : int, optional
+            Explicit positive storey-count override; omission requires source evidence.
+        floor_height : float, optional
+            Explicit positive storey height in metres; omission requires source evidence.
+        crs : str, optional
+            Explicit source CRS override. The default follows GeoJSON's EPSG:4326.
 
-        Returns:
-            BuildingGeometry in local metric coordinates.
+        Returns
+        -------
+        BuildingGeometry
+            New geometry in a centred local metric frame, retaining all rings and parts.
 
-        Example:
-            >>> geom = FootprintImporter.from_geojson(
-            ...     "building.geojson", num_floors=2, floor_height=2.5)
+        Raises
+        ------
+        ValueError
+            Source geometry, CRS or required height evidence is invalid or unsupported.
+        IndexError
+            The requested feature is outside the collection.
+        OSError
+            An explicit local file cannot be read.
+        ImportError
+            The platform/GIS dependencies are unavailable.
+
+        Notes
+        -----
+        Mappings are converted offline without mutation. Path inputs read only that file;
+        no service calls or writes occur.
+
+        Examples
+        --------
+        With the platform and GIS extras installed, this conversion is offline:
+
+        >>> from epsm_rc import FootprintImporter
+        >>> polygon = {"type": "Polygon", "coordinates": [[[0, 0], [10, 0], [10, 5], [0, 5], [0, 0]]]}
+        >>> geometry = FootprintImporter.from_geojson(polygon, num_floors=1, floor_height=3, crs="EPSG:3006")
+        >>> geometry.footprint_area
+        50.0
         """
         if isinstance(source, (str, Path)):
             path = Path(source)
@@ -423,9 +515,7 @@ class FootprintImporter:
         if data.get("type") == "FeatureCollection":
             features = data["features"]
             if feature_index >= len(features):
-                raise IndexError(
-                    f"feature_index={feature_index} but only {len(features)} features"
-                )
+                raise IndexError(f"feature_index={feature_index} but only {len(features)} features")
             feature = features[feature_index]
         elif data.get("type") == "Feature":
             feature = data
@@ -445,8 +535,10 @@ class FootprintImporter:
         # GeoJSON is EPSG:4326 by spec unless overridden
         effective_crs = crs or "EPSG:4326"
         return _polygon_to_geometry(
-            geom_obj, source_crs=effective_crs,
-            num_floors=num_floors, floor_height=floor_height,
+            geom_obj,
+            source_crs=effective_crs,
+            num_floors=num_floors,
+            floor_height=floor_height,
             properties=props,
         )
 
@@ -460,10 +552,40 @@ class FootprintImporter:
         crs: str | None = None,
         max_features: int | None = None,
     ) -> list[BuildingGeometry]:
-        """Load ALL features from a GeoJSON FeatureCollection.
+        """Read a GeoJSON batch, reporting and skipping unsupported features.
 
-        Returns:
-            List of BuildingGeometry, one per polygon feature.
+        Parameters
+        ----------
+        source : str, pathlib.Path or dict
+            Explicit local GeoJSON file or mapping. A single geometry is returned in a list.
+        num_floors : int, optional
+            Explicit storey-count override for every selected feature.
+        floor_height : float, optional
+            Explicit storey-height override in metres for every selected feature.
+        crs : str, optional
+            Source CRS override; otherwise follows GeoJSON's EPSG:4326.
+        max_features : int, optional
+            Maximum feature positions to inspect; None scans the collection.
+
+        Returns
+        -------
+        list of BuildingGeometry
+            Successfully converted independent geometries, preserving height evidence.
+
+        Raises
+        ------
+        OSError
+            An explicit input file cannot be read.
+        ValueError
+            A single non-collection input cannot be converted.
+        ImportError
+            Required platform/GIS dependencies are unavailable.
+
+        Notes
+        -----
+        Collection features that raise ValueError or IndexError are logged and skipped.
+        Reads only an explicit local file when a path is supplied. Performs no network
+        access or writes, and does not mutate supplied mappings.
         """
         if isinstance(source, (str, Path)):
             with open(Path(source)) as f:
@@ -473,9 +595,14 @@ class FootprintImporter:
 
         if data.get("type") != "FeatureCollection":
             # Single feature → wrap
-            return [FootprintImporter.from_geojson(
-                data, num_floors=num_floors, floor_height=floor_height, crs=crs,
-            )]
+            return [
+                FootprintImporter.from_geojson(
+                    data,
+                    num_floors=num_floors,
+                    floor_height=floor_height,
+                    crs=crs,
+                )
+            ]
 
         results = []
         for i, feat in enumerate(data["features"]):
@@ -483,7 +610,10 @@ class FootprintImporter:
                 break
             try:
                 g = FootprintImporter.from_geojson(
-                    feat, num_floors=num_floors, floor_height=floor_height, crs=crs,
+                    feat,
+                    num_floors=num_floors,
+                    floor_height=floor_height,
+                    crs=crs,
                 )
                 results.append(g)
             except (ValueError, IndexError) as e:
@@ -503,28 +633,58 @@ class FootprintImporter:
         crs_override: str | None = None,
         max_features: int | None = None,
     ) -> BuildingGeometry | list[BuildingGeometry]:
-        """Load building footprint(s) from an ESRI Shapefile.
+        """Read explicitly selected ESRI shapefile features into metric Core geometry.
 
-        Handles EPSG:3006 (SWEREF99 TM) and other projected CRS natively.
+        Parameters
+        ----------
+        path : str or pathlib.Path
+            Explicit local .shp path; its accompanying data/index/CRS files must exist.
+        fid : int, optional
+            Feature index. Selecting one returns a geometry; omission returns a list.
+        num_floors : int, optional
+            Explicit positive storey-count override; otherwise source evidence is needed.
+        floor_height : float, optional
+            Explicit positive storey-height override in metres.
+        crs_override : str, optional
+            Source CRS override, such as EPSG:3006; otherwise the file CRS is inspected.
+        max_features : int, optional
+            Maximum feature positions to inspect when fid is omitted.
 
-        Args:
-            path: Path to .shp file.
-            fid: Feature index to load (returns single BuildingGeometry).
-                 If None, loads all features (returns list).
-            num_floors: Explicit floor count, overriding source levels. None uses evidence.
-            floor_height: Explicit floor-to-floor height [m]. None uses source height.
-                Missing required evidence raises ValueError (or a warning in batch imports).
-            crs_override: Force a specific CRS (e.g. "EPSG:3006").
-            max_features: Max features to load (when fid is None).
+        Returns
+        -------
+        BuildingGeometry or list of BuildingGeometry
+            One selected geometry or successfully converted features in a local metric frame.
 
-        Returns:
-            Single BuildingGeometry if fid is set, else list.
+        Raises
+        ------
+        FileNotFoundError
+            The requested shapefile does not exist.
+        ValueError
+            A selected feature has unsupported geometry or insufficient height evidence.
+        ImportError
+            Fiona, projection support or the coordinated platform dependencies are missing.
 
-        Example:
-            >>> geom = FootprintImporter.from_shapefile(
-            ...     "buildings.shp", fid=0, num_floors=2, floor_height=2.5)
+        Notes
+        -----
+        Reads local shapefile companion files through Fiona; writes nothing and makes no
+        network requests. Unsupported batch features are logged and skipped. Supplied
+        height overrides and source fields remain available as evidence.
+
+        Examples
+        --------
+        This recipe requires a local shapefile and its companion files:
+
+        .. code-block:: python
+
+            from epsm_rc import FootprintImporter
+            geometry = FootprintImporter.from_shapefile(
+                "buildings.shp", fid=0, num_floors=2, floor_height=2.5,
+            )
         """
-        import fiona
+        try:
+            import fiona
+        except ImportError as error:
+            raise ImportError("Shapefile reading requires epsm_rc[platform,gis]") from error
 
         path = Path(path)
         if not path.exists():
@@ -536,7 +696,13 @@ class FootprintImporter:
             # Detect CRS
             file_crs = crs_override
             if file_crs is None and src.crs:
-                from pyproj import CRS
+                try:
+                    from pyproj import CRS
+                except ImportError as error:
+                    raise ImportError(
+                        "Shapefile projection requires epsm_rc[platform,gis]"
+                    ) from error
+
                 try:
                     crs_obj = CRS(src.crs)
                     file_crs = crs_obj.to_epsg()
@@ -550,15 +716,19 @@ class FootprintImporter:
 
             logger.info(
                 "Shapefile %s: %d features, CRS=%s",
-                path.name, len(src), file_crs,
+                path.name,
+                len(src),
+                file_crs,
             )
 
             if fid is not None:
                 feat = src[fid]
                 geom_obj = shapely_shape(feat["geometry"])
                 return _polygon_to_geometry(
-                    geom_obj, source_crs=file_crs,
-                    num_floors=num_floors, floor_height=floor_height,
+                    geom_obj,
+                    source_crs=file_crs,
+                    num_floors=num_floors,
+                    floor_height=floor_height,
                     properties=dict(feat["properties"]),
                 )
 
@@ -568,8 +738,10 @@ class FootprintImporter:
                 try:
                     geom_obj = shapely_shape(feat["geometry"])
                     g = _polygon_to_geometry(
-                        geom_obj, source_crs=file_crs,
-                        num_floors=num_floors, floor_height=floor_height,
+                        geom_obj,
+                        source_crs=file_crs,
+                        num_floors=num_floors,
+                        floor_height=floor_height,
                         properties=dict(feat["properties"]),
                     )
                     results.append(g)

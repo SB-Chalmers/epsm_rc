@@ -33,8 +33,8 @@ class PreparationCache:
     Notes
     -----
     Construction performs no preparation or file access. Every simulation still
-    verifies weather bytes and installed source identity. ``batch()`` can reuse
-    source hashes while checking file/directory metadata on every evaluation.
+    verifies weather bytes. Installed calculation identity is captured lazily once
+    per process; restart Python after changing installed code or dependencies.
     Keys include that identity, the weather checksum and calculation settings.
     The adapter shares immutable numeric preparation; ``get_or_compute`` retains
     detached writable copies. No Building5R1C state is ever retained.
@@ -48,30 +48,17 @@ class PreparationCache:
         self.max_entries = max_entries
         self._entries = OrderedDict()
         self._geometry_cache = None
-        self._source_cache = None
         self.hits = self.misses = 0
 
     @contextmanager
     def batch(self):
-        """Reuse unchanged source hashes during a sequential batch of runs.
+        """Yield this cache for compatibility with existing sequential batches.
 
-        Yield this cache for use as ``preparation_cache``. Each evaluation checks
-        known source files/directories and numerical dependency versions. Changed
-        metadata triggers fresh content hashes; weather bytes are always checked.
-        This assumes a local filesystem reporting edits normally; do not install
-        packages concurrently with simulations. No I/O occurs on entry. Source
-        reuse ends on exit, including exceptions; nested scopes share it. Prepared
-        weather/geometry entries remain available until eviction or ``clear()``.
+        Preparation entries have the same lifetime inside and outside this
+        context. Calculation identity is captured once per Python process.
+        This context performs no file access and does not monitor source edits.
         """
-        from ._identity import SourceFingerprintCache
-
-        previous = self._source_cache
-        if previous is None:
-            self._source_cache = SourceFingerprintCache()
-        try:
-            yield self
-        finally:
-            self._source_cache = previous
+        yield self
 
     @property
     def geometry_cache(self):
@@ -93,8 +80,6 @@ class PreparationCache:
         self._entries.clear()
         if self._geometry_cache is not None:
             self._geometry_cache.clear()
-        if self._source_cache is not None:
-            self._source_cache.clear()
         self.hits = self.misses = 0
 
     def get_or_compute(self, namespace: str, inputs: dict, compute: Callable[[], T]) -> T:

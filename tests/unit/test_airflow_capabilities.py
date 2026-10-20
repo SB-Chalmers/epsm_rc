@@ -10,15 +10,23 @@ from epsm_rc import RCSettings, platform, simulate_building
 @pytest.fixture
 def core_inputs(reference_building):
     core = pytest.importorskip("epsm_core")
-    return reference_building, core.Weather.from_epw(files("epsm_rc").joinpath("data/epw/goteborg.epw"))
+    return reference_building, core.Weather.from_epw(
+        files("epsm_rc").joinpath("data/epw/goteborg.epw")
+    )
 
 
-@pytest.mark.parametrize("parameters,field", [
-    ({}, "maximum_heating_supply_temperature_c"),
-    ({"maximum_heating_supply_temperature_c": 40}, "maximum_heating_supply_temperature_c"),
-    ({"minimum_cooling_supply_temperature_c": 15}, "minimum_cooling_supply_temperature_c"),
-    ({"latent_recovery_effectiveness": 0.3, "topology": "FTX"}, "latent_recovery_effectiveness"),
-])
+@pytest.mark.parametrize(
+    "parameters,field",
+    [
+        ({}, "maximum_heating_supply_temperature_c"),
+        ({"maximum_heating_supply_temperature_c": 40}, "maximum_heating_supply_temperature_c"),
+        ({"minimum_cooling_supply_temperature_c": 15}, "minimum_cooling_supply_temperature_c"),
+        (
+            {"latent_recovery_effectiveness": 0.3, "topology": "FTX"},
+            "latent_recovery_effectiveness",
+        ),
+    ],
+)
 def test_unsupported_airflow_rejected_before_solver(core_inputs, monkeypatch, parameters, field):
     building, weather = core_inputs
     building.hvac = building.hvac.with_changes(
@@ -36,13 +44,19 @@ def test_unsupported_airflow_rejected_before_solver(core_inputs, monkeypatch, pa
 def test_explicit_sensible_approximation_records_omitted_fields(core_inputs):
     building, weather = core_inputs
     building.hvac = building.hvac.with_changes(
-        airflow=building.hvac.airflow.model_copy(update={
-            "latent_recovery_effectiveness": 0.3, "topology": "FTX",
-        }),
+        airflow=building.hvac.airflow.model_copy(
+            update={
+                "latent_recovery_effectiveness": 0.3,
+                "topology": "FTX",
+            }
+        ),
     )
     result = simulate_building(
-        building, weather=weather,
-        settings=RCSettings(airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier"),
+        building,
+        weather=weather,
+        settings=RCSettings(
+            airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier"
+        ),
     )
     assert result.scalars["space_heating_demand_kwh"] > 0
     airflow = result.diagnostics["airflow_capabilities"]

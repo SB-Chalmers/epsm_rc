@@ -74,9 +74,7 @@ def test_mutable_and_readonly_cache_entries_cannot_alias():
     assert cache.get_or_compute("array", {}, lambda: None)[0] == 1
 
 
-def test_batch_source_identity_checks_edits_additions_and_deletions(tmp_path, monkeypatch):
-    import hashlib
-    import os
+def test_process_identity_is_lazy_detached_and_does_not_watch_sources(tmp_path, monkeypatch):
     from types import SimpleNamespace
 
     from epsm_rc import _identity
@@ -85,61 +83,36 @@ def test_batch_source_identity_checks_edits_additions_and_deletions(tmp_path, mo
     root.mkdir()
     source = root / "__init__.py"
     source.write_text("value = 1\n")
-    monkeypatch.setattr(_identity, "import_module", lambda name: SimpleNamespace(__file__=source))
-    cache = _identity.SourceFingerprintCache()
-    expected = _identity.implementation_identity()
-    digest = hashlib.sha256(b"__init__.py\0value = 1\n\0").hexdigest()
-    assert set(expected["source_sha256"].values()) == {digest}
-    first = _identity.implementation_identity(cache)
-    assert first == expected
-    reads = []
-    original = Path.read_bytes
+    _identity._process_identity.cache_clear()
+    try:
+        monkeypatch.setattr(
+            _identity, "import_module", lambda name: SimpleNamespace(__file__=source)
+        )
+        first = _identity.implementation_identity()
+        source.write_text("value = 2\n")
 
-    def tracked(path):
-        reads.append(path)
-        return original(path)
+        def forbidden(*args, **kwargs):
+            pytest.fail("Subsequent runs must not inspect installed sources or versions")
 
-    monkeypatch.setattr(Path, "read_bytes", tracked)
-    assert _identity.implementation_identity(cache) == first
-    assert reads == []
-    stamp = source.stat()
-    source.write_text("value = 2\n")
-    # A same-length edit with restored mtime must still be noticed through ctime.
-    os.utime(source, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
-    edited = _identity.implementation_identity(cache)
-    assert edited != first
-    nested = root / "nested"
-    nested.mkdir()
-    extra = nested / "new.py"
-    extra.write_text("value = 3\n")
-    added = _identity.implementation_identity(cache)
-    assert added != edited
-    extra.unlink()
-    assert _identity.implementation_identity(cache) == edited
-    nested.rmdir()
-    assert _identity.implementation_identity(cache) == edited
-    original_version = _identity.metadata.version
-    monkeypatch.setattr(
-        _identity.metadata, "version",
-        lambda name: "different" if name == "numpy" else original_version(name),
-    )
-    assert _identity.implementation_identity(cache) != edited
+        monkeypatch.setattr(Path, "read_bytes", forbidden)
+        monkeypatch.setattr(_identity.metadata, "version", forbidden)
+        assert _identity.implementation_identity() == first
+        changed = _identity.implementation_identity()
+        changed["source_sha256"].clear()
+        assert _identity.implementation_identity() == first
+    finally:
+        _identity._process_identity.cache_clear()
 
 
-def test_batch_context_is_scoped_nested_and_released_after_failure():
+def test_batch_context_preserves_preparation_after_failure():
     cache = PreparationCache()
-    assert cache._source_cache is None
     with pytest.raises(RuntimeError), cache.batch() as active:
         assert active is cache
-        first = cache._source_cache
-        assert first is not None
-        with cache.batch():
-            assert cache._source_cache is first
-        assert cache._source_cache is first
+        cache.get_or_compute("value", {}, lambda: 1)
+        with cache.batch() as nested:
+            assert nested is cache
         raise RuntimeError("interrupted batch")
-    assert cache._source_cache is None
-    with cache.batch():
-        assert cache._source_cache is not first
+    assert cache.get_or_compute("value", {}, lambda: pytest.fail("lost preparation")) == 1
 
 
 @pytest.mark.parametrize("prepared,windows,steps", [(False, 0, 3), (True, 1, 2)])
@@ -171,7 +144,9 @@ def test_batch_retains_exact_results_after_building_and_result_edits(reference_b
 
     weather = Weather.from_epw(files("epsm_rc").joinpath("data/epw/goteborg.epw"))
     settings = RCSettings.from_policy(
-        policy, airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier"
+        policy,
+        airflow_policy="sensible_only_unlimited_supply",
+        ground_policy="conductance_multiplier",
     )
     cache = PreparationCache()
     with cache.batch():
@@ -208,7 +183,7 @@ def test_batch_still_rejects_changed_weather(reference_building, tmp_path, synth
         simulate_building(
             reference_building, weather=weather, settings=settings, preparation_cache=cache
         )
-        path.write_text(path.read_text().replace("Controlled", "Altered"))
+        path.write_text(path.read_text().replace("COMMENTS 1,", "COMMENTS 1,Changed ", 1))
         with pytest.raises(ValueError, match="contents changed"):
             simulate_building(
                 reference_building, weather=weather, settings=settings, preparation_cache=cache

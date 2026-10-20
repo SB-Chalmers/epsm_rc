@@ -38,7 +38,10 @@ def test_from_geojson_preserves_courtyard(courtyard_polygon, source_kind, tmp_pa
         source.write_text(json.dumps(feature))
 
     geometry = FootprintImporter.from_geojson(
-        source, crs="EPSG:3006", num_floors=2, floor_height=3,
+        source,
+        crs="EPSG:3006",
+        num_floors=2,
+        floor_height=3,
     )
     assert geometry.footprint_area == 300.0
     assert geometry.shapely_polygon.interiors[0].bounds == (-5.0, -5.0, 5.0, 5.0)
@@ -47,12 +50,13 @@ def test_from_geojson_preserves_courtyard(courtyard_polygon, source_kind, tmp_pa
 def test_from_geojson_multi_preserves_courtyard(courtyard_polygon):
     features = {
         "type": "FeatureCollection",
-        "features": [
-            {"type": "Feature", "properties": {}, "geometry": mapping(courtyard_polygon)}
-        ],
+        "features": [{"type": "Feature", "properties": {}, "geometry": mapping(courtyard_polygon)}],
     }
     geometries = FootprintImporter.from_geojson_multi(
-        features, crs="EPSG:3006", num_floors=2, floor_height=3,
+        features,
+        crs="EPSG:3006",
+        num_floors=2,
+        floor_height=3,
     )
     assert len(geometries) == 1
     assert geometries[0].footprint_area == 300.0
@@ -61,11 +65,19 @@ def test_from_geojson_multi_preserves_courtyard(courtyard_polygon):
 def test_simple_polygon_imports_preserve_metric_area():
     pytest.importorskip("pyproj")
     polygon = Polygon([(0, 0), (20, 0), (20, 20), (0, 20)])
-    assert BuildingGeometry.from_shapely(polygon, num_floors=2, floor_height=3).footprint_area == 400.0
+    assert (
+        BuildingGeometry.from_shapely(polygon, num_floors=2, floor_height=3).footprint_area == 400.0
+    )
     feature = {"type": "Feature", "properties": {}, "geometry": mapping(polygon)}
-    assert FootprintImporter.from_geojson(
-        feature, crs="EPSG:3006", num_floors=2, floor_height=2.5,
-    ).footprint_area == 400.0
+    assert (
+        FootprintImporter.from_geojson(
+            feature,
+            crs="EPSG:3006",
+            num_floors=2,
+            floor_height=2.5,
+        ).footprint_area
+        == 400.0
+    )
 
 
 @pytest.mark.parametrize("source_kind", ["relation_id", "url"])
@@ -97,8 +109,10 @@ def test_osm_relation_rejects_courtyard_members(monkeypatch, source_kind):
             return response_data
 
     monkeypatch.setattr(requests, "get", lambda *args, **kwargs: Response())
-    kwargs = {"relation_id": 42} if source_kind == "relation_id" else {
-        "url": "https://www.openstreetmap.org/relation/42"
-    }
+    kwargs = (
+        {"relation_id": 42}
+        if source_kind == "relation_id"
+        else {"url": "https://www.openstreetmap.org/relation/42"}
+    )
     with pytest.raises(ValueError, match="courtyard|interior ring"):
         FootprintImporter.from_osm(**kwargs)

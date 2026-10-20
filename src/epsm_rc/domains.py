@@ -11,7 +11,7 @@ import hashlib
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
+from math import isfinite
 
 import numpy as np
 
@@ -55,11 +55,59 @@ class PreparedDomain:
     volume_m3: float
 
 
-def select_domains(building, weather, settings, *, geometry_cache=None):
+@dataclass
+class HourlyInputs:
+    """Owned hourly forcing used by ordinary and coupled numerical execution."""
+
+    model: object
+    temperatures: list
+    gains: list
+    convective: list
+    heating_setpoints: list
+    cooling_setpoints: list
+    wind: list
+    infiltration: list
+    natural: list
+    ventilation: list
+    solar: list
+    opaque: list
+    month_hours: tuple | None
+    coefficients: tuple
+    aggregate_split: bool
+
+    def at(self, hour):
+        model = self.model
+        temperature = self.temperatures[hour]
+        if not self.aggregate_split:
+            model.convective_fraction_internal = (
+                float(self.convective[hour] / self.gains[hour]) if self.gains[hour] > 0 else 0.0
+            )
+        model.t_set_heating = self.heating_setpoints[hour]
+        model.t_set_cooling = self.cooling_setpoints[hour]
+        correction = (
+            self.coefficients[0]
+            + self.coefficients[1] * abs(model.t_air - temperature)
+            + self.coefficients[2] * self.wind[hour]
+            + self.coefficients[3] * self.wind[hour] ** 2
+        )
+        model.ach_infiltration = self.infiltration[hour] * correction + self.natural[hour]
+        model.ach_ventilation = self.ventilation[hour]
+        if not isfinite(model.ach_infiltration) or model.ach_infiltration < 0:
+            raise ValueError("Hourly infiltration must be finite and nonnegative")
+        model._update_ventilation_coefficient()
+        return {
+            "t_out": temperature,
+            "solar_gains": self.solar[hour],
+            "internal_gains": self.gains[hour],
+            "solar_gains_opaque": self.opaque[hour],
+            "hour_of_year": self.month_hours[hour] if self.month_hours is not None else None,
+        }
+
+
+def select_domains(building, resolved, settings):
     """Select exactly main and basement, retaining all declared controls and areas."""
     from epsm_core import AirflowSpec, UseSpec
 
-    resolved = building.snapshot().resolve(weather, geometry_cache=geometry_cache)
     grouped = {"main": [], "basement": []}
     for zone in resolved.zones.values():
         if not zone["conditioned"]:
@@ -139,40 +187,15 @@ def select_domains(building, weather, settings, *, geometry_cache=None):
     return selections, conductance, report
 
 
-def simulate_conditioned_domains(
-    building, *, weather, settings, directory=None, preparation_cache=None
-):
-    """Run conservative coupled main and basement controls without input mutation."""
-    from epsm_core import Weather
+def simulate_conditioned_domains(preparation):
+    """Run conservative coupled controls from one captured building preparation."""
     from epsm_core.results import SimulationResult
 
-    from .platform import RCSettings, _simulate_building
-    from .preparation import PreparationCache
+    from .platform import _prepare_domain
 
-    if settings is None:
-        raise ValueError("epsm_rc requires explicit settings or a named reduction policy")
-    settings = RCSettings(**settings) if isinstance(settings, dict) else settings
-    if not isinstance(settings, RCSettings):
-        raise TypeError("settings must be RCSettings or an explicit settings dictionary")
-    if preparation_cache is not None and not isinstance(preparation_cache, PreparationCache):
-        raise TypeError("preparation_cache must be a PreparationCache")
-    weather = weather if isinstance(weather, Weather) else Weather.from_epw(weather)
-    building.readiness(engine="epsm_rc", weather=weather).require()
-    geometry_cache = preparation_cache.geometry_cache if preparation_cache is not None else None
-    selections, conductance, reduction = select_domains(
-        building, weather, settings, geometry_cache=geometry_cache
-    )
-    prepared = [
-        _simulate_building(
-            building,
-            weather=weather,
-            settings=settings,
-            preparation_cache=preparation_cache,
-            _domain=selection,
-            _prepare_only=True,
-        )
-        for selection in selections
-    ]
+    building, settings = preparation.building, preparation.settings
+    selections, conductance, reduction = select_domains(building, preparation.resolved, settings)
+    prepared = [_prepare_domain(preparation, domain=selection) for selection in selections]
     count = len(prepared[0].time_axis)
     powers, temperatures = np.zeros((2, count)), np.zeros((2, count))
     exchanges, residuals = np.zeros((2, count)), np.zeros(count)
@@ -290,13 +313,4 @@ def simulate_conditioned_domains(
         ).encode()
     ).hexdigest()
     bind_context(run_id=run_id)
-    artifacts = {}
-    if directory is not None:
-        directory = Path(directory)
-        directory.mkdir(parents=True, exist_ok=True)
-        path = directory / "hourly.npz"
-        np.savez_compressed(path, **hourly, time_axis=results[0].time_axis)
-        artifacts["hourly"] = str(path)
-    return SimulationResult(
-        run_id, scalars, hourly, units, diagnostics, artifacts, results[0].time_axis
-    )
+    return SimulationResult(run_id, scalars, hourly, units, diagnostics, {}, results[0].time_axis)

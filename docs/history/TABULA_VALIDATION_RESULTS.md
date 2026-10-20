@@ -1,3 +1,14 @@
+# Historical experiment record
+
+This document is retained from RC source revision `79c04461f1f2675d310eb8629d662db9ac8422c0` (0.7.1).
+Its numerical results, paths and validation claims describe that historical
+experiment. They are **not certification, a current release check, or evidence of
+prediction accuracy for a measured building**. Some referenced scripts are no
+longer present. Current checks are documented in [the project README](../../README.md)
+and [the benchmark guide](../../benchmarks/README.md).
+
+---
+
 # TABULA 5R1C Model Validation Results
 
 ## Summary

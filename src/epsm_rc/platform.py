@@ -5,14 +5,14 @@
 # Author: Sanjay Somanath
 # Research attribution: Existing numerical solver credits are retained in iso13790.py.
 # Date created: 2026-10-14
-# Date modified: 2026-10-19
+# Date modified: 2026-10-20
 # Changelog:
 #   2026-10-19 - Preserve conditioned-basement controls and finite cold-attic buffers.
 #   2026-10-14 - Add the Core adapter with explicit reduction and delivery assumptions.
 #   2026-10-14 - Use the common solver with sensible recovery applied once.
 """Reduce a Core Building to independent hourly 5R1C evaluations.
 
-The reduction combines conditioned space into one temperature domain. Material
+The reduction prepares each conditioned thermal domain once. Material
 inventory remains in Core; only transport/storage equivalents enter this model.
 Solar radiation uses actual facade azimuths and Perez irradiance with the supplied
 scalar window shading factor. Geometric site shading is unsupported.
@@ -31,9 +31,8 @@ import hashlib
 import json
 from dataclasses import asdict, dataclass
 from datetime import timedelta, timezone
+from io import StringIO
 from pathlib import Path
-from types import SimpleNamespace
-from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
@@ -41,7 +40,7 @@ from pvlib import atmosphere, irradiance, solarposition
 from pvlib.iotools import read_epw
 from shapely.geometry import Polygon
 
-from epsm_rc._logging import bind_context, call_with_context, context_logger
+from epsm_rc._logging import bind_context, context_logger
 from epsm_rc._logging import operation as logged_operation
 
 from ._identity import implementation_identity
@@ -50,15 +49,7 @@ from .optics import SimpleGlazingOptics
 from .preparation import PreparationCache
 from .radiation import plane_irradiance
 
-if TYPE_CHECKING:
-    from epsm_core import Building, Weather
-    from epsm_core.results import SimulationResult
-
 logger = context_logger(__name__)
-
-
-# Private compatibility name; all paths now use the same solver implementation.
-_Platform5R1C = Building5R1C
 
 
 @dataclass(frozen=True)
@@ -137,6 +128,7 @@ class RCSettings:
 
     Examples
     --------
+    >>> from epsm_rc import RCSettings
     >>> RCSettings(effective_mass_depth_m=0.08).effective_mass_depth_m
     0.08
     """
@@ -259,6 +251,21 @@ class RCSettings:
             raise ValueError("Interzone floor surface resistance must be finite and positive")
         if self.self_shadowing_policy not in {"reject", "ignore"}:
             raise ValueError("Unknown self_shadowing_policy; choose reject or ignore")
+
+    def __repr__(self):
+        return f"RCSettings(policy={self.policy_version!r}, optics={self.window_optics_method!r})"
+
+    __str__ = __repr__
+
+    def summary(self) -> dict:
+        """Return detached settings and method assumptions without I/O.
+
+        Examples
+        --------
+        >>> RCSettings().summary()["coefficients"]["effective_mass_depth_m"]
+        0.1
+        """
+        return self.effective_configuration()
 
     @classmethod
     def from_policy(cls, name: str, **overrides) -> RCSettings:
@@ -436,320 +443,155 @@ def _self_shadowing_capabilities(geometry, settings: RCSettings) -> dict:
     }
 
 
-def _implementation_identity(source_cache=None) -> dict:
-    """Fingerprint installed source and numerical dependency versions.
-
-    Development checkouts can change without a distribution version bump.
-    Source hashes therefore identify the actual adapter, Core delivery and Data
-    object behavior. Batch reuse checks file/directory metadata before reusing
-    content hashes; ordinary evaluations read the installed sources in full.
-    """
-    return implementation_identity(source_cache)
+def _implementation_identity() -> dict:
+    """Return detached calculation identity captured lazily once per process."""
+    return implementation_identity()
 
 
-def _simulate_building(
-    building: Building,
-    *,
-    weather: Weather | str | Path,
-    directory: str | Path | None = None,
-    settings: RCSettings | dict | None = None,
-    preparation_cache: PreparationCache | None = None,
-    _domain=None,
-    _prepare_only=False,
-) -> SimulationResult:
-    """Prepare/run one owned reduction domain; ordinary calls retain the original path."""
-    if settings is None:
-        raise ValueError(
-            "epsm_rc requires explicit settings or a named reduction policy: pass "
-            "settings=RCSettings.from_policy('epsm_rc_5r1c_v1', ...). "
-            "Pass these settings to epsm.Building.simulate(engine='epsm_rc') as well."
-        )
-    settings = RCSettings(**settings) if isinstance(settings, dict) else settings
-    if not isinstance(settings, RCSettings):
-        raise TypeError("settings must be RCSettings or an explicit settings dictionary")
-    if preparation_cache is not None and not isinstance(preparation_cache, PreparationCache):
-        raise TypeError("preparation_cache must be a PreparationCache")
+@dataclass
+class _BuildingPreparation:
+    """Owned inputs shared by all domains of one captured building."""
 
-    from epsm_core import Weather
-    from epsm_core.geometry import facade_catalog
-    from epsm_core.heating_delivery import heating_delivery
-    from epsm_core.results import SimulationResult
-    from epsm_core.weather import file_sha256, hourly_axis, validate_epw_calendar
+    building: object
+    spec: object
+    resolved: object
+    weather: object
+    settings: RCSettings
+    cache: PreparationCache | None
+    implementation: dict
+    physical_hash: str
+    values: dict
+    axis: np.ndarray | None = None
+    data: dict | None = None
 
-    weather = (
-        weather if isinstance(weather, Weather) else call_with_context(Weather.from_epw, weather)
-    )
-    if file_sha256(weather.path) != weather.sha256:
-        raise ValueError("EPW contents changed after Weather was created")
-    building.readiness(engine="epsm_rc", weather=weather).require()
-    geometry_options = (
-        {"geometry_cache": preparation_cache.geometry_cache}
-        if preparation_cache is not None
-        else {}
-    )
-    spec = call_with_context(building.to_spec, weather, **geometry_options)
-    operating_use = _domain.use if _domain is not None else spec.use
-    operating_airflow = _domain.airflow if _domain is not None else spec.airflow
-    operating_reference = (
-        _domain.reference_area_m2
-        if _domain is not None
-        else spec.load_reference_area_m2 or spec.geometry.conditioned_floor_area_m2
-    )
-    gains, convective_gains, radiant_gains, gain_reduction = _gain_inputs(
-        operating_use,
-        operating_reference,
-        spec.climate.calendar_year,
-        settings,
-    )
-    airflow_capabilities = _airflow_capabilities(operating_airflow, settings)
-    ground, ground_multiplier, ground_reduction = _ground_reduction(spec.envelope, settings)
-    self_shadowing = _self_shadowing_capabilities(spec.geometry, settings)
-    effective_configuration = settings.effective_configuration()
-    effective_configuration["gain_reduction"] = gain_reduction
-    if not gain_reduction["aggregate_split_applied"]:
-        effective_configuration["inactive_coefficients"] = ["convective_internal_gains_fraction"]
-        effective_configuration["methods"]["occupant_gains"] = "supplied_sensible_fraction"
-        effective_configuration["methods"]["gain_partition"] = "shared_hourly_sensible_channels"
-    implementation = (
-        _implementation_identity(preparation_cache._source_cache)
-        if preparation_cache is not None and preparation_cache._source_cache is not None
-        else _implementation_identity()
-    )
-    run_id = hashlib.sha256(
-        json.dumps(
-            {
-                "physical_inputs": spec.physical_dict(),
-                "settings": effective_configuration,
-                "implementation": implementation,
-                **({"domain": _domain.identity()} if _domain is not None else {}),
-            },
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        ).encode()
-    ).hexdigest()
-    bind_context(run_id=run_id)
-    year = spec.climate.calendar_year
-    preparation_key = {
-        "weather_sha256": weather.sha256,
-        "year": year,
-        "climate": spec.climate.model_dump(mode="json"),
-        "implementation": implementation,
-        "solar_time_reference": settings.solar_time_reference,
-    }
+    def prepared(self, namespace, inputs, compute, *, readonly=False):
+        key = (namespace, json.dumps(inputs, sort_keys=True, allow_nan=False), readonly)
+        if key not in self.values:
+            if self.cache is None:
+                value = compute()
+            elif readonly:
+                value = self.cache._get_or_compute_readonly(namespace, inputs, compute)
+            else:
+                value = self.cache.get_or_compute(namespace, inputs, compute)
+            self.values[key] = value
+        return self.values[key]
 
-    def prepared(namespace, inputs, compute, *, readonly=False):
-        if preparation_cache is None:
-            return compute()
-        if readonly:
-            return preparation_cache._get_or_compute_readonly(namespace, inputs, compute)
-        return preparation_cache.get_or_compute(namespace, inputs, compute)
 
-    prepared("weather_calendar", preparation_key, lambda: validate_epw_calendar(weather.path, year))
+def _validate_rc_spec(spec):
+    """Reject unsupported topology and delivery before weather/numeric preparation."""
     if (
         spec.common_use
         or spec.common_airflow
-        or (_domain is None and spec.zone_uses)
+        or (not spec.geometry.basement_conditioned and spec.zone_uses)
         or any(exchange.zone_kind != "attic" for exchange in spec.unconditioned_exchange)
     ):
         raise ValueError("epsm_rc currently requires one common operating/airflow domain")
     if spec.delivery.fvp or spec.renewables.pv_systems:
         raise ValueError("epsm_rc adapter does not yet support FVP or PV delivery")
-    if any(not p.conditioned for p in spec.geometry.parts):
-        raise ValueError("epsm_rc currently supports fully conditioned parts")
-    if spec.geometry.basement_depth_m and not spec.geometry.basement_conditioned:
-        raise ValueError("epsm_rc cannot aggregate an unconditioned basement")
-    area = _domain.area_m2 if _domain is not None else spec.geometry.conditioned_floor_area_m2
-    volume = _domain.volume_m3 if _domain is not None else spec.geometry.conditioned_volume_m3
-    reference_area = operating_reference
-    elements = _domain.elements if _domain is not None else tuple(building.elements)
-    from .attic import reduce_attics
 
-    attic = reduce_attics(
-        building,
-        spec,
+
+def _prepare_building(building, weather, settings, preparation_cache):
+    """Capture and check a building once, with fresh state reserved for each domain."""
+    from epsm_core import Building, Weather
+    from epsm_core.resolved import resolve_snapshot_inputs
+    from epsm_core.weather import hourly_axis, validate_epw_calendar
+
+    if settings is None:
+        raise ValueError("epsm_rc requires explicit settings or a named reduction policy")
+    settings = RCSettings(**settings) if isinstance(settings, dict) else settings
+    if not isinstance(settings, RCSettings):
+        raise TypeError("settings must be RCSettings or an explicit settings dictionary")
+    if preparation_cache is not None and not isinstance(preparation_cache, PreparationCache):
+        raise TypeError("preparation_cache must be a PreparationCache")
+    if not isinstance(building, Building):
+        raise TypeError("building must be an epsm_core.Building")
+    # These checks depend only on supplied authoring inputs and selected settings.
+    if building.hvac is not None:
+        _airflow_capabilities(building.hvac.airflow, settings)
+        if building.hvac.delivery.fvp or building.hvac.renewables.pv_systems:
+            raise ValueError("epsm_rc adapter does not yet support FVP or PV delivery")
+    if building.geometry is not None:
+        _self_shadowing_capabilities(building.geometry, settings)
+    snapshot = building.snapshot()
+    inputs = resolve_snapshot_inputs(
+        snapshot,
+        weather,
+        engine="epsm_rc",
+        geometry_cache=preparation_cache.geometry_cache if preparation_cache is not None else None,
+    )
+    weather = weather if isinstance(weather, Weather) else Weather(inputs.spec.climate)
+    # Bind calendar validation and parsed arrays to precisely these captured bytes.
+    # A later edit cannot alter the inputs used by this run.
+    raw_weather = weather.path.read_bytes()
+    if hashlib.sha256(raw_weather).hexdigest() != weather.sha256:
+        raise ValueError("EPW contents changed after Weather was created")
+    weather_text = raw_weather.decode("utf-8-sig")
+    _validate_rc_spec(inputs.spec)
+    preparation = _BuildingPreparation(
+        inputs.building,
+        inputs.spec,
+        inputs.resolved,
         weather,
         settings,
-        geometry_cache=geometry_options.get("geometry_cache"),
-        enabled=_domain is None or _domain.name == "main",
+        preparation_cache,
+        _implementation_identity(),
+        inputs.resolved.source_spec_hash,
+        {},
     )
-    optical_models = {}
-    if settings.window_optics_method == "simple_glazing_angular_v1":
-        for element in elements:
-            if (
-                element.role.value == "WINDOW"
-                and element.boundary == "Outdoors"
-                and element.area_m2 > 0
-            ):
-                glass = element.construction
-                key = (glass.u_value, glass.shgc)
-                if key not in optical_models:
-                    optical_models[key] = SimpleGlazingOptics(*key)
-    grouped = {"wall": [], "roof": [], "ground": [], "window": []}
-    constructions = []
-    for element in elements:
-        if element.identifier in attic.shell_element_ids:
-            continue
-        role = element.role.value
-        key = (
-            "ground"
-            if element.boundary == "Ground" and hasattr(element.construction, "components")
-            else "wall"
-            if role.startswith("EXT_WALL") or role == "BASEMENT_WALL"
-            else "roof"
-            if role in {"ROOF", "TOP_FLOOR"}
-            else "ground"
-            if role in {"GROUND_FLOOR", "BASEMENT_FLOOR"}
-            else "window"
-            if role == "WINDOW"
-            else None
-        )
-        # The role selects the construction category; the boundary selects the
-        # heat-transfer path. A shared facade keeps its physical construction
-        # below, including mass, without becoming an outdoor wall in the RC model.
-        if key and element.boundary == ("Ground" if key == "ground" else "Outdoors"):
-            grouped[key].append(element)
-        assembly = element.construction
-        if assembly is None:
-            raise ValueError(f"Missing construction for {element.identifier}")
-        if not hasattr(assembly, "components"):
-            continue
-        # Parallel constituents retain separate physical quantities. Only heat
-        # capacity per area is averaged here, following the same layer depth.
-        layers = []
-        for component in assembly.components:
-            for slot in component.layers:
-                layer = slot.layer
-                capacity = (
-                    sum(
-                        m.area_fraction
-                        * m.thickness
-                        * m.material.density
-                        * m.material.specific_heat
-                        for m in layer.materials
-                    )
-                    / layer.thickness
-                )
-                layers.append(ConstructionLayer(layer.thickness, capacity, 1.0, layer.name))
-        constructions.append(
-            Construction(
-                element.identifier,
-                list(reversed(layers)),
-                element.area_m2
-                * (
-                    _domain.capacity_weights.get(element.identifier, 1.0)
-                    if _domain is not None
-                    else 1.0
-                ),
-                settings.effective_mass_depth_m,
-            )
-        )
-    areas = {key: sum(e.area_m2 for e in values) for key, values in grouped.items()}
-
-    def u_value(key):
-        return (
-            sum(e.area_m2 * e.construction.u_value for e in grouped[key]) / areas[key]
-            if areas[key]
-            else 0.0
-        )
-
-    use, airflow = operating_use, operating_airflow
-
-    def annual(schedule):
-        return np.asarray(schedule.hourly(year), dtype=float)
-
-    heat_set, cool_set = annual(use.heating_setpoint), annual(use.cooling_setpoint)
-    capacity = sum(c.total_thermal_mass_j_k for c in constructions)
-    if not constructions or not np.isfinite(capacity) or capacity <= 0:
-        raise ValueError("RC reduction requires positive thermal mass from explicit constructions")
-    capacity_per_area = capacity / area
-    lower, upper = settings.mass_capacity_thresholds_j_m2_k
-    mass_area_factor = settings.mass_area_factors[
-        2 if capacity_per_area >= upper else 1 if capacity_per_area >= lower else 0
-    ]
-    model = Building5R1C(
-        floor_area_m2=area,
-        building_class=None,
-        constructions=constructions,
-        u_walls=u_value("wall"),
-        u_roof=(
-            u_value("roof") * areas["roof"] / (areas["roof"] + attic.ceiling_area_m2)
-            if areas["roof"] + attic.ceiling_area_m2
-            else 0.0
-        ),
-        u_floor=u_value("ground"),
-        u_windows=u_value("window"),
-        wall_area_m2=areas["wall"],
-        roof_area_m2=areas["roof"] + attic.ceiling_area_m2,
-        floor_area_ground_m2=areas["ground"],
-        window_area_m2=areas["window"],
-        ceiling_height_m=volume / area,
-        building_height_m=volume / area,
-        ach_infiltration=0,
-        ach_ventilation=0,
-        heat_recovery_efficiency=airflow.sensible_recovery_effectiveness,
-        internal_gains_w_per_m2=0,
-        t_set_heating=float(heat_set[0]),
-        t_set_cooling=float(cool_set[0]),
-        thermal_bridge_class=None,
-        ventilation_system=None,
-        delta_u_thermal_bridge=0,
-        ventilation_behaviour=0,
-        temp_adj_ground=ground_multiplier,
-        ground_temps_monthly=list(ground) if ground is not None else None,
-        a_tot_surfaces_m2=settings.internal_surface_area_factor * area,
-        mass_area_factor_override=mass_area_factor,
-        convective_fraction_internal=settings.convective_internal_gains_fraction,
-        h_is=settings.surface_air_coefficient_w_m2_k,
-        h_ms=settings.mass_surface_coefficient_w_m2_k,
-        air_volumetric_heat_capacity_j_m3_k=settings.air_volumetric_heat_capacity_j_m3_k,
-        r_se_wall=settings.outside_wall_resistance_m2_k_w,
-        r_se_roof=settings.outside_roof_resistance_m2_k_w,
-        h_r=settings.sky_radiation_coefficient_w_m2_k,
-        delta_theta_er=settings.sky_air_temperature_difference_k,
-        form_factor_wall=settings.wall_sky_view_factor,
-        form_factor_roof=settings.roof_sky_view_factor,
+    key = {"weather_sha256": weather.sha256, "year": weather.calendar_year}
+    preparation.prepared(
+        "weather_calendar",
+        key,
+        lambda: validate_epw_calendar(StringIO(weather_text), weather.calendar_year),
     )
-    # Apply Core's declared thermal-bridge uplift to the opaque heat transfer,
-    # without changing installed materials or thermal storage.
-    uplift = 1 + spec.envelope.thermal_bridge_uplift_fraction
-    model.u_walls *= uplift
-    model.u_roof *= uplift
-    if attic.ceiling_area_m2:
-        model.u_roof += attic.equivalent_conductance_w_k / model.roof_area_m2
-    model.u_floor *= uplift
-    model._prepare_deterministic_hourly()
-    # The finite attic node receives actual shell solar/sky forcing. A fictitious
-    # exposed ceiling must not also receive the flat-roof sky term.
-    if attic.ceiling_area_m2:
-        model._prepared_sky = (
-            settings.outside_wall_resistance_m2_k_w
-            * model.u_walls
-            * areas["wall"]
-            * settings.sky_radiation_coefficient_w_m2_k
-            * settings.sky_air_temperature_difference_k
-            * settings.wall_sky_view_factor
-            + settings.outside_roof_resistance_m2_k_w
-            * u_value("roof")
-            * uplift
-            * areas["roof"]
-            * settings.sky_radiation_coefficient_w_m2_k
-            * settings.sky_air_temperature_difference_k
-            * settings.roof_sky_view_factor
-            + sum(term["sky_loss_w"] * term["transmission_fraction"] for term in attic.shell_terms)
-        )
+
     def weather_arrays():
-        frame, _ = read_epw(str(weather.path), coerce_year=year)
-        return {
-            name: frame[name].to_numpy()
-            for name in ("temp_air", "wind_speed", "dni", "ghi", "dhi")
+        frame, _ = read_epw(StringIO(weather_text), coerce_year=weather.calendar_year)
+        data = {
+            name: frame[name].to_numpy() for name in ("temp_air", "wind_speed", "dni", "ghi", "dhi")
         }
+        for name, values in data.items():
+            if not np.isfinite(values).all():
+                raise ValueError(f"EPW {name} must be finite")
+            if name in {"dni", "ghi", "dhi"} and ((values < 0) | (values >= 9999)).any():
+                raise ValueError(f"EPW {name} must be complete and nonnegative")
+        return data
 
-    data = prepared("weather_data", preparation_key, weather_arrays, readonly=True)
+    preparation.data = preparation.prepared("weather_data", key, weather_arrays, readonly=True)
+    preparation.axis = hourly_axis(weather.calendar_year)
+    logger.debug(
+        "Prepared one captured building",
+        extra={
+            "epsm_details": {
+                "domains": 2 if inputs.spec.geometry.basement_conditioned else 1,
+                "hours": len(preparation.axis),
+                "physical_inputs_sha256": preparation.physical_hash,
+            }
+        },
+    )
+    return preparation
+
+
+def _prepare_radiation(preparation, model, elements, attic, areas, optical_models):
+    """Prepare solar and sky forcing using the building's captured weather buffers."""
+    from epsm_core.geometry import facade_catalog
+
+    spec, settings = preparation.spec, preparation.settings
+    uplift = 1 + spec.envelope.thermal_bridge_uplift_fraction
+    year = spec.climate.calendar_year
+    data, axis = preparation.data, preparation.axis
+    prepared = preparation.prepared
+    preparation_key = {
+        "weather_sha256": preparation.weather.sha256,
+        "year": year,
+        "climate": spec.climate.model_dump(mode="json"),
+        "implementation": preparation.implementation,
+        "solar_time_reference": settings.solar_time_reference,
+    }
     ghi = data["ghi"]
     if not np.isfinite(ghi).all() or ((ghi < 0) | (ghi >= 9999)).any():
         raise ValueError("EPW global horizontal radiation must be complete and nonnegative")
-    axis = hourly_axis(year)
+    axis = preparation.axis
     times = pd.DatetimeIndex(axis).tz_localize(
         timezone(timedelta(hours=spec.climate.time_zone_hours))
     )
@@ -916,6 +758,240 @@ def _simulate_building(
         radiation_hourly["sky_radiation_loss_w"] = np.full(
             len(axis), model.calc_sky_radiation_loss()
         )
+    return solar, opaque, radiation_hourly, times
+
+
+def _prepare_domain(preparation, *, domain=None):
+    """Reduce one domain from the already checked building without repeating I/O."""
+
+    building, spec, weather, settings = (
+        preparation.building,
+        preparation.spec,
+        preparation.weather,
+        preparation.settings,
+    )
+    operating_use = domain.use if domain is not None else spec.use
+    operating_airflow = domain.airflow if domain is not None else spec.airflow
+    operating_reference = (
+        domain.reference_area_m2
+        if domain is not None
+        else spec.load_reference_area_m2 or spec.geometry.conditioned_floor_area_m2
+    )
+    gains, convective_gains, radiant_gains, gain_reduction = _gain_inputs(
+        operating_use,
+        operating_reference,
+        spec.climate.calendar_year,
+        settings,
+    )
+    airflow_capabilities = _airflow_capabilities(operating_airflow, settings)
+    ground, ground_multiplier, ground_reduction = _ground_reduction(spec.envelope, settings)
+    self_shadowing = _self_shadowing_capabilities(spec.geometry, settings)
+    effective_configuration = settings.effective_configuration()
+    effective_configuration["gain_reduction"] = gain_reduction
+    if not gain_reduction["aggregate_split_applied"]:
+        effective_configuration["inactive_coefficients"] = ["convective_internal_gains_fraction"]
+        effective_configuration["methods"]["occupant_gains"] = "supplied_sensible_fraction"
+        effective_configuration["methods"]["gain_partition"] = "shared_hourly_sensible_channels"
+    implementation = preparation.implementation
+    run_id = hashlib.sha256(
+        json.dumps(
+            {
+                "physical_inputs_sha256": preparation.physical_hash,
+                "settings": effective_configuration,
+                "implementation": implementation,
+                **({"domain": domain.identity()} if domain is not None else {}),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode()
+    ).hexdigest()
+    bind_context(run_id=run_id)
+    year = spec.climate.calendar_year
+    area = domain.area_m2 if domain is not None else spec.geometry.conditioned_floor_area_m2
+    volume = domain.volume_m3 if domain is not None else spec.geometry.conditioned_volume_m3
+    reference_area = operating_reference
+    elements = domain.elements if domain is not None else tuple(building.elements)
+    from .attic import reduce_attics
+
+    attic = reduce_attics(
+        building,
+        spec,
+        weather,
+        settings,
+        resolved=preparation.resolved,
+        enabled=domain is None or domain.name == "main",
+    )
+    optical_models = {}
+    if settings.window_optics_method == "simple_glazing_angular_v1":
+        for element in elements:
+            if (
+                element.role.value == "WINDOW"
+                and element.boundary == "Outdoors"
+                and element.area_m2 > 0
+            ):
+                glass = element.construction
+                key = (glass.u_value, glass.shgc)
+                if key not in optical_models:
+                    optical_models[key] = SimpleGlazingOptics(*key)
+    grouped = {"wall": [], "roof": [], "ground": [], "window": []}
+    constructions = []
+    for element in elements:
+        if element.identifier in attic.shell_element_ids:
+            continue
+        role = element.role.value
+        key = (
+            "ground"
+            if element.boundary == "Ground" and hasattr(element.construction, "components")
+            else "wall"
+            if role.startswith("EXT_WALL") or role == "BASEMENT_WALL"
+            else "roof"
+            if role in {"ROOF", "TOP_FLOOR"}
+            else "ground"
+            if role in {"GROUND_FLOOR", "BASEMENT_FLOOR"}
+            else "window"
+            if role == "WINDOW"
+            else None
+        )
+        # The role selects the construction category; the boundary selects the
+        # heat-transfer path. A shared facade keeps its physical construction
+        # below, including mass, without becoming an outdoor wall in the RC model.
+        if key and element.boundary == ("Ground" if key == "ground" else "Outdoors"):
+            grouped[key].append(element)
+        assembly = element.construction
+        if assembly is None:
+            raise ValueError(f"Missing construction for {element.identifier}")
+        if not hasattr(assembly, "components"):
+            continue
+        # Parallel constituents retain separate physical quantities. Only heat
+        # capacity per area is averaged here, following the same layer depth.
+        layers = []
+        for component in assembly.components:
+            for slot in component.layers:
+                layer = slot.layer
+                capacity = (
+                    sum(
+                        m.area_fraction
+                        * m.thickness
+                        * m.material.density
+                        * m.material.specific_heat
+                        for m in layer.materials
+                    )
+                    / layer.thickness
+                )
+                layers.append(ConstructionLayer(layer.thickness, capacity, 1.0, layer.name))
+        constructions.append(
+            Construction(
+                element.identifier,
+                list(reversed(layers)),
+                element.area_m2
+                * (
+                    domain.capacity_weights.get(element.identifier, 1.0)
+                    if domain is not None
+                    else 1.0
+                ),
+                settings.effective_mass_depth_m,
+            )
+        )
+    areas = {key: sum(e.area_m2 for e in values) for key, values in grouped.items()}
+
+    def u_value(key):
+        return (
+            sum(e.area_m2 * e.construction.u_value for e in grouped[key]) / areas[key]
+            if areas[key]
+            else 0.0
+        )
+
+    use, airflow = operating_use, operating_airflow
+
+    def annual(schedule):
+        return np.asarray(schedule.hourly(year), dtype=float)
+
+    heat_set, cool_set = annual(use.heating_setpoint), annual(use.cooling_setpoint)
+    capacity = sum(c.total_thermal_mass_j_k for c in constructions)
+    if not constructions or not np.isfinite(capacity) or capacity <= 0:
+        raise ValueError("RC reduction requires positive thermal mass from explicit constructions")
+    capacity_per_area = capacity / area
+    lower, upper = settings.mass_capacity_thresholds_j_m2_k
+    mass_area_factor = settings.mass_area_factors[
+        2 if capacity_per_area >= upper else 1 if capacity_per_area >= lower else 0
+    ]
+    model = Building5R1C(
+        floor_area_m2=area,
+        building_class=None,
+        constructions=constructions,
+        u_walls=u_value("wall"),
+        u_roof=(
+            u_value("roof") * areas["roof"] / (areas["roof"] + attic.ceiling_area_m2)
+            if areas["roof"] + attic.ceiling_area_m2
+            else 0.0
+        ),
+        u_floor=u_value("ground"),
+        u_windows=u_value("window"),
+        wall_area_m2=areas["wall"],
+        roof_area_m2=areas["roof"] + attic.ceiling_area_m2,
+        floor_area_ground_m2=areas["ground"],
+        window_area_m2=areas["window"],
+        ceiling_height_m=volume / area,
+        building_height_m=volume / area,
+        ach_infiltration=0,
+        ach_ventilation=0,
+        heat_recovery_efficiency=airflow.sensible_recovery_effectiveness,
+        internal_gains_w_per_m2=0,
+        t_set_heating=float(heat_set[0]),
+        t_set_cooling=float(cool_set[0]),
+        thermal_bridge_class=None,
+        ventilation_system=None,
+        delta_u_thermal_bridge=0,
+        ventilation_behaviour=0,
+        temp_adj_ground=ground_multiplier,
+        ground_temps_monthly=list(ground) if ground is not None else None,
+        a_tot_surfaces_m2=settings.internal_surface_area_factor * area,
+        mass_area_factor_override=mass_area_factor,
+        convective_fraction_internal=settings.convective_internal_gains_fraction,
+        h_is=settings.surface_air_coefficient_w_m2_k,
+        h_ms=settings.mass_surface_coefficient_w_m2_k,
+        air_volumetric_heat_capacity_j_m3_k=settings.air_volumetric_heat_capacity_j_m3_k,
+        r_se_wall=settings.outside_wall_resistance_m2_k_w,
+        r_se_roof=settings.outside_roof_resistance_m2_k_w,
+        h_r=settings.sky_radiation_coefficient_w_m2_k,
+        delta_theta_er=settings.sky_air_temperature_difference_k,
+        form_factor_wall=settings.wall_sky_view_factor,
+        form_factor_roof=settings.roof_sky_view_factor,
+    )
+    # Apply Core's declared thermal-bridge uplift to the opaque heat transfer,
+    # without changing installed materials or thermal storage.
+    uplift = 1 + spec.envelope.thermal_bridge_uplift_fraction
+    model.u_walls *= uplift
+    model.u_roof *= uplift
+    if attic.ceiling_area_m2:
+        model.u_roof += attic.equivalent_conductance_w_k / model.roof_area_m2
+    model.u_floor *= uplift
+    model._prepare_deterministic_hourly()
+    # The finite attic node receives actual shell solar/sky forcing. A fictitious
+    # exposed ceiling must not also receive the flat-roof sky term.
+    if attic.ceiling_area_m2:
+        model._prepared_sky = (
+            settings.outside_wall_resistance_m2_k_w
+            * model.u_walls
+            * areas["wall"]
+            * settings.sky_radiation_coefficient_w_m2_k
+            * settings.sky_air_temperature_difference_k
+            * settings.wall_sky_view_factor
+            + settings.outside_roof_resistance_m2_k_w
+            * u_value("roof")
+            * uplift
+            * areas["roof"]
+            * settings.sky_radiation_coefficient_w_m2_k
+            * settings.sky_air_temperature_difference_k
+            * settings.roof_sky_view_factor
+            + sum(term["sky_loss_w"] * term["transmission_fraction"] for term in attic.shell_terms)
+        )
+    data = preparation.data
+    solar, opaque, radiation_hourly, times = _prepare_radiation(
+        preparation, model, elements, attic, areas, optical_models
+    )
+    axis = preparation.axis
     infiltration = (
         airflow.infiltration_design_flow_m3_s(reference_area_m2=reference_area, volume_m3=volume)
         * 3600
@@ -937,7 +1013,6 @@ def _simulate_building(
         annual(airflow.heating_availability),
         annual(airflow.cooling_availability),
     )
-    power, indoor = np.zeros(len(axis)), np.zeros(len(axis))
     model.t_m = model.t_air = model.t_s = float(heat_set[0])
     month_offsets = tuple(
         sum((744, 672, 744, 720, 744, 720, 744, 744, 720, 744, 720, 744)[:m]) for m in range(12)
@@ -978,217 +1053,82 @@ def _simulate_building(
         )
     )
 
-    def finish(power, indoor):
-        hourly = {
-            "space_heating_demand_kwh": np.maximum(power, 0) / 1000,
-            "cooling_demand_kwh": np.maximum(-power, 0) / 1000,
-            "indoor_temperature_c": indoor,
-            "internal_gains_convective_w": convective_gains,
-            "internal_gains_radiant_w": radiant_gains,
-        }
-        hourly.update(radiation_hourly)
-        dhw = annual(use.dhw_fraction)
-        hourly["dhw_load_kwh"] = (
-            dhw / dhw.sum() * use.dhw_kwh_m2_year * reference_area if dhw.sum() else dhw
-        )
-        report = SimpleNamespace(
-            data={
-                "load_reference_area_m2": reference_area,
-                "zones": {
-                    "aggregate": {
-                        "conditioned": True,
-                        "load_reference_area_m2": reference_area,
-                        "airflow_input": airflow.model_dump(mode="json"),
-                    }
-                },
-            }
-        )
-        hourly.update(heating_delivery(spec, hourly["space_heating_demand_kwh"], report))
-        scalars = {
-            key: float(values.sum()) for key, values in hourly.items() if key.endswith("kwh")
-        }
-        units = {
-            key: "kWh" if key.endswith("kwh") else "W" if key.endswith("_w") else "C"
-            for key in hourly
-        }
-        diagnostics = {
-            "accepted": all(np.isfinite(v).all() for v in hourly.values()),
-            "engine": "epsm_rc",
-            "reduction": asdict(settings),
-            "effective_configuration": effective_configuration,
-            "gain_reduction": gain_reduction,
-            "reduced_properties": {
-                "internal_surface_area_m2": model._a_tot,
-                "effective_mass_area_m2": model._mass_area,
-                "thermal_capacitance_j_k": model._c_m,
-                "surface_air_conductance_w_k": model._h_tr_is,
-                "mass_surface_conductance_w_k": model._h_tr_ms,
-                "opaque_transmission_conductance_w_k": model._h_tr_op,
-                "effective_ground_conductance_w_k": model._h_tr_ground * ground_multiplier,
-                "mass_exterior_conductance_w_k": model._h_tr_em,
-                "mass_exterior_coupling_fallback": bool(
-                    model._h_tr_op > 0 and model._h_tr_ms > 0 and model._h_tr_op >= model._h_tr_ms
-                ),
-                "sky_radiation_loss_w": model.calc_sky_radiation_loss(),
-            },
-            "implementation": implementation,
-            "physical_inputs_sha256": spec.physical_hash(),
-            "boundary_reduction": {
-                "source": "Core physical element boundaries",
-                "outdoor_opaque_area_m2": areas["wall"] + areas["roof"],
-                "ground_area_m2": areas["ground"],
-                "ground_floor_area_m2": sum(
-                    e.area_m2 for e in grouped["ground"] if e.role.value != "BASEMENT_WALL"
-                ),
-                "ground_wall_area_m2": sum(
-                    e.area_m2 for e in grouped["ground"] if e.role.value == "BASEMENT_WALL"
-                ),
-                "conditioned_basement_floor_area_m2": (
-                    spec.geometry.footprint_area_m2
-                    if spec.geometry.basement_conditioned
-                    and (_domain is None or _domain.name == "basement")
-                    else 0.0
-                ),
-                "outdoor_window_area_m2": areas["window"],
-                "adiabatic_opaque_area_m2": sum(
-                    element.area_m2
-                    for element in elements
-                    if element.boundary == "Adiabatic"
-                    and hasattr(element.construction, "components")
-                ),
-                "internal_opaque_area_m2": sum(
-                    element.area_m2
-                    for element in elements
-                    if element.boundary == "Internal"
-                    and hasattr(element.construction, "components")
-                ),
-                "opaque_capacity_basis": "one room-side effective depth per installed opaque element",
-                "internal_active_depth_faces": 1,
-                "neighbor_temperature_modelled": False,
-            },
-            "airflow_capabilities": airflow_capabilities,
-            "ground_reduction": ground_reduction,
-            "self_shadowing": self_shadowing,
-            "attic_reduction": attic.diagnostics,
-            "approximations": [
-                "One aggregated conditioned thermal domain",
-                "Shared walls are adiabatic; shared/internal depth-limited opaque storage is retained",
-                "Perez solar gains with scalar window shading; no geometric site shading",
-                "Room-side mass depth and construction-capacity mass-area rule from explicit policy",
-                "Ground boundary or conductance multiplier explicitly selected and reported",
-                "Solar gains use fixed whole-window SHGC",
-                "No fan heat feedback",
-                "Explicit gain partitions use supplied sensible heat; legacy gain treatment is separately reported",
-                "Internal area, gain split, node transfer and air heat capacity from explicit policy",
-                "Fixed sky-air difference and sky exchange coefficients from explicit policy",
-                "Heat recovery reduces mechanical conductance once; infiltration is unrecovered",
-            ],
-            "empirical_validation": "not_established_by_harmonisation",
-        }
-        if radiation_hourly:
-            diagnostics["radiation"] = {
-                "solar_time_reference": settings.solar_time_reference,
-                "window_optics_method": settings.window_optics_method,
-                "diffuse_optics": "isotropic_hemispherical_average_of_angular_model",
-                "inward_absorption": "nominal_summer_inward_fraction",
-                "longwave": "unchanged_fixed_sky_air_difference",
-                "annual_kwh": {
-                    name: float(values.sum()) / 1000 for name, values in radiation_hourly.items()
-                },
-                "optical_models": [
-                    {
-                        "u_value_w_m2k": u,
-                        "shgc": g,
-                        "normal_transmittance": optics.normal_transmittance,
-                        "normal_reflectance": optics.normal_reflectance,
-                        "inward_fraction": optics.inward_fraction,
-                    }
-                    for (u, g), optics in optical_models.items()
-                ],
-            }
-        if not diagnostics["accepted"]:
-            raise ValueError("RC calculation produced non-finite output")
-        artifacts = {}
-        if directory is not None:
-            output_directory = Path(directory)
-            output_directory.mkdir(parents=True, exist_ok=True)
-            path = output_directory / "hourly.npz"
-            np.savez_compressed(path, **hourly, time_axis=axis)
-            artifacts["hourly"] = str(path)
-        return SimulationResult(run_id, scalars, hourly, units, diagnostics, artifacts, axis)
+    from functools import partial
 
-    if _prepare_only:
-        from .domains import PreparedDomain
+    from ._results import finish_domain
 
-        def input_at(hour):
-            temperature = temperatures[hour]
-            if not gain_reduction["aggregate_split_applied"]:
-                model.convective_fraction_internal = (
-                    float(scalar_convective[hour] / scalar_gains[hour])
-                    if scalar_gains[hour] > 0
-                    else 0.0
-                )
-            model.t_set_heating, model.t_set_cooling = heat_set[hour], cool_set[hour]
-            correction = (
-                coefficients[0]
-                + coefficients[1] * abs(model.t_air - temperature)
-                + coefficients[2] * wind[hour]
-                + coefficients[3] * wind[hour] ** 2
-            )
-            model.ach_infiltration = infiltration[hour] * correction + natural[hour]
-            model.ach_ventilation = ventilation[hour]
-            model._update_ventilation_coefficient()
-            return {
-                "t_out": temperature,
-                "solar_gains": solar[hour],
-                "internal_gains": scalar_gains[hour],
-                "solar_gains_opaque": opaque[hour],
-                "hour_of_year": month_hours[hour] if ground else None,
-            }
+    finish = partial(
+        finish_domain,
+        airflow=airflow,
+        airflow_capabilities=airflow_capabilities,
+        areas=areas,
+        attic=attic,
+        axis=axis,
+        convective_gains=convective_gains,
+        domain=domain,
+        effective_configuration=effective_configuration,
+        elements=elements,
+        gain_reduction=gain_reduction,
+        ground_multiplier=ground_multiplier,
+        ground_reduction=ground_reduction,
+        grouped=grouped,
+        implementation=implementation,
+        model=model,
+        optical_models=optical_models,
+        physical_hash=preparation.physical_hash,
+        radiant_gains=radiant_gains,
+        radiation_hourly=radiation_hourly,
+        reference_area=reference_area,
+        run_id=run_id,
+        self_shadowing=self_shadowing,
+        settings=settings,
+        spec=spec,
+        use=use,
+    )
 
-        return PreparedDomain(
-            _domain.name,
-            model,
-            input_at,
-            finish,
-            tuple(np.inf if value else 0.0 for value in heating_on),
-            tuple(-np.inf if use.cooling_enabled and value else 0.0 for value in cooling_on),
-            axis,
-            reference_area,
-            volume,
-        )
+    from .domains import HourlyInputs, PreparedDomain
 
-    for hour, temperature in enumerate(temperatures):
-        if not gain_reduction["aggregate_split_applied"]:
-            model.convective_fraction_internal = (
-                float(scalar_convective[hour] / scalar_gains[hour])
-                if scalar_gains[hour] > 0
-                else 0.0
-            )
-        model.t_set_heating, model.t_set_cooling = heat_set[hour], cool_set[hour]
-        correction = (
-            coefficients[0]
-            + coefficients[1] * abs(model.t_air - temperature)
-            + coefficients[2] * wind[hour]
-            + coefficients[3] * wind[hour] ** 2
+    forcing = HourlyInputs(
+        model,
+        temperatures,
+        scalar_gains,
+        scalar_convective,
+        heat_set,
+        cool_set,
+        wind,
+        infiltration,
+        natural,
+        ventilation,
+        solar,
+        opaque,
+        month_hours if ground else None,
+        coefficients,
+        gain_reduction["aggregate_split_applied"],
+    )
+    return PreparedDomain(
+        domain.name if domain is not None else "aggregate",
+        model,
+        forcing.at,
+        finish,
+        tuple(np.inf if value else 0.0 for value in heating_on),
+        tuple(-np.inf if use.cooling_enabled and value else 0.0 for value in cooling_on),
+        axis,
+        reference_area,
+        volume,
+    )
+
+
+def _run_domain(domain):
+    """Advance a fresh prepared domain using the same forcing as coupled runs."""
+    power, indoor = np.zeros(len(domain.time_axis)), np.zeros(len(domain.time_axis))
+    for hour in range(len(power)):
+        power[hour] = domain.model.calc_heating_demand(
+            **domain.input_at(hour),
+            max_heating_power=domain.heating_limits_w[hour],
+            max_cooling_power=domain.cooling_limits_w[hour],
         )
-        model.ach_infiltration = infiltration[hour] * correction + natural[hour]
-        model.ach_ventilation = ventilation[hour]
-        model._update_ventilation_coefficient()
-        # The legacy ground helper uses a non-leap month index. Passing a
-        # representative hour within the actual month preserves leap-day input.
-        month_hour = month_hours[hour]
-        power[hour] = model.calc_heating_demand(
-            temperature,
-            solar[hour],
-            scalar_gains[hour],
-            solar_gains_opaque=opaque[hour],
-            max_heating_power=np.inf if heating_on[hour] else 0,
-            max_cooling_power=-np.inf if use.cooling_enabled and cooling_on[hour] else 0,
-            hour_of_year=month_hour if ground else None,
-        )
-        indoor[hour] = model.t_air
-    return finish(power, indoor)
+        indoor[hour] = domain.model.t_air
+    return domain.finish(power, indoor)
 
 
 @logged_operation("energy.rc")
@@ -1210,10 +1150,10 @@ def simulate_building(building, *, weather, directory=None, settings=None, prepa
         Required explicit reduction assumptions. ``RCSettings.from_policy``
         selects versioned baseline defaults and accepts explicit overrides.
     preparation_cache : PreparationCache or None
-        Explicit bounded preparation reuse across independent runs. Weather and
-        source contents are still verified; each run creates fresh thermal state.
-        ``with preparation_cache.batch():`` additionally reuses source hashes
-        while checking file/directory metadata and dependency versions per call.
+        Explicit bounded preparation reuse across independent runs. Weather bytes are
+        verified per building; each run creates fresh thermal state. Source identity
+        is captured lazily once per process. Restart after installed code changes.
+        ``batch()`` remains a compatibility context manager for this same cache.
         The default airflow policy rejects unsupported latent/supply controls.
 
     Returns
@@ -1235,8 +1175,8 @@ def simulate_building(building, *, weather, directory=None, settings=None, prepa
     -----
     Run identity includes the complete physical inputs, weather checksum,
     reduction settings, installed package source hashes and numerical dependency
-    versions. Installed Python sources are read for these hashes on evaluation;
-    an explicit batch scope reuses hashes while source metadata is unchanged.
+    versions. Installed Python sources are read lazily once per process.
+    Restart after changing installed source or numerical dependencies.
     Each call creates fresh thermal state. Buildings without basements retain
     one conditioned 5R1C domain. Conditioned basements use separately controlled
     main/basement domains with conservative physical floor exchange. Cold attics
@@ -1244,36 +1184,46 @@ def simulate_building(building, *, weather, directory=None, settings=None, prepa
     attic shell/air storage is omitted. All paths model sensible heat only. Heat recovery reduces
     mechanical conductance once; infiltration is never recovered. No weather
     padding, stochastic window opening or legacy construction presets are used.
-    The standalone Building5R1C API retains its existing numerical behavior.
+    Standalone correctness fixes and migration details are recorded in the release notes.
 
     Examples
     --------
     Supply a complete local EPW; install this package's ``platform`` extra.
 
+    The bundled Göteborg EPW is a teaching input, not measured-building validation.
+
+    >>> from importlib.resources import files
     >>> from epsm_core import Building, Weather
-    >>> result = simulate_building(  # doctest: +SKIP
+    >>> from epsm_rc import RCSettings, simulate_building
+    >>> weather = Weather.from_epw(files("epsm_rc") / "data/epw/goteborg.epw")
+    >>> result = simulate_building(
     ...     Building(preset="illustrative-reference"),
-    ...     weather=Weather.from_epw("weather.epw"),
+    ...     weather=weather,
     ...     settings=RCSettings.from_policy(
     ...         "epsm_rc_5r1c_v1", airflow_policy="sensible_only_unlimited_supply",
     ...         ground_policy="conductance_multiplier"))
-    >>> result.scalars["space_heating_demand_kwh"] >= 0  # doctest: +SKIP
+    >>> result.scalars["space_heating_demand_kwh"] >= 0
     True
     """
-    if getattr(building, "geometry", None) is not None and building.geometry.basement_conditioned:
-        from .domains import simulate_conditioned_domains
+    from epsm_core.specs.schedules import hourly_schedule_scope
 
-        return simulate_conditioned_domains(
-            building,
-            weather=weather,
-            directory=directory,
-            settings=settings,
-            preparation_cache=preparation_cache,
-        )
-    return _simulate_building(
-        building,
-        weather=weather,
-        directory=directory,
-        settings=settings,
-        preparation_cache=preparation_cache,
-    )
+    with hourly_schedule_scope():
+        preparation = _prepare_building(building, weather, settings, preparation_cache)
+        if preparation.spec.geometry.basement_conditioned:
+            from .domains import simulate_conditioned_domains
+
+            result = simulate_conditioned_domains(preparation)
+        else:
+            result = _run_domain(_prepare_domain(preparation))
+    return _write_result(result, directory)
+
+
+def _write_result(result, directory):
+    """Write optional caller-owned output only after all domains have succeeded."""
+    if directory is not None:
+        output_directory = Path(directory)
+        output_directory.mkdir(parents=True, exist_ok=True)
+        path = output_directory / "hourly.npz"
+        np.savez_compressed(path, **result.hourly, time_axis=result.time_axis)
+        result.artifacts["hourly"] = str(path)
+    return result

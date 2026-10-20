@@ -1,29 +1,29 @@
-"""epsm_rc — ISO 13790:2008 5R1C Building Thermal Model.
+# File: src/epsm_rc/__init__.py
+# Purpose: Deliberate public imports with lazy advanced and optional APIs.
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 EPSM Development contributors
+# License: See LICENSE at the project root.
+# Date modified: 2026-10-20
+"""Hourly reduced thermal calculation from explicit physical or numerical inputs.
 
-A standalone package for hourly building heating/cooling demand simulation
-using the simplified 5-resistance, 1-capacitance thermal network from ISO 13790.
+Use ``simulate_building`` with a Core Building, explicit weather and ``RCSettings``
+for the recommended shared physical interface. ``Building5R1C`` and the named
+standalone modules retain numerical experiments without Core. Advanced APIs load
+only when requested; import performs no file access or model selection.
 
-Core components:
-    - Building5R1C: Main thermal model class
-    - SolarGainsCalculator: Solar irradiance → window gains (pvlib)
-    - HeatingSystem family: HeatPump, DistrictHeating, DirectElectric, etc.
-    - BuildingGeometry: Polygon-based envelope geometry
-    - BuildingTABULA: TABULA seasonal energy balance method
+The numerical solver retains its DIBS (Dynamic ISO Building Simulator) attribution
+and MIT terms in ``iso13790.py``. Radiation correlation notices remain packaged.
 
-Quick start::
-
-    from epsm_rc import Building5R1C, create_swedish_villa
-
-    villa = create_swedish_villa(floor_area_m2=150, era="1976_1990")
-    results = villa.simulate_with_epw("goteborg.epw")
-    print(f"Annual heating: {results['heating_demand_kwh']:.0f} kWh")
-
-Adapted from DIBS (Dynamic ISO Building Simulator) by IWU, MIT License.
+Examples
+--------
+>>> from epsm_rc import Building5R1C
+>>> Building5R1C(floor_area_m2=100).floor_area_m2
+100
 """
 
 import logging as _stdlib_logging
 
-from .building_geometry import BuildingGeometry
+from ._version import __version__ as __version__
 from .iso13790 import (
     Building5R1C,
     BuildingClass,
@@ -36,15 +36,8 @@ from .iso13790 import (
     create_swedish_villa,
     estimate_ground_temps_from_air,
 )
-from .parametric import ParametricBuilding, generate_idf, get_5r1c_params
 from .solar import SolarGainsCalculator, estimate_window_orientation_split, simplified_solar_gains
-from .tabula import BuildingTABULA, ClimateData, ThermalMassClass
 from .weather import EPWData, get_irradiance, get_temperature, load_epw, parse_ground_temperatures
-
-try:
-    from .gis_footprint import FootprintImporter
-except ImportError:
-    FootprintImporter = None  # type: ignore[assignment,misc]
 
 __all__ = [
     "simulate_building",
@@ -88,21 +81,40 @@ __all__ = [
     "prepare_engine_comparison",
 ]
 
-__version__ = "0.7.1"
-
 
 # Platform integration imports Core only when explicitly requested.
 def __getattr__(name):
-    if name == "PreparationCache":
-        from .preparation import PreparationCache
-        return PreparationCache
-    if name in {"EngineComparison", "prepare_engine_comparison"}:
-        from . import comparison
-        return getattr(comparison, name)
-    if name in {"simulate_building", "RCSettings"}:
-        from . import platform
-        return getattr(platform, name)
-    raise AttributeError(name)
+    """Load advanced and optional public APIs only when explicitly requested."""
+    from importlib import import_module
+
+    modules = {
+        "PreparationCache": "preparation",
+        "EngineComparison": "comparison",
+        "prepare_engine_comparison": "comparison",
+        "simulate_building": "platform",
+        "RCSettings": "platform",
+        "ParametricBuilding": "parametric",
+        "generate_idf": "parametric",
+        "get_5r1c_params": "parametric",
+        "BuildingGeometry": "building_geometry",
+        "BuildingTABULA": "tabula",
+        "ClimateData": "tabula",
+        "ThermalMassClass": "tabula",
+        "FootprintImporter": "gis_footprint",
+    }
+    if name not in modules:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    try:
+        value = getattr(import_module(f".{modules[name]}", __name__), name)
+    except ImportError as error:
+        if name == "FootprintImporter":
+            raise ImportError(
+                "FootprintImporter requires the geometry dependencies. "
+                "Install epsm_rc[platform,gis] before importing GIS footprints."
+            ) from error
+        raise
+    globals()[name] = value
+    return value
 
 
 # A library emits no output until its host selects handlers.

@@ -19,10 +19,12 @@ def geometry_fixture(case):
         return Polygon([(0, 0), (20, 0), (20, 10), (10, 10), (10, 20), (0, 20)])
     # Two 3 m tall parts separated by 2 m: a 15° sun casts a shadow beyond the gap.
     assert 3 / math.tan(math.radians(15)) > 2
-    return MultiPolygon([
-        Polygon([(0, 0), (10, 0), (10, 10), (0, 10)]),
-        Polygon([(12, 0), (22, 0), (22, 10), (12, 10)]),
-    ])
+    return MultiPolygon(
+        [
+            Polygon([(0, 0), (10, 0), (10, 10), (0, 10)]),
+            Polygon([(12, 0), (22, 0), (22, 10), (12, 10)]),
+        ]
+    )
 
 
 @pytest.fixture
@@ -34,7 +36,9 @@ def weather():
 def authored_building(case, building):
     core = pytest.importorskip("epsm_core")
     building.geometry = core.GeometrySpec.from_footprint(
-        geometry_fixture(case), storeys=1, storey_height_m=3,
+        geometry_fixture(case),
+        storeys=1,
+        storey_height_m=3,
     )
     return building
 
@@ -49,9 +53,11 @@ def test_affected_geometry_rejected_before_solver(case, weather, monkeypatch, re
     monkeypatch.setattr(platform, "Building5R1C", forbidden)
     with pytest.raises(ValueError, match="self.shadow|self_shadowing_policy"):
         simulate_building(
-            building, weather=weather,
+            building,
+            weather=weather,
             settings=RCSettings(
-                airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier",
+                airflow_policy="sensible_only_unlimited_supply",
+                ground_policy="conductance_multiplier",
             ),
         )
 
@@ -59,9 +65,11 @@ def test_affected_geometry_rejected_before_solver(case, weather, monkeypatch, re
 @pytest.mark.parametrize("case", ["courtyard", "concave", "multipart"])
 def test_explicit_omission_is_reported_for_affected_geometry(case, weather, reference_building):
     result = simulate_building(
-        authored_building(case, reference_building), weather=weather,
+        authored_building(case, reference_building),
+        weather=weather,
         settings=RCSettings(
-            airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier",
+            airflow_policy="sensible_only_unlimited_supply",
+            ground_policy="conductance_multiplier",
             self_shadowing_policy="ignore",
         ),
     )
@@ -73,15 +81,22 @@ def test_explicit_omission_is_reported_for_affected_geometry(case, weather, refe
     assert result.scalars["space_heating_demand_kwh"] > 0
 
 
-def test_convex_unshaded_case_remains_accepted_and_policy_is_in_identity(weather, reference_building):
+def test_convex_unshaded_case_remains_accepted_and_policy_is_in_identity(
+    weather, reference_building
+):
     building = reference_building
-    results = [simulate_building(
-        building, weather=weather,
-        settings=RCSettings(
-            airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier",
-            self_shadowing_policy=policy,
-        ),
-    ) for policy in ("reject", "ignore")]
+    results = [
+        simulate_building(
+            building,
+            weather=weather,
+            settings=RCSettings(
+                airflow_policy="sensible_only_unlimited_supply",
+                ground_policy="conductance_multiplier",
+                self_shadowing_policy=policy,
+            ),
+        )
+        for policy in ("reject", "ignore")
+    ]
     assert results[0].diagnostics["self_shadowing"]["omitted"] is False
     assert results[0].diagnostics["self_shadowing"]["affected_geometry"] == []
     assert results[0].run_id != results[1].run_id

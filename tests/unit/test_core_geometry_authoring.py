@@ -14,7 +14,8 @@ def test_legacy_areas_facades_and_windows_match_core(case, monkeypatch):
     from epsm_core import geometry as core_geometry
 
     polygon = (
-        Polygon([(0, 0), (20, 0), (20, 10), (0, 10)]) if case == "rectangle"
+        Polygon([(0, 0), (20, 0), (20, 10), (0, 10)])
+        if case == "rectangle"
         else rotate(Polygon([(0, 0), (20, 0), (20, 10), (10, 10), (10, 20), (0, 20)]), 33)
     )
     native = core.GeometrySpec.from_footprint(polygon, storeys=2, storey_height_m=3)
@@ -40,20 +41,32 @@ def test_legacy_areas_facades_and_windows_match_core(case, monkeypatch):
     assert [segment.normal_angle for segment in wrapper.wall_segments] == [
         face.azimuth_deg for face in native_faces
     ]
-    selected = {segment.segment_id: 0.1 + segment.segment_id * 0.02 for segment in wrapper.wall_segments}
+    selected = {
+        segment.segment_id: 0.1 + segment.segment_id * 0.02 for segment in wrapper.wall_segments
+    }
     wrapper.set_wwr_per_segment(selected)
     params = wrapper.get_5r1c_params()
     assert window_calls
     glazing = core.GlazingSpec(
-        u_value_w_m2k=1.2, solar_heat_gain_coefficient=0.4, visible_transmittance=0.5,
+        u_value_w_m2k=1.2,
+        solar_heat_gain_coefficient=0.4,
+        visible_transmittance=0.5,
     )
     native_building = core.Building.empty(geometry=native, facade=wrapper.to_core_facade(glazing))
-    assert params["total_window_area"] == pytest.approx(sum(
-        element.area_m2 for element in native_building.elements if element.role.value == "WINDOW"
-    ))
-    assert params["total_wall_area_net"] == pytest.approx(sum(
-        element.area_m2 for element in native_building.elements if element.role.value == "EXT_WALL"
-    ))
+    assert params["total_window_area"] == pytest.approx(
+        sum(
+            element.area_m2
+            for element in native_building.elements
+            if element.role.value == "WINDOW"
+        )
+    )
+    assert params["total_wall_area_net"] == pytest.approx(
+        sum(
+            element.area_m2
+            for element in native_building.elements
+            if element.role.value == "EXT_WALL"
+        )
+    )
 
 
 def test_omitted_and_partial_wwr_remain_missing():
@@ -95,10 +108,12 @@ def test_missing_height_is_not_filled():
 def test_edge_connected_multipart_is_rejected_by_core():
     from shapely.geometry import MultiPolygon
 
-    polygon = MultiPolygon([
-        Polygon([(0, 0), (10, 0), (10, 10), (0, 10)]),
-        Polygon([(10, 0), (20, 0), (20, 10), (10, 10)]),
-    ])
+    polygon = MultiPolygon(
+        [
+            Polygon([(0, 0), (10, 0), (10, 10), (0, 10)]),
+            Polygon([(10, 0), (20, 0), (20, 10), (10, 10)]),
+        ]
+    )
     assert not polygon.is_valid
     with pytest.raises(ValueError, match="valid|intersect"):
         BuildingGeometry.from_shapely(polygon, num_floors=2, floor_height=3)
@@ -115,9 +130,17 @@ def test_missing_core_has_actionable_migration_error(monkeypatch):
 def test_3d_gis_input_cannot_lose_elevation_during_projection():
     from epsm_rc.gis_footprint import FootprintImporter
 
-    feature = {"type": "Polygon", "coordinates": [[
-        [11.97, 57.70, 3], [11.98, 57.70, 3], [11.98, 57.71, 3],
-        [11.97, 57.71, 3], [11.97, 57.70, 3],
-    ]]}
+    feature = {
+        "type": "Polygon",
+        "coordinates": [
+            [
+                [11.97, 57.70, 3],
+                [11.98, 57.70, 3],
+                [11.98, 57.71, 3],
+                [11.97, 57.71, 3],
+                [11.97, 57.70, 3],
+            ]
+        ],
+    }
     with pytest.raises(ValueError, match="2.D|two.dimensional"):
         FootprintImporter.from_geojson(feature, num_floors=2, floor_height=3)
