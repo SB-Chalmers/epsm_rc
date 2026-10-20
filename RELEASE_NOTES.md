@@ -1,3 +1,30 @@
+# Release 0.8.1 — 20 October 2026
+
+Prepared annual calculations call shared numerical methods directly, removing
+public refresh-wrapper dispatch from every thermostat and thermal trial. Public
+standalone methods retain editable-input refresh, validation, method overrides
+and stochastic window behaviour. The equations, arithmetic order, control trial
+sequence and state restoration are unchanged.
+
+Coupled main/basement calculations use scalar `math.isclose` for committed-state
+temperatures, retaining zero relative tolerance and the existing 1e-7 °C absolute
+tolerance. Inter-domain exchange and control-balance checks remain in place.
+
+The installed-package benchmark now includes a heated basement with distinct
+main/basement controls and an explicitly authored ground boundary. Exact annual
+comparisons cover both policies, with and without preparation reuse. See the
+[compute-efficiency guide](docs/performance.rst) for execution boundaries,
+measurement commands and optimisation limits.
+
+A three-block installed-wheel comparison against 0.8.0 measured warm ordinary
+fixtures 9.6–12.1% faster and the heated-basement fixture 22.8–26.2% faster across
+the two policies. All 84 fixture/policy/preparation/block comparisons matched
+exactly. These in-memory timings are fixture- and machine-specific; release
+assets retain the samples and environment details.
+
+Core 0.7.1 and Data 0.6.0 remain the tested dependency baseline. Python support,
+three-job CI configuration and scientific method identifiers are unchanged.
+
 # Release 0.8.0 — 20 October 2026
 
 RC prepares one captured physical Building per annual simulation, reusing its

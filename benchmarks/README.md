@@ -1,17 +1,29 @@
 # Installed-package annual regression and timing
 
-The six explicit snapshots exercise rectangle/concave geometry, 0%/100%
+The seven explicit snapshots exercise rectangle/concave geometry, 0%/100%
 occupant sensible heat, scheduled airflow with cooling and monthly ground
-temperatures, and zero airflow. They are illustrative software fixtures from
-the coordinated 2026-10-15 comparison, not measured-building validation.
+temperatures, zero airflow, and a heated basement with coupled controls.
+The six ordinary fixtures come from the coordinated 2026-10-15 comparison;
+the basement fixture extends coverage to two thermal domains. These are
+illustrative software fixtures, not measured-building validation.
 The ordinary Building remains empty; the snapshots retain their selected
 illustrative construction and operation provenance. Goteborg weather is the
 existing packaged EPW with its original source terms; controlled weather is
 generated explicitly by this runner.
 
+`heated_basement.json` has a 10 × 8 m footprint, two 3 m above-ground
+storeys, a 2.5 m conditioned basement, and no glazing or internal sensible
+gains. The main and basement heating setpoints are 20 °C and 18 °C,
+respectively; cooling is disabled. It uses Goteborg weather and an explicitly
+authored constant 18 °C ground boundary. The separating floor exchanges
+heat between the two domains. The runner compares both domain outputs
+and their combined demand using the same exact checks as the ordinary cases.
+
 Build and install released Core 0.7.0 and RC 0.7.1 wheels in a reference environment and
-candidate wheels in another. Both need the same pinned Data 0.6.0 and numerical
-dependencies. Run this checkout's script with the candidate interpreter:
+candidate wheels in another. This is the retained legacy correctness comparison.
+For the 0.8.1 optimisation measurement, use RC 0.8.0 and Core 0.7.1 as the
+reference, with the candidate also using Core 0.7.1. Both need the same pinned
+Data 0.6.0 and numerical dependencies. Run this checkout's script with the candidate interpreter:
 
 ```sh
 python benchmarks/run.py --directory outputs/benchmark-independent --reference-python /path/to/reference/bin/python

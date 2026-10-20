@@ -2334,6 +2334,35 @@ class Building5R1C:
             self._validate_forcing(t_out, solar_gains, internal_gains, solar_gains_opaque)
             if not np.isscalar(energy_demand) or not np.isfinite(energy_demand):
                 raise ValueError("energy_demand must be finite")
+        return self._step(
+            t_out=t_out,
+            solar_gains=solar_gains,
+            internal_gains=internal_gains,
+            energy_demand=energy_demand,
+            dt_hours=dt_hours,
+            solar_gains_opaque=solar_gains_opaque,
+            include_sky_radiation=include_sky_radiation,
+            enable_window_opening=enable_window_opening,
+            hour_of_year=hour_of_year,
+        )
+
+    def _step(
+        self,
+        t_out: float,
+        solar_gains: float = 0.0,
+        internal_gains: Optional[float] = None,
+        energy_demand: float = 0.0,
+        dt_hours: float = 1.0,
+        solar_gains_opaque: float = 0.0,
+        include_sky_radiation: bool = True,
+        enable_window_opening: bool = True,
+        hour_of_year: Optional[int] = None,
+    ) -> tuple[float, float, float]:
+        """Advance the shared 5R1C equations with already validated inputs.
+
+        Called by the public boundary or an owned prepared engine. Keep thermal
+        state updates and stochastic window draws in this single implementation.
+        """
         if internal_gains is None:
             internal_gains = self.internal_gains_w_per_m2 * self.floor_area_m2
 
@@ -2441,6 +2470,39 @@ class Building5R1C:
         if not self._prepared_hourly and self._calculation_depth == 1:
             self._validate_timestep_and_capacity(dt_hours, max_heating_power, max_cooling_power)
             self._validate_forcing(t_out, solar_gains, internal_gains, solar_gains_opaque)
+        return self._calculate_demand(
+            t_out=t_out,
+            solar_gains=solar_gains,
+            internal_gains=internal_gains,
+            dt_hours=dt_hours,
+            max_heating_power=max_heating_power,
+            max_cooling_power=max_cooling_power,
+            solar_gains_opaque=solar_gains_opaque,
+            hour_of_year=hour_of_year,
+            include_sky_radiation=include_sky_radiation,
+            advance=self.step,
+        )
+
+    def _calculate_demand(
+        self,
+        t_out: float,
+        solar_gains: float = 0.0,
+        internal_gains: Optional[float] = None,
+        dt_hours: float = 1.0,
+        max_heating_power: float = np.inf,
+        max_cooling_power: float = 0.0,
+        solar_gains_opaque: float = 0.0,
+        hour_of_year: Optional[int] = None,
+        include_sky_radiation: bool = True,
+        *,
+        advance,
+    ) -> float:
+        """Run shared thermostat trials after the caller validates its inputs.
+
+        Public calls supply ``self.step`` to preserve editable standalone models
+        and method overrides. The owned prepared engine supplies ``self._step``
+        to avoid public refresh dispatch in each free, reference and final trial.
+        """
         if self._prepared_hourly:
             self._hour_heat_flows = None
         if internal_gains is None:
@@ -2454,7 +2516,7 @@ class Building5R1C:
         t_m_prev = self.t_m
 
         # Temporarily step with zero energy
-        self.step(
+        advance(
             t_out,
             solar_gains,
             internal_gains,
@@ -2485,7 +2547,7 @@ class Building5R1C:
 
             # Step 2: Calculate with reference heating (10 W/m^2)
             q_ref = 10.0 * self.floor_area_m2
-            self.step(
+            advance(
                 t_out,
                 solar_gains,
                 internal_gains,
@@ -2521,7 +2583,7 @@ class Building5R1C:
 
             # Step 2: Calculate with reference cooling
             q_ref = -10.0 * self.floor_area_m2
-            self.step(
+            advance(
                 t_out,
                 solar_gains,
                 internal_gains,
@@ -2556,7 +2618,7 @@ class Building5R1C:
             self.t_air, self.t_s, self.t_m = free_state
             return q_demand
         # Step 3/4: Apply the calculated demand and update state
-        self.step(
+        advance(
             t_out,
             solar_gains,
             internal_gains,

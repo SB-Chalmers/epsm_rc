@@ -8,6 +8,7 @@ same previous state; only the final coupled solution advances thermal storage.
 
 from dataclasses import dataclass
 from itertools import product
+from math import isclose
 
 import numpy as np
 
@@ -123,15 +124,18 @@ def solve_controls(
 
 def step_domains(models, inputs, conductance_w_k, *, heating_limit_w, cooling_limit_w):
     """Advance exactly two owned models once after solving their coupled controls."""
+    # Owned prepared models enter the equations directly; standalone callers
+    # retain public refresh, validation and method overrides.
+    advances = [model._step if model._prepared_hourly else model.step for model in models]
     states = [(model.t_air, model.t_s, model.t_m) for model in models]
     free, response = [], []
-    for model, state, arguments in zip(models, states, inputs):
+    for model, state, arguments, advance in zip(models, states, inputs, advances):
         model._hour_heat_flows = None
-        model.step(**arguments, energy_demand=0.0)
+        advance(**arguments, energy_demand=0.0)
         baseline = model.t_air
         model.t_air, model.t_s, model.t_m = state
         reference_w = 10 * model.floor_area_m2
-        model.step(**arguments, energy_demand=reference_w)
+        advance(**arguments, energy_demand=reference_w)
         free.append(baseline)
         response.append((model.t_air - baseline) / reference_w)
         model.t_air, model.t_s, model.t_m = state
@@ -144,8 +148,8 @@ def step_domains(models, inputs, conductance_w_k, *, heating_limit_w, cooling_li
         heating_limit_w,
         cooling_limit_w,
     )
-    for index, (model, arguments) in enumerate(zip(models, inputs)):
-        model.step(**arguments, energy_demand=solution.power_w[index] + solution.exchange_w[index])
-        if not np.isclose(model.t_air, solution.temperature_c[index], rtol=0, atol=1e-7):
+    for index, (model, arguments, advance) in enumerate(zip(models, inputs, advances)):
+        advance(**arguments, energy_demand=solution.power_w[index] + solution.exchange_w[index])
+        if not isclose(model.t_air, solution.temperature_c[index], rel_tol=0.0, abs_tol=1e-7):
             raise ValueError("Coupled control failed its committed-state temperature balance")
     return solution

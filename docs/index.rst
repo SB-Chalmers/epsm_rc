@@ -17,6 +17,7 @@ Core. The shared Building route requires Python 3.11 or newer and the coordinate
    api
    standalone
    migration
+   performance
 
 Software checks establish consistency and specified behavior. They do not certify
 building energy performance or establish prediction accuracy against measurements.

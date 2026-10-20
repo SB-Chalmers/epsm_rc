@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 # License: MIT; see the project-root LICENSE.
 # Date created: 2026-10-18
-"""Compare six explicit physical fixtures using separately installed RC wheels.
+"""Compare explicit physical fixtures using separately installed RC wheels.
 
 Run from a source checkout with an installed package; no source directories are
 added to the import path. Reference and candidate interpreters must use identical
