@@ -1121,11 +1121,13 @@ def _prepare_domain(preparation, *, domain=None):
 def _run_domain(domain):
     """Advance a fresh prepared domain using the same forcing as coupled runs."""
     power, indoor = np.zeros(len(domain.time_axis)), np.zeros(len(domain.time_axis))
+    calculate, advance = domain.model._calculate_demand, domain.model._step
     for hour in range(len(power)):
-        power[hour] = domain.model.calc_heating_demand(
+        power[hour] = calculate(
             **domain.input_at(hour),
             max_heating_power=domain.heating_limits_w[hour],
             max_cooling_power=domain.cooling_limits_w[hour],
+            advance=advance,
         )
         indoor[hour] = domain.model.t_air
     return domain.finish(power, indoor)
