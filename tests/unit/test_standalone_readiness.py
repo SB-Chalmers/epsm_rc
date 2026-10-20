@@ -64,6 +64,7 @@ def test_epw_default_ground_matches_explicit_boundary_on_first_and_repeated_runs
 
     from epsm_rc.iso13790 import SWEDISH_DEFAULT_GROUND_TEMPS
 
+    pytest.importorskip("epsm_core", reason="Strict EPW loading requires platform extra")
     weather = files("epsm_rc").joinpath("data/epw/goteborg.epw")
     automatic = Building5R1C()
     first = automatic.simulate_with_epw(weather)
@@ -197,8 +198,9 @@ def test_cooling_capacity_magnitude_retains_signed_compatibility():
 
 def test_parametric_cooling_setpoint_and_rotated_rectangle():
     ordinary = ParametricBuilding(length_m=20, width_m=10, t_cooling=29)
-    rotated = ParametricBuilding(length_m=20, width_m=10, orientation_deg=90)
     assert get_5r1c_params(ordinary)["t_set_cooling"] == 29
+    pytest.importorskip("epsm_core", reason="Rotated geometry requires platform extra")
+    rotated = ParametricBuilding(length_m=20, width_m=10, orientation_deg=90)
     assert rotated.wall_area_north == pytest.approx(ordinary.wall_area_east)
     assert rotated.wall_area_east == pytest.approx(ordinary.wall_area_north)
 
