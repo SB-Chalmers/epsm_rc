@@ -100,7 +100,7 @@ The following features provide strict ISO 13790 compliance:
     enable night/absence setback operation. get_active_setpoints() returns the
     appropriate setpoint based on the occupancy schedule.
 
-**Detailed Shading Factors (Section 11.3.3)**
+**Detailed Shading Factors (Section 11.4.4 and Annex G.5.4)**
     Parameters f_shading_horizon, f_shading_overhang, and f_shading_fins provide
     component-level shading factors. calc_detailed_shading_factor() computes:
         F_sh,ob = F_hor × F_ov × F_fin
@@ -1510,7 +1510,7 @@ class Building5R1C:
     def calc_detailed_shading_factor(self) -> float:
         """Calculate combined external shading factor from component factors.
 
-        ISO 13790:2008 Section 11.3.3 - Shading Reduction Factor
+        ISO 13790:2008 Section 11.4.4 and Annex G.5.4 - Shading Reduction Factor
 
         The shading reduction factor F_sh,ob accounts for external obstacles:
 

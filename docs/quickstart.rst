@@ -46,4 +46,7 @@ preparation while each run gets new thermal state. Use one cache per worker.
 
 Keep the chosen settings and assumptions with study results. The v1 policy
 preserves the historical hour-start solar sampling; v2 explicitly selects
-midpoint sampling and angular glazing. Neither implements geometric site shading.
+midpoint sampling and angular glazing. Both support context buildings through the
+ISO 13790 hourly average-horizon approximation. Diffuse radiation is unchanged;
+facade shading details remain unsupported. See the repository's
+``docs/radiation.md`` for scope.

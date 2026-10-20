@@ -1,6 +1,6 @@
 # EPSM RC
 
-Version **0.8.2**. RC reduces the same physical Building used by Core to an hourly
+Version **0.8.3**. RC reduces the same physical Building used by Core to an hourly
 ISO 13790 5R1C thermal network. Core owns physical inputs and weather inspection;
 RC owns reduction assumptions, the thermal calculation and its result meaning.
 The [compute-efficiency notes](docs/performance.rst) explain prepared execution,
@@ -307,12 +307,18 @@ footprints and multiple building parts require explicit
 `self_shadowing_policy="ignore"`; the default rejects these geometries before
 the solver. Diagnostics identify affected parts and the selected omission, and
 run identity includes the policy. One convex part remains supported with the
-default policy. Explicit neighbour and facade shading geometry remain unsupported
-even when self-shadowing is ignored.
+default policy. Context buildings now use the ISO 13790:2008 Annex G.5.4.2 hourly
+horizon method by default. Each physical outdoor receiver uses an average
+obstruction angle prepared once from context footprints and elevations; only
+direct solar radiation is reduced. Diffuse and ground-reflected radiation remain
+unchanged under this approximation. `PreparationCache` reuses these angles across
+weather, construction and operating variants with the same receiving geometry.
+See [radiation methods](docs/radiation.md#context-building-shading) for numerical
+sampling and scope. Facade overhangs, reveals and balconies remain unsupported.
 
 See [roofs and basements](docs/roofs-and-basements.md) for explicit cold-attic buffers and coupled conditioned-basement controls.
 
-Readiness explicitly rejects unsupported geometry, site shading, unconditioned
+Readiness explicitly rejects unsupported geometry, facade shading details, unconditioned
 parts, FVP/PV delivery and detailed zone controls. This is a reduced calculation,
 not an equivalence claim with EnergyPlus. The common delivered-energy boundary
 currently covers space heating and ventilation fans; DHW/cooling remain separate.
