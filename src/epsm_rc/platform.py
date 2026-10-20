@@ -15,7 +15,8 @@
 The reduction prepares each conditioned thermal domain once. Material
 inventory remains in Core; only transport/storage equivalents enter this model.
 Solar radiation uses actual facade azimuths and Perez irradiance with the supplied
-scalar window shading factor. Geometric site shading is unsupported.
+scalar window shading factor. Context buildings use the ISO 13790 hourly
+average-horizon approximation, with geometry-only preparation reuse.
 Core's physical element boundaries determine exposure. Adiabatic/shared and
 internal opaque elements retain their depth-limited thermal storage but contribute
 no outdoor transmission, absorbed solar radiation or sky exchange.
@@ -29,7 +30,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import timedelta, timezone
 from io import StringIO
 from pathlib import Path
@@ -102,7 +103,7 @@ class RCSettings:
     self_shadowing_policy : str
         ``reject`` (default) requires an explicit decision for courtyards,
         concave footprints and multiple parts. ``ignore`` acknowledges omitted
-        self-shadowing; it does not enable geometric site shading.
+        self-shadowing; context horizon shading is a separate method.
     solar_time_reference : str
         ``hour_start`` retains v1; ``interval_midpoint`` samples solar position
         half an hour into each weather interval without changing result labels.
@@ -110,6 +111,14 @@ class RCSettings:
         ``constant_shgc`` retains v1; ``simple_glazing_angular_v1`` selects the
         documented specular equivalent-layer approximation with beam/diffuse
         optics and nominal inward absorption. Explicit v2 selects both upgrades.
+    context_shading_method : str
+        ``iso13790_hourly_horizon`` (default) applies Annex G.5.4.2 equation G.3
+        using a representative point and average front-horizon angle per receiver.
+        Only direct radiation is reduced. ``reject`` retains an explicit refusal
+        of context buildings. Facade shading details remain unsupported.
+    horizon_azimuth_step_deg : float
+        Maximum midpoint-quadrature spacing for the average horizon angle,
+        between 1 and 30 degrees; default 10. Numerical choice, not an ISO requirement.
 
     cold_attic_policy : str
         ``reject`` keeps omitted attic assumptions visible. The explicit
@@ -123,7 +132,7 @@ class RCSettings:
     -----
     These values describe reduction assumptions rather than material evidence.
     Main and conditioned basement may have distinct resolved controls. Other
-    mixed uses, unconditioned basements, site shading, detailed HVAC and PV remain
+    mixed uses, unconditioned basements, facade shading details, detailed HVAC and PV remain
     unsupported.
 
     Examples
@@ -159,6 +168,8 @@ class RCSettings:
     window_optics_method: str | None = None
     cold_attic_policy: str = "reject"
     interzone_floor_surface_resistance_m2_k_w: float = 0.27
+    context_shading_method: str = "iso13790_hourly_horizon"
+    horizon_azimuth_step_deg: float = 10.0
 
     def __post_init__(self):
         if not np.isfinite(self.effective_mass_depth_m) or self.effective_mass_depth_m <= 0:
@@ -251,6 +262,14 @@ class RCSettings:
             raise ValueError("Interzone floor surface resistance must be finite and positive")
         if self.self_shadowing_policy not in {"reject", "ignore"}:
             raise ValueError("Unknown self_shadowing_policy; choose reject or ignore")
+        if self.context_shading_method not in {"reject", "iso13790_hourly_horizon"}:
+            raise ValueError("Unknown context_shading_method")
+        if (
+            isinstance(self.horizon_azimuth_step_deg, bool)
+            or not np.isfinite(self.horizon_azimuth_step_deg)
+            or not 1 <= self.horizon_azimuth_step_deg <= 30
+        ):
+            raise ValueError("horizon_azimuth_step_deg must be finite and between 1 and 30")
 
     def __repr__(self):
         return f"RCSettings(policy={self.policy_version!r}, optics={self.window_optics_method!r})"
@@ -300,6 +319,7 @@ class RCSettings:
                 "load_interpolation": "linear_unlimited_load_interpolation",
                 "mass_exterior_coupling": "series_inverse_conductance_with_opaque_fallback",
                 "self_shadowing": "geometry_capability_gate_with_explicit_omission",
+                "context_shading": self.context_shading_method,
             },
         }
 
@@ -490,6 +510,26 @@ def _validate_rc_spec(spec):
         raise ValueError("epsm_rc adapter does not yet support FVP or PV delivery")
 
 
+def _rc_readiness_engine(building, weather):
+    """Retain older Core releases' supported physical handoff for context inputs.
+
+    Older Core reports a blanket context restriction because RC did not yet
+    implement shading. RC now owns that capability. Remove only that exact
+    obsolete restriction, requiring all remaining missing/unsupported checks,
+    then use Core's generic physical resolution. New Core keeps its RC route.
+    """
+    if building.context.buildings:
+        report = building.readiness(engine="epsm_rc", weather=weather)
+        obsolete = "epsm_rc does not model explicit context shading"
+        if obsolete in report.unsupported:
+            replace(
+                report,
+                unsupported=tuple(issue for issue in report.unsupported if issue != obsolete),
+            ).require()
+            return None
+    return "epsm_rc"
+
+
 def _prepare_building(building, weather, settings, preparation_cache):
     """Capture and check a building once, with fresh state reserved for each domain."""
     from epsm_core import Building, Weather
@@ -505,6 +545,10 @@ def _prepare_building(building, weather, settings, preparation_cache):
         raise TypeError("preparation_cache must be a PreparationCache")
     if not isinstance(building, Building):
         raise TypeError("building must be an epsm_core.Building")
+    if building.context.buildings and settings.context_shading_method == "reject":
+        raise ValueError(
+            "Context buildings require context_shading_method='iso13790_hourly_horizon'"
+        )
     # These checks depend only on supplied authoring inputs and selected settings.
     if building.hvac is not None:
         _airflow_capabilities(building.hvac.airflow, settings)
@@ -516,7 +560,7 @@ def _prepare_building(building, weather, settings, preparation_cache):
     inputs = resolve_snapshot_inputs(
         snapshot,
         weather,
-        engine="epsm_rc",
+        engine=_rc_readiness_engine(building, weather),
         geometry_cache=preparation_cache.geometry_cache if preparation_cache is not None else None,
     )
     weather = weather if isinstance(weather, Weather) else Weather(inputs.spec.climate)
@@ -626,6 +670,69 @@ def _prepare_radiation(preparation, model, elements, attic, areas, optical_model
     )
     dni, dhi = data["dni"], data["dhi"]
     facades = {f.facade_id: f for f in facade_catalog(spec.geometry)}
+    horizons, context_shading = (
+        {},
+        {
+            "method": settings.context_shading_method,
+            "applied": bool(spec.context.buildings),
+            "standard": "ISO 13790:2008 11.4.4 and Annex G.5.4.2, equation G.3",
+            "obstacle_count": len(spec.context.buildings),
+            "horizon_azimuth_step_deg": settings.horizon_azimuth_step_deg,
+            "receiving_point": "area_weighted_resolved_face_or_pane_centroid_per_physical_element",
+            "horizon_average": "uniform_azimuth_midpoints_over_facade_front_half_plane",
+            "horizontal_surface_extension": "full_360_degree_average_horizon",
+            "inclined_surface_extension": "front_azimuth_half_plane_average_horizon",
+            "diffuse_and_ground_reflection": "unchanged_ISO_horizon_approximation",
+            "self_shadowing_included": False,
+            "horizon_angles_deg": {},
+        },
+    )
+    if spec.context.buildings:
+        from .shading import context_edges, prepare_horizons, receiver_points
+
+        orientations = {}
+        for element in elements:
+            role = element.role.value
+            if element.identifier in attic.shell_element_ids or element.boundary != "Outdoors":
+                continue
+            if role in {"ROOF", "TOP_FLOOR"}:
+                # Anchor full-horizon quadrature to the scene so rotating the
+                # entire scene does not change its numerical sampling error.
+                orientations[element.identifier] = (0, spec.geometry.orientation_deg)
+            elif role == "WINDOW" or role.startswith("EXT_WALL"):
+                orientations[element.identifier] = (90, facades[element.facade_id].azimuth_deg)
+        receivers = receiver_points(preparation.resolved, orientations, attic.shell_terms)
+        horizon_key = {
+            "receivers": receivers,
+            "context": spec.context.model_dump(mode="json", exclude={"generation"}),
+            "origin_m": list(preparation.resolved.geometry["origin_m"]),
+            "orientation_deg": spec.geometry.orientation_deg,
+            "step_deg": settings.horizon_azimuth_step_deg,
+            "method": settings.context_shading_method,
+            "implementation": preparation.implementation,
+        }
+        horizons = prepared(
+            "context_horizon",
+            horizon_key,
+            lambda: prepare_horizons(
+                receivers,
+                context_edges(
+                    spec.context,
+                    preparation.resolved.geometry["origin_m"],
+                    spec.geometry.orientation_deg,
+                ),
+                settings.horizon_azimuth_step_deg,
+            ),
+        )
+        context_shading["horizon_angles_deg"] = dict(horizons)
+
+    def shaded(channels, identifier):
+        if not horizons:
+            return channels
+        from .shading import shade_irradiance
+
+        return shade_irradiance(channels, 90 - zenith, horizons[identifier])
+
     solar, opaque = np.zeros(len(axis)), np.zeros(len(axis))
     orientation_irradiance = {}
     radiation_hourly = (
@@ -679,6 +786,7 @@ def _prepare_radiation(preparation, model, elements, attic, areas, optical_model
 
             channels = prepared("plane_irradiance", radiation_key, calculate_plane, readonly=True)
             orientation_irradiance[orientation] = channels
+        channels = shaded(channels, element.identifier)
         poa = channels["poa_global"]
         if role == "WINDOW":
             if settings.window_optics_method == "constant_shgc":
@@ -749,6 +857,7 @@ def _prepare_radiation(preparation, model, elements, attic, areas, optical_model
                 ),
             )
             orientation_irradiance[orientation] = channels
+        channels = shaded(channels, term["surface_name"])
         opaque += (
             channels["poa_global"] * term["solar_coefficient_m2"] * term["transmission_fraction"]
         )
@@ -758,7 +867,7 @@ def _prepare_radiation(preparation, model, elements, attic, areas, optical_model
         radiation_hourly["sky_radiation_loss_w"] = np.full(
             len(axis), model.calc_sky_radiation_loss()
         )
-    return solar, opaque, radiation_hourly, times
+    return solar, opaque, radiation_hourly, times, context_shading
 
 
 def _prepare_domain(preparation, *, domain=None):
@@ -988,7 +1097,7 @@ def _prepare_domain(preparation, *, domain=None):
             + sum(term["sky_loss_w"] * term["transmission_fraction"] for term in attic.shell_terms)
         )
     data = preparation.data
-    solar, opaque, radiation_hourly, times = _prepare_radiation(
+    solar, opaque, radiation_hourly, times, context_shading = _prepare_radiation(
         preparation, model, elements, attic, areas, optical_models
     )
     axis = preparation.axis
@@ -1081,6 +1190,7 @@ def _prepare_domain(preparation, *, domain=None):
         reference_area=reference_area,
         run_id=run_id,
         self_shadowing=self_shadowing,
+        context_shading=context_shading,
         settings=settings,
         spec=spec,
         use=use,
