@@ -1,3 +1,13 @@
+# Release 0.8.2 — Core scene compatibility
+
+The optional `platform` extra accepts Core `>=0.7.1,<0.9` with unchanged Data
+`>=0.6.0,<0.7`. Core 0.8.0 moves display into the independent Viewer package and
+retains the physical Building interfaces used by RC. RC does not depend on Viewer.
+
+This patch changes the dependency range and release documentation. Solver source,
+physical equations, reduction policies and numerical reference cases are unchanged.
+The performance observations below retain their original package versions.
+
 # Release 0.8.1 — 20 October 2026
 
 Prepared annual calculations call shared numerical methods directly, removing

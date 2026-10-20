@@ -1,12 +1,14 @@
 # EPSM RC
 
-Version **0.8.1**. RC reduces the same physical Building used by Core to an hourly
+Version **0.8.2**. RC reduces the same physical Building used by Core to an hourly
 ISO 13790 5R1C thermal network. Core owns physical inputs and weather inspection;
 RC owns reduction assumptions, the thermal calculation and its result meaning.
 The [compute-efficiency notes](docs/performance.rst) explain prepared execution,
 standalone validation and reproducible performance checks.
 
-The shared Building route uses **Core 0.7.1** and **Data 0.6.x**, on Python 3.11+.
+The shared Building route accepts **Core 0.7.1 or 0.8.x** and **Data 0.6.x**, on Python 3.11+.
+RC 0.8.2 widens package compatibility for Core's separate Viewer ownership;
+the RC solver and numerical methods are unchanged.
 The standalone numerical API continues to support Python 3.10 without Core.
 
 Install the shared Building interface with `python -m pip install "epsm_rc[platform]"`.

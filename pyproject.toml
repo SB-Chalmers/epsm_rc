@@ -45,7 +45,7 @@ Repository = "https://github.com/SB-Chalmers/epsm_rc"
 Issues = "https://github.com/SB-Chalmers/epsm_rc/issues"
 
 [project.optional-dependencies]
-platform = ["epsm_core>=0.7.1,<0.8", "epsm_data>=0.6.0,<0.7"]
+platform = ["epsm_core>=0.7.1,<0.9", "epsm_data>=0.6.0,<0.7"]
 heatpump = [
     "hplib>=1.9",
 ]

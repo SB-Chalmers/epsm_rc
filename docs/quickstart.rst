@@ -1,7 +1,7 @@
 Calculate a physical Building
 =============================
 
-Install ``epsm_rc[platform]`` with Core 0.7.1 and Data 0.6.x. Supply a complete
+Install ``epsm_rc[platform]`` with Core ``>=0.7.1,<0.9`` and Data 0.6.x. Supply a complete
 local hourly EPW explicitly. The named Building preset below is an illustrative
 set of assumptions; it is not evidence about a real building.
 
