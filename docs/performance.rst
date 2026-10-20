@@ -3,8 +3,9 @@ Compute efficiency
 
 RC 0.8.1 reduces Python dispatch and scalar-comparison overhead in prepared
 annual calculations. The physical equations, timestep, control trials and
-floating-point operation order are unchanged. Core 0.7.1 and Data 0.6.x remain
-the coordinated dependencies.
+floating-point operation order are unchanged. The measurements below use Core
+0.7.1 and Data 0.6.x. RC 0.8.2 additionally accepts Core 0.8.x; it introduces no
+solver changes or new performance measurements.
 
 Calculation boundaries
 ----------------------
