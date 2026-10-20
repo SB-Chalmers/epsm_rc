@@ -54,7 +54,9 @@ def _orientation(vertices):
     ) % 360
 
 
-def reduce_attics(building, spec, weather, settings, *, geometry_cache=None, enabled=True):
+def reduce_attics(
+    building, spec, weather, settings, *, geometry_cache=None, enabled=True, resolved=None
+):
     """Resolve explicit cold attics, rejecting omitted exchange or unsupported topology."""
     parts = [
         part
@@ -84,7 +86,8 @@ def reduce_attics(building, spec, weather, settings, *, geometry_cache=None, ena
             "Quasi-steady attic reduction currently requires constant exchange fraction"
         )
     actual_ach = exchange.outdoor_air_ach * fractions[0]
-    resolved = building.snapshot().resolve(weather, geometry_cache=geometry_cache)
+    if resolved is None:
+        resolved = building.snapshot().resolve(weather, geometry_cache=geometry_cache)
     elements = {element.identifier: element for element in building.elements}
     surfaces = resolved.surfaces
     zones = resolved.zones

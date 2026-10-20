@@ -1,26 +1,58 @@
 # EPSM RC
 
-Version **0.7.1**; the shared Building interface requires Core **0.7.x** and Data **0.6.x**.
+Version **0.8.0**. RC reduces the same physical Building used by Core to an hourly
+ISO 13790 5R1C thermal network. Core owns physical inputs and weather inspection;
+RC owns reduction assumptions, the thermal calculation and its result meaning.
+The shared Building route uses **Core 0.7.1** and **Data 0.6.x**, on Python 3.11+.
+The standalone numerical API continues to support Python 3.10 without Core.
 
-Caller-owned preparation reuse accelerates independent runs while retaining v1
-results. Explicit `epsm_rc_5r1c_v2` adds midpoint solar sampling and angular glazing
-optics; see [radiation policies, limitations and migration](docs/radiation.md) and
-[installed-wheel benchmarks](benchmarks/README.md). Geometric shading and dynamic
-longwave exchange remain outside this release.
-
-Reduced-order thermal calculation using the existing ISO 13790 5R1C implementation.
-The package and import are now `epsm_rc` (previously `SweThermalModel` /
-`swethermalmodel`). The rename preserved the original solver; subsequent recovery corrections
-change historical standalone numerical results as described below.
+Install the shared Building interface with `python -m pip install "epsm_rc[platform]"`.
+Supply a complete local hourly EPW and explicitly select the reduction assumptions:
 
 ```python
-from epsm_rc import create_swedish_villa
-villa = create_swedish_villa(floor_area_m2=150, era="1976_1990")
-result = villa.simulate_with_epw("weather.epw")
-print(result["heating_demand_kwh"])
+from epsm_core import Building, Weather
+from epsm_rc import RCSettings, simulate_building
+
+building = Building(preset="illustrative-reference")
+weather = Weather.from_epw("weather.epw")
+settings = RCSettings.from_policy(
+    "epsm_rc_5r1c_v2",
+    airflow_policy="sensible_only_unlimited_supply",
+    ground_policy="conductance_multiplier",
+)
+result = simulate_building(building, weather=weather, settings=settings)
+print(result.scalars["space_heating_demand_kwh"])
 ```
 
-Install with `python -m pip install .`; tests with `python -m pytest tests`.
+The named preset is an illustrative assumption set. Each evaluation captures its
+inputs, creates fresh thermal state and returns hourly values, units, diagnostics
+and identities. Result acceptance and engine comparisons establish specified
+software behavior; they do not certify prediction accuracy for measured buildings.
+
+Use `python examples/00_standalone.py` for an offline numerical example with the
+base package. More [examples](examples/README.md), [API documentation](docs/index.rst),
+[radiation policies](docs/radiation.md), [roof and basement policies](docs/roofs-and-basements.md)
+and [installed-wheel benchmarks](benchmarks/README.md) describe their prerequisites
+and limits. Historical experiment records are retained with their source revision
+under [docs/history](docs/history/README.md).
+
+Build the API documentation after installing `epsm_rc[platform,gis,docs]`:
+
+```sh
+python -m sphinx -W --keep-going -b html docs outputs/docs
+python -m sphinx -W --keep-going -b doctest docs outputs/doctest
+```
+
+Run tests with `python -m pytest tests`. The CI base lane verifies Python 3.10
+without Core; platform lanes cover Python 3.11 and 3.13 with pinned and development
+dependencies. The optional heat-pump lane requires hplib and executes its tests.
+
+The package was previously `SweThermalModel` / `swethermalmodel`. The supported
+standalone solver remains available. Deprecated interfaces will be removed no
+earlier than **0.9.0**; see [migration details](docs/migration.rst). In particular,
+choose `HeatPumpCarnot` or `HeatPumpHPLib` explicitly: the historical `HeatPump()`
+factory now warns with its selected model, rejects unknown keywords, and explicit
+hplib failures are reported rather than replaced by another calculation.
 
 EPW loading and annual EPW simulation require coordinated `epsm_rc[platform]`
 (Python 3.11+) for Core's shared checksum and calendar validation. Ordinary RC

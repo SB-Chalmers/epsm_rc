@@ -1,16 +1,17 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "epsm_rc"
-version = "0.7.1"
-description = "ISO 13790:2008 5R1C Building Thermal Model for Swedish Buildings"
+dynamic = ["version"]
+description = "Reduced-order building thermal simulation from explicit physical inputs"
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICENSE", "src/epsm_rc/notices/*.txt"]
 requires-python = ">=3.10"
 authors = [
-    {name = "Swedish Energy Institute"}
+    {name = "EPSM Development contributors"}
 ]
 keywords = [
     "building-energy",
@@ -22,13 +23,13 @@ keywords = [
     "tabula",
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering",
 ]
 
@@ -39,8 +40,12 @@ dependencies = [
     "shapely>=2.0.0",
 ]
 
+[project.urls]
+Repository = "https://github.com/SB-Chalmers/epsm_rc"
+Issues = "https://github.com/SB-Chalmers/epsm_rc/issues"
+
 [project.optional-dependencies]
-platform = ["epsm_core>=0.7.0,<0.8", "epsm_data>=0.6.0,<0.7"]
+platform = ["epsm_core>=0.7.1,<0.8", "epsm_data>=0.6.0,<0.7"]
 heatpump = [
     "hplib>=1.9",
 ]
@@ -49,6 +54,7 @@ gis = [
     "requests>=2.28.0",
     "fiona>=1.9.0",
 ]
+docs = ["sphinx>=7,<9"]
 notebook = ["nbformat>=5,<6", "nbclient>=0.10,<1", "ipykernel>=6,<8"]
 dev = [
     "pytest>=7.0.0",
@@ -73,5 +79,12 @@ addopts = "-v --tb=short"
 markers = ["energyplus: requires an installed EnergyPlus 24.2 executable and schema"]
 
 [tool.ruff]
+extend-exclude = ["docs/history"]
 target-version = "py310"
 line-length = 100
+
+[tool.setuptools.dynamic]
+version = {attr = "epsm_rc._version.__version__"}
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]

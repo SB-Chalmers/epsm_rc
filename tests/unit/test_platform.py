@@ -5,14 +5,13 @@ from importlib.resources import files
 import numpy as np
 import pytest
 
-from epsm_rc import RCSettings, simulate_building
-from epsm_rc.platform import _Platform5R1C
+from epsm_rc import Building5R1C, RCSettings, simulate_building
 
 
 def test_sensible_recovery_reduces_mechanical_losses_once():
     # 300 m3, 0.2 ACH infiltration and 0.5 ACH mechanical flow. With 80%
     # recovery and a 20 K temperature difference, losses are 400 W + 200 W.
-    model = _Platform5R1C(
+    model = Building5R1C(
         floor_area_m2=120,
         ceiling_height_m=2.5,
         ach_infiltration=0.2,
@@ -25,7 +24,7 @@ def test_sensible_recovery_reduces_mechanical_losses_once():
 
 
 def test_recovery_does_not_reduce_infiltration_without_mechanical_flow():
-    model = _Platform5R1C(
+    model = Building5R1C(
         floor_area_m2=120,
         ceiling_height_m=2.5,
         ach_infiltration=0.2,
@@ -37,13 +36,19 @@ def test_recovery_does_not_reduce_infiltration_without_mechanical_flow():
     assert loss == pytest.approx(400)
 
 
-def test_actual_building_calls_start_fresh_and_preserve_common_delivery(tmp_path, reference_building):
+def test_actual_building_calls_start_fresh_and_preserve_common_delivery(
+    tmp_path, reference_building
+):
     core = pytest.importorskip("epsm_core")
     building = reference_building
     before = building.snapshot().sha256
     weather = core.Weather.from_epw(files("epsm_rc").joinpath("data/epw/goteborg.epw"))
-    settings = RCSettings(airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier")
-    first = simulate_building(building, weather=weather, directory=tmp_path / "first", settings=settings)
+    settings = RCSettings(
+        airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier"
+    )
+    first = simulate_building(
+        building, weather=weather, directory=tmp_path / "first", settings=settings
+    )
     second = simulate_building(building, weather=weather, settings=settings)
     assert building.snapshot().sha256 == before
     assert len(first.time_axis) == 8760
@@ -95,14 +100,22 @@ def test_changed_reduction_settings_get_distinct_calculation_identity(reference_
     building = reference_building
     weather = core.Weather.from_epw(files("epsm_rc").joinpath("data/epw/goteborg.epw"))
     shallow = simulate_building(
-        building, weather=weather, settings=RCSettings(
-            effective_mass_depth_m=0.05, airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier",
-        )
+        building,
+        weather=weather,
+        settings=RCSettings(
+            effective_mass_depth_m=0.05,
+            airflow_policy="sensible_only_unlimited_supply",
+            ground_policy="conductance_multiplier",
+        ),
     )
     deep = simulate_building(
-        building, weather=weather, settings=RCSettings(
-            effective_mass_depth_m=0.2, airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier",
-        )
+        building,
+        weather=weather,
+        settings=RCSettings(
+            effective_mass_depth_m=0.2,
+            airflow_policy="sensible_only_unlimited_supply",
+            ground_policy="conductance_multiplier",
+        ),
     )
     assert shallow.run_id != deep.run_id
     assert shallow.scalars["space_heating_demand_kwh"] != pytest.approx(
@@ -130,8 +143,11 @@ def test_solar_limits_accept_read_only_provider_arrays(monkeypatch, reference_bu
     monkeypatch.setattr(platform.irradiance, "get_total_irradiance", readonly_irradiance)
     weather = core.Weather.from_epw(files("epsm_rc").joinpath("data/epw/goteborg.epw"))
     result = simulate_building(
-        reference_building, weather=weather,
-        settings=RCSettings(airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier"),
+        reference_building,
+        weather=weather,
+        settings=RCSettings(
+            airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier"
+        ),
     )
     assert result.scalars["space_heating_demand_kwh"] > 0
     assert len(result.time_axis) == 8760

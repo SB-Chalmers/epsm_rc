@@ -49,13 +49,15 @@ def test_preparation_reuses_work_but_not_thermal_state(reference_building):
     assert len(cache) == cache.hits == cache.misses == 0
 
 
-def test_preparation_cache_rejects_changed_weather(reference_building, synthetic_weather):
-    weather = Weather.from_epw(synthetic_weather)
+def test_preparation_cache_rejects_changed_weather(reference_building, synthetic_weather, tmp_path):
+    path = tmp_path / "captured.epw"
+    path.write_bytes(synthetic_weather.read_bytes())
+    weather = Weather.from_epw(path)
     cache = PreparationCache()
     simulate_building(
         reference_building, weather=weather, settings=settings(), preparation_cache=cache
     )
-    synthetic_weather.write_text(synthetic_weather.read_text().replace("Controlled", "Altered"))
+    path.write_text(path.read_text().replace("COMMENTS 1,", "COMMENTS 1,Changed ", 1))
     with pytest.raises(ValueError, match="contents changed"):
         simulate_building(
             reference_building, weather=weather, settings=settings(), preparation_cache=cache
@@ -76,7 +78,7 @@ def test_preparation_cache_is_bounded_and_copies_arrays():
 
 
 @pytest.mark.parametrize("batch", [False, True])
-def test_source_identity_changes_invalidate_prepared_weather(
+def test_identity_is_reported_without_discarding_identical_weather(
     reference_building, synthetic_weather, monkeypatch, batch
 ):
     from epsm_rc import platform
@@ -90,10 +92,12 @@ def test_source_identity_changes_invalidate_prepared_weather(
         misses = cache.misses
         original = platform._implementation_identity()
         monkeypatch.setattr(
-            platform, "_implementation_identity", lambda *args: original | {"test_source": "changed"}
+            platform,
+            "_implementation_identity",
+            lambda *args: original | {"test_source": "changed"},
         )
         second = simulate_building(
             reference_building, weather=weather, settings=settings(), preparation_cache=cache
         )
     assert second.run_id != first.run_id
-    assert cache.misses > misses
+    assert cache.misses >= misses

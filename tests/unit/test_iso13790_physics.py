@@ -27,27 +27,24 @@ Reference:
     EN ISO 52016-1:2017
 """
 
-import pytest
-import numpy as np
 import warnings
 
+import numpy as np
+import pytest
+
 from epsm_rc.iso13790 import (
-    Building5R1C,
-    BuildingClass,
-    ThermalBridgeClass,
-    VentilationSystem,
-    Construction,
-    ConstructionLayer,
-    estimate_ground_temps_from_air,
-    calculate_thermal_mass_from_constructions,
-    create_swedish_villa,
-    create_swedish_apartment,
-    THERMAL_CAPACITANCE,
-    MASS_AREA_FACTOR,
+    INTERNAL_GAINS_MAX_W_M2,
+    SWEDISH_DEFAULT_GROUND_TEMPS,
     THERMAL_BRIDGE_DELTA_U,
     VENTILATION_HR_EFFICIENCY,
-    SWEDISH_DEFAULT_GROUND_TEMPS,
-    INTERNAL_GAINS_MAX_W_M2,
+    Building5R1C,
+    BuildingClass,
+    Construction,
+    ConstructionLayer,
+    calculate_thermal_mass_from_constructions,
+    create_swedish_apartment,
+    create_swedish_villa,
+    estimate_ground_temps_from_air,
 )
 
 
@@ -83,7 +80,7 @@ class TestGroundTemperatureEstimation:
 
     def test_different_climates(self):
         """Warmer climate → uniformly warmer ground temps."""
-        cold = estimate_ground_temps_from_air(2.0)   # Kiruna-like
+        cold = estimate_ground_temps_from_air(2.0)  # Kiruna-like
         warm = estimate_ground_temps_from_air(10.0)  # Malmö-like
         assert all(w > c for w, c in zip(warm, cold))
 
@@ -102,8 +99,10 @@ class TestSkyRadiationLoss:
         """No extra radiative loss if Δθ_er = 0."""
         b = Building5R1C(
             floor_area_m2=100,
-            u_roof=0.15, roof_area_m2=100,
-            u_walls=0.25, wall_area_m2=120,
+            u_roof=0.15,
+            roof_area_m2=100,
+            u_walls=0.25,
+            wall_area_m2=120,
             delta_theta_er=0.0,
         )
         assert b.calc_sky_radiation_loss() == 0.0
@@ -112,19 +111,25 @@ class TestSkyRadiationLoss:
         """Φr = Rse × U × A × hr × Δθer × Fr for roof + walls."""
         b = Building5R1C(
             floor_area_m2=100,
-            u_roof=0.15, roof_area_m2=100,
-            u_walls=0.25, wall_area_m2=120,
-            r_se_roof=0.04, r_se_wall=0.04,
+            u_roof=0.15,
+            roof_area_m2=100,
+            u_walls=0.25,
+            wall_area_m2=120,
+            r_se_roof=0.04,
+            r_se_wall=0.04,
             h_r=5.0,
             delta_theta_er=11.0,
-            form_factor_roof=1.0, form_factor_wall=0.5,
+            form_factor_roof=1.0,
+            form_factor_wall=0.5,
             # Zero out remaining elements
-            u_floor=0.0, floor_area_ground_m2=0,
-            u_windows=0.0, window_area_m2=0,
+            u_floor=0.0,
+            floor_area_ground_m2=0,
+            u_windows=0.0,
+            window_area_m2=0,
         )
         # Hand calc
         phi_roof = 0.04 * 0.15 * 100 * 5.0 * 11.0 * 1.0  # 33.0 W
-        phi_wall = 0.04 * 0.25 * 120 * 5.0 * 11.0 * 0.5   # 33.0 W
+        phi_wall = 0.04 * 0.25 * 120 * 5.0 * 11.0 * 0.5  # 33.0 W
         expected = phi_roof + phi_wall
 
         result = b.calc_sky_radiation_loss()
@@ -134,8 +139,10 @@ class TestSkyRadiationLoss:
         """Sky radiation from roof only when wall_area=0."""
         b = Building5R1C(
             floor_area_m2=100,
-            u_roof=0.20, roof_area_m2=80,
-            u_walls=0.0, wall_area_m2=0,
+            u_roof=0.20,
+            roof_area_m2=80,
+            u_walls=0.0,
+            wall_area_m2=0,
             delta_theta_er=11.0,
         )
         expected_roof = b.r_se_roof * 0.20 * 80 * b.h_r * 11.0 * b.form_factor_roof
@@ -161,14 +168,18 @@ class TestSolarGainsOpaque:
         """A_sol,op = α × Rse × U × A; Φ = A_sol × I."""
         b = Building5R1C(
             floor_area_m2=100,
-            u_walls=0.25, wall_area_m2=120,
-            u_roof=0.15, roof_area_m2=100,
-            wall_absorptivity=0.6, roof_absorptivity=0.6,
-            r_se_wall=0.04, r_se_roof=0.04,
+            u_walls=0.25,
+            wall_area_m2=120,
+            u_roof=0.15,
+            roof_area_m2=100,
+            wall_absorptivity=0.6,
+            roof_absorptivity=0.6,
+            r_se_wall=0.04,
+            r_se_roof=0.04,
         )
         i_wall, i_roof = 300.0, 500.0
-        a_sol_wall = 0.6 * 0.04 * 0.25 * 120   # 0.72 m²
-        a_sol_roof = 0.6 * 0.04 * 0.15 * 100    # 0.36 m²
+        a_sol_wall = 0.6 * 0.04 * 0.25 * 120  # 0.72 m²
+        a_sol_roof = 0.6 * 0.04 * 0.15 * 100  # 0.36 m²
         expected = a_sol_wall * i_wall + a_sol_roof * i_roof  # 396 W
 
         result = b.calc_solar_gains_opaque(i_sol_wall=i_wall, i_sol_roof=i_roof)
@@ -177,12 +188,22 @@ class TestSolarGainsOpaque:
     def test_higher_absorptivity_more_gains(self):
         """Dark surfaces (α=0.9) should collect more than light (α=0.3)."""
         dark = Building5R1C(
-            floor_area_m2=100, wall_absorptivity=0.9, roof_absorptivity=0.9,
-            u_walls=0.25, wall_area_m2=100, u_roof=0.15, roof_area_m2=80,
+            floor_area_m2=100,
+            wall_absorptivity=0.9,
+            roof_absorptivity=0.9,
+            u_walls=0.25,
+            wall_area_m2=100,
+            u_roof=0.15,
+            roof_area_m2=80,
         )
         light = Building5R1C(
-            floor_area_m2=100, wall_absorptivity=0.3, roof_absorptivity=0.3,
-            u_walls=0.25, wall_area_m2=100, u_roof=0.15, roof_area_m2=80,
+            floor_area_m2=100,
+            wall_absorptivity=0.3,
+            roof_absorptivity=0.3,
+            u_walls=0.25,
+            wall_area_m2=100,
+            u_roof=0.15,
+            roof_area_m2=80,
         )
         assert dark.calc_solar_gains_opaque(300, 500) > light.calc_solar_gains_opaque(300, 500)
 
@@ -194,11 +215,11 @@ class TestSolarGainsWindowSimplified:
     """Tests for calc_solar_gains() with simplified method."""
 
     def test_zero_when_no_ghi(self):
-        b = Building5R1C(floor_area_m2=100, solar_method='simplified')
+        b = Building5R1C(floor_area_m2=100, solar_method="simplified")
         assert b.calc_solar_gains(ghi=0.0) == 0.0
 
     def test_negative_ghi_returns_zero(self):
-        b = Building5R1C(floor_area_m2=100, solar_method='simplified')
+        b = Building5R1C(floor_area_m2=100, solar_method="simplified")
         assert b.calc_solar_gains(ghi=-10.0) == 0.0
 
     def test_simplified_formula(self):
@@ -210,7 +231,7 @@ class TestSolarGainsWindowSimplified:
             frame_factor=0.7,
             non_perpendicular_incidence_factor=0.9,
             shading_factor=1.0,
-            solar_method='simplified',
+            solar_method="simplified",
         )
         ghi = 400.0
         expected = 20 * 0.6 * 0.7 * 0.9 * 0.5 * 400  # 1512 W
@@ -226,7 +247,7 @@ class TestSolarGainsWindowSimplified:
             frame_factor=0.7,
             non_perpendicular_incidence_factor=1.0,
             shading_factor=1.0,
-            solar_method='simplified',
+            solar_method="simplified",
         )
         ghi = 400.0
         expected = 20 * 0.6 * 0.7 * 0.5 * ghi
@@ -235,8 +256,11 @@ class TestSolarGainsWindowSimplified:
     def test_shading_reduces_gains(self):
         """shading_factor < 1 should reduce solar gains."""
         params = dict(
-            floor_area_m2=100, window_area_m2=20, g_value=0.6,
-            frame_factor=0.7, solar_method='simplified',
+            floor_area_m2=100,
+            window_area_m2=20,
+            g_value=0.6,
+            frame_factor=0.7,
+            solar_method="simplified",
         )
         no_shade = Building5R1C(**params, shading_factor=1.0)
         shaded = Building5R1C(**params, shading_factor=0.5)
@@ -249,7 +273,7 @@ class TestSolarGainsWindowSimplified:
             window_area_m2=20,
             g_value=0.6,
             frame_factor=0.7,
-            solar_method='simplified',
+            solar_method="simplified",
             g_value_angle_coefficients=(1.0, -0.189, 0.644, -0.596),
             shading_factor=1.0,
         )
@@ -273,7 +297,10 @@ class TestHeatFlowDistribution:
             delta_theta_er=0.0,  # Disable sky radiation
         )
         phi_ia, _, _ = b.calc_heat_flows(
-            t_out=0, internal_gains=1000, solar_gains=0, energy_demand=0,
+            t_out=0,
+            internal_gains=1000,
+            solar_gains=0,
+            energy_demand=0,
             include_sky_radiation=False,
         )
         # φ_ia should be 0.5 × 1000 = 500 W (before energy_demand)
@@ -283,7 +310,10 @@ class TestHeatFlowDistribution:
         """Heating energy should be added to φ_ia."""
         b = Building5R1C(floor_area_m2=100, delta_theta_er=0.0)
         phi_ia, _, _ = b.calc_heat_flows(
-            t_out=0, internal_gains=0, solar_gains=0, energy_demand=5000,
+            t_out=0,
+            internal_gains=0,
+            solar_gains=0,
+            energy_demand=5000,
             include_sky_radiation=False,
         )
         assert abs(phi_ia - 5000.0) < 0.1
@@ -296,7 +326,10 @@ class TestHeatFlowDistribution:
             delta_theta_er=0.0,
         )
         phi_ia, phi_st, phi_m = b.calc_heat_flows(
-            t_out=0, internal_gains=0, solar_gains=1000, energy_demand=0,
+            t_out=0,
+            internal_gains=0,
+            solar_gains=1000,
+            energy_demand=0,
             include_sky_radiation=False,
         )
         assert phi_ia == 0.0  # No internal gains, no energy demand
@@ -308,11 +341,12 @@ class TestHeatFlowDistribution:
         b = Building5R1C(
             floor_area_m2=100,
             building_class=BuildingClass.MEDIUM,
-            u_windows=1.2, window_area_m2=20,
+            u_windows=1.2,
+            window_area_m2=20,
             delta_theta_er=0.0,
         )
-        a_m = MASS_AREA_FACTOR[BuildingClass.MEDIUM] * 100
-        a_tot = 4.5 * 100
+        a_m = b._mass_area
+        a_tot = b._a_tot
         r_mass = a_m / a_tot
         r_window = (1.2 * 20) / (9.1 * a_tot)
         r_surface = max(0.0, 1.0 - r_mass - r_window)
@@ -322,15 +356,22 @@ class TestHeatFlowDistribution:
         """Enabling sky radiation should reduce φ_st."""
         b = Building5R1C(
             floor_area_m2=100,
-            u_roof=0.15, roof_area_m2=100,
+            u_roof=0.15,
+            roof_area_m2=100,
             delta_theta_er=11.0,
         )
         _, phi_st_no_sky, _ = b.calc_heat_flows(
-            t_out=0, internal_gains=0, solar_gains=0, energy_demand=0,
+            t_out=0,
+            internal_gains=0,
+            solar_gains=0,
+            energy_demand=0,
             include_sky_radiation=False,
         )
         _, phi_st_with_sky, _ = b.calc_heat_flows(
-            t_out=0, internal_gains=0, solar_gains=0, energy_demand=0,
+            t_out=0,
+            internal_gains=0,
+            solar_gains=0,
+            energy_demand=0,
             include_sky_radiation=True,
         )
         assert phi_st_with_sky < phi_st_no_sky
@@ -374,7 +415,7 @@ class TestMassTemperatureIntegration:
         dt_1h = b.calc_t_m_next(t_m_prev, phi, dt_hours=1.0) - t_m_prev
         dt_half = b.calc_t_m_next(t_m_prev, phi, dt_hours=0.5) - t_m_prev
         # Ratio should be close to 2 (exact for linear system)
-        ratio = dt_1h / dt_half if dt_half != 0 else float('inf')
+        ratio = dt_1h / dt_half if dt_half != 0 else float("inf")
         assert 1.5 < ratio < 2.5
 
     def test_heavy_building_responds_slower(self):
@@ -398,7 +439,8 @@ class TestSurfaceTemperature:
         b = Building5R1C(
             floor_area_m2=100,
             ach_ventilation=0.5,
-            u_walls=0.25, wall_area_m2=100,
+            u_walls=0.25,
+            wall_area_m2=100,
         )
         t_m, t_out = 20.0, 0.0
         t_s = b.calc_t_s(t_m, t_out, phi_ia=0, phi_st=0)
@@ -430,7 +472,8 @@ class TestAirTemperature:
         b = Building5R1C(
             floor_area_m2=100,
             ach_ventilation=0.5,
-            u_walls=0.25, wall_area_m2=100,
+            u_walls=0.25,
+            wall_area_m2=100,
         )
         t_s, t_out = 18.0, 0.0
         t_air = b.calc_t_air(t_s, t_out, phi_ia=0)
@@ -491,18 +534,26 @@ class TestThermalBridges:
         """Thermal bridges should increase transmission losses."""
         no_tb = Building5R1C(
             floor_area_m2=100,
-            u_walls=0.25, wall_area_m2=120,
-            u_roof=0.15, roof_area_m2=100,
-            u_floor=0.20, floor_area_ground_m2=100,
-            u_windows=1.2, window_area_m2=20,
+            u_walls=0.25,
+            wall_area_m2=120,
+            u_roof=0.15,
+            roof_area_m2=100,
+            u_floor=0.20,
+            floor_area_ground_m2=100,
+            u_windows=1.2,
+            window_area_m2=20,
             delta_u_thermal_bridge=0.0,
         )
         with_tb = Building5R1C(
             floor_area_m2=100,
-            u_walls=0.25, wall_area_m2=120,
-            u_roof=0.15, roof_area_m2=100,
-            u_floor=0.20, floor_area_ground_m2=100,
-            u_windows=1.2, window_area_m2=20,
+            u_walls=0.25,
+            wall_area_m2=120,
+            u_roof=0.15,
+            roof_area_m2=100,
+            u_floor=0.20,
+            floor_area_ground_m2=100,
+            u_windows=1.2,
+            window_area_m2=20,
             delta_u_thermal_bridge=0.10,
         )
         assert with_tb._h_tr_op > no_tb._h_tr_op
@@ -516,10 +567,14 @@ class TestThermalBridges:
 
         b = Building5R1C(
             floor_area_m2=100,
-            u_walls=0.25, wall_area_m2=wall_a,
-            u_roof=0.15, roof_area_m2=roof_a,
-            u_floor=0.20, floor_area_ground_m2=floor_a,
-            u_windows=1.2, window_area_m2=win_a,
+            u_walls=0.25,
+            wall_area_m2=wall_a,
+            u_roof=0.15,
+            roof_area_m2=roof_a,
+            u_floor=0.20,
+            floor_area_ground_m2=floor_a,
+            u_windows=1.2,
+            window_area_m2=win_a,
             delta_u_thermal_bridge=delta_u,
         )
         assert abs(b._h_tr_tb - expected_h_tb) < 0.1
@@ -528,9 +583,12 @@ class TestThermalBridges:
         """Thermal bridges should increase steady-state heating demand."""
         params = dict(
             floor_area_m2=100,
-            u_walls=0.25, wall_area_m2=120,
-            u_roof=0.15, roof_area_m2=100,
-            u_windows=1.2, window_area_m2=20,
+            u_walls=0.25,
+            wall_area_m2=120,
+            u_roof=0.15,
+            roof_area_m2=100,
+            u_windows=1.2,
+            window_area_m2=20,
             ach_ventilation=0.5,
             delta_theta_er=0.0,
         )
@@ -563,11 +621,15 @@ class TestHeatRecovery:
     def test_hr_reduces_h_ve(self):
         """Heat recovery should reduce effective ventilation coefficient."""
         no_hr = Building5R1C(
-            floor_area_m2=100, ach_ventilation=0.5, ach_infiltration=0.15,
+            floor_area_m2=100,
+            ach_ventilation=0.5,
+            ach_infiltration=0.15,
             heat_recovery_efficiency=0.0,
         )
         with_hr = Building5R1C(
-            floor_area_m2=100, ach_ventilation=0.5, ach_infiltration=0.15,
+            floor_area_m2=100,
+            ach_ventilation=0.5,
+            ach_infiltration=0.15,
             heat_recovery_efficiency=0.80,
         )
         assert with_hr._h_ve < no_hr._h_ve
@@ -583,8 +645,10 @@ class TestHeatRecovery:
         expected_h_ve = 1200 * b_ek * vol * ach_total / 3600
 
         b = Building5R1C(
-            floor_area_m2=100, ceiling_height_m=2.5,
-            ach_ventilation=ach_vent, ach_infiltration=ach_inf,
+            floor_area_m2=100,
+            ceiling_height_m=2.5,
+            ach_ventilation=ach_vent,
+            ach_infiltration=ach_inf,
             heat_recovery_efficiency=eta,
         )
         assert abs(b._h_ve - expected_h_ve) < 0.01
@@ -592,16 +656,20 @@ class TestHeatRecovery:
     def test_full_hr_only_infiltration_loss(self):
         """With η=1.0, only infiltration contributes to H_ve."""
         b = Building5R1C(
-            floor_area_m2=100, ceiling_height_m=2.5,
-            ach_ventilation=0.5, ach_infiltration=0.15,
+            floor_area_m2=100,
+            ceiling_height_m=2.5,
+            ach_ventilation=0.5,
+            ach_infiltration=0.15,
             heat_recovery_efficiency=1.0,
         )
         # b_ek = 1 - (0.5/0.65)*1.0 = 0.231
         # H_ve = 1200 × 0.231 × 250 × 0.65 / 3600 ≈ 12.5
         # This should be much less than no-HR case
         no_hr = Building5R1C(
-            floor_area_m2=100, ceiling_height_m=2.5,
-            ach_ventilation=0.5, ach_infiltration=0.15,
+            floor_area_m2=100,
+            ceiling_height_m=2.5,
+            ach_ventilation=0.5,
+            ach_infiltration=0.15,
             heat_recovery_efficiency=0.0,
         )
         # HR=1.0 should give H_ve < 40% of no-HR
@@ -610,8 +678,11 @@ class TestHeatRecovery:
     def test_hr_reduces_heating_demand(self):
         """Heat recovery should reduce heating demand."""
         params = dict(
-            floor_area_m2=100, u_walls=0.25, wall_area_m2=100,
-            ach_ventilation=0.5, ach_infiltration=0.15,
+            floor_area_m2=100,
+            u_walls=0.25,
+            wall_area_m2=100,
+            ach_ventilation=0.5,
+            ach_infiltration=0.15,
             delta_theta_er=0.0,
         )
         no_hr = Building5R1C(**params, heat_recovery_efficiency=0.0)
@@ -638,13 +709,17 @@ class TestDynamicGroundCoupling:
         """Without monthly temps, ground loss = H_tr_ground × temp_adj_ground."""
         b = Building5R1C(
             floor_area_m2=100,
-            u_floor=0.20, floor_area_ground_m2=100,
+            u_floor=0.20,
+            floor_area_ground_m2=100,
             temp_adj_ground=0.5,
             ground_temps_monthly=None,
             # Zero out other elements to isolate
-            u_walls=0.0, wall_area_m2=0,
-            u_roof=0.0, roof_area_m2=0,
-            u_windows=0.0, window_area_m2=0,
+            u_walls=0.0,
+            wall_area_m2=0,
+            u_roof=0.0,
+            roof_area_m2=0,
+            u_windows=0.0,
+            window_area_m2=0,
             ach_ventilation=0.5,
         )
         # H_tr_op should include 0.20 × 100 × 0.5 = 10 W/K
@@ -655,11 +730,15 @@ class TestDynamicGroundCoupling:
         """With monthly temps, full ground conductance is included in H_tr_op."""
         b = Building5R1C(
             floor_area_m2=100,
-            u_floor=0.20, floor_area_ground_m2=100,
+            u_floor=0.20,
+            floor_area_ground_m2=100,
             ground_temps_monthly=SWEDISH_DEFAULT_GROUND_TEMPS.copy(),
-            u_walls=0.0, wall_area_m2=0,
-            u_roof=0.0, roof_area_m2=0,
-            u_windows=0.0, window_area_m2=0,
+            u_walls=0.0,
+            wall_area_m2=0,
+            u_roof=0.0,
+            roof_area_m2=0,
+            u_windows=0.0,
+            window_area_m2=0,
             ach_ventilation=0.5,
         )
         # H_tr_op should include full ground conductance for RC consistency
@@ -702,9 +781,11 @@ class TestDynamicGroundCoupling:
         monthly_temps = SWEDISH_DEFAULT_GROUND_TEMPS.copy()
         b = Building5R1C(
             floor_area_m2=100,
-            u_floor=0.25, floor_area_ground_m2=100,
+            u_floor=0.25,
+            floor_area_ground_m2=100,
             ground_temps_monthly=monthly_temps,
-            u_walls=0.25, wall_area_m2=100,
+            u_walls=0.25,
+            wall_area_m2=100,
             ach_ventilation=0.5,
             delta_theta_er=0.0,
         )
@@ -719,10 +800,12 @@ class TestDynamicGroundCoupling:
         # Compare with static ground factor
         b_static = Building5R1C(
             floor_area_m2=100,
-            u_floor=0.25, floor_area_ground_m2=100,
+            u_floor=0.25,
+            floor_area_ground_m2=100,
             temp_adj_ground=1.0,  # Full outdoor temp
             ground_temps_monthly=None,
-            u_walls=0.25, wall_area_m2=100,
+            u_walls=0.25,
+            wall_area_m2=100,
             ach_ventilation=0.5,
             delta_theta_er=0.0,
         )
@@ -753,7 +836,8 @@ class TestHeatingDemandIteration:
     def test_cooling_when_hot(self):
         """Should produce negative demand when T_out > T_set_cooling."""
         b = Building5R1C(
-            floor_area_m2=100, t_set_cooling=26.0,
+            floor_area_m2=100,
+            t_set_cooling=26.0,
             delta_theta_er=0.0,
         )
         b.reset(25.0)
@@ -845,9 +929,16 @@ class TestInternalGainsCapping:
 class TestFactoryFunctions:
     """Tests for create_swedish_villa() and create_swedish_apartment()."""
 
-    @pytest.mark.parametrize("era", [
-        "pre_1960", "1960_1975", "1976_1990", "1991_2010", "post_2010",
-    ])
+    @pytest.mark.parametrize(
+        "era",
+        [
+            "pre_1960",
+            "1960_1975",
+            "1976_1990",
+            "1991_2010",
+            "post_2010",
+        ],
+    )
     def test_villa_creates_valid_building(self, era):
         """Villa factory should produce a functioning Building5R1C."""
         b = create_swedish_villa(floor_area_m2=150, era=era, use_config=False)
@@ -856,9 +947,16 @@ class TestFactoryFunctions:
         assert b._h_tr_op > 0
         assert b._h_ve > 0
 
-    @pytest.mark.parametrize("era", [
-        "pre_1960", "1960_1975", "1976_1990", "1991_2010", "post_2010",
-    ])
+    @pytest.mark.parametrize(
+        "era",
+        [
+            "pre_1960",
+            "1960_1975",
+            "1976_1990",
+            "1991_2010",
+            "post_2010",
+        ],
+    )
     def test_apartment_creates_valid_building(self, era):
         """Apartment factory should produce a functioning Building5R1C."""
         b = create_swedish_apartment(floor_area_m2=70, era=era, use_config=False)
@@ -890,7 +988,9 @@ class TestFactoryFunctions:
     def test_factory_accepts_overrides(self):
         """User kwargs should override defaults."""
         b = create_swedish_villa(
-            150, era="1976_1990", use_config=False,
+            150,
+            era="1976_1990",
+            use_config=False,
             u_walls=0.10,  # Override
             t_set_heating=22.0,
         )
@@ -903,9 +1003,9 @@ class TestFactoryFunctions:
         b.reset(20.0)
         t_outdoor = np.full(24, -5.0)
         results = b.simulate(t_outdoor)
-        assert len(results['heating_demand']) == 24
-        assert all(np.isfinite(results['heating_demand']))
-        assert all(q >= 0 for q in results['heating_demand'])
+        assert len(results["heating_demand"]) == 24
+        assert all(np.isfinite(results["heating_demand"]))
+        assert all(q >= 0 for q in results["heating_demand"])
 
 
 # ---------------------------------------------------------------------------
@@ -930,7 +1030,7 @@ class TestConstructionBasedThermalMass:
 
     def test_multi_layer_construction(self):
         """Insulated wall: gypsum + insulation + concrete (inside-out order).
-        
+
         Only first 100mm effective depth contributes:
         - gypsum 13mm: 0.013 × 800 × 1090 = 11,336 (total_depth=13mm)
         - insulation 87mm of 200mm: 0.087 × 30 × 1030 = 2,688.3 (total_depth=100mm)
@@ -1006,8 +1106,10 @@ class TestNetworkProperties:
         """H_tr_em: 1/H_tr_em = 1/H_tr_op - 1/H_tr_ms."""
         b = Building5R1C(
             floor_area_m2=100,
-            u_walls=0.25, wall_area_m2=120,
-            u_roof=0.15, roof_area_m2=100,
+            u_walls=0.25,
+            wall_area_m2=120,
+            u_roof=0.15,
+            roof_area_m2=100,
         )
         if b._h_tr_op > 0 and b._h_tr_ms > 0:
             inv_expected = 1.0 / b._h_tr_op - 1.0 / b._h_tr_ms
@@ -1053,7 +1155,7 @@ class TestSimulateTimeSeries:
         b = Building5R1C(floor_area_m2=100, delta_theta_er=0.0)
         t_out = np.full(48, -5.0)
         results = b.simulate(t_out)
-        for key in ['heating_demand', 't_air', 't_m', 't_s', 't_operative', 'windows_open']:
+        for key in ["heating_demand", "t_air", "t_m", "t_s", "t_operative", "windows_open"]:
             assert len(results[key]) == 48
 
     def test_all_outputs_finite(self):
@@ -1061,7 +1163,7 @@ class TestSimulateTimeSeries:
         t_out = np.random.uniform(-20, 30, 168)
         solar = np.clip(np.random.uniform(-50, 800, 168), 0, None)
         results = b.simulate(t_out, solar_gains=solar)
-        for key in ['heating_demand', 't_air', 't_m', 't_s', 't_operative']:
+        for key in ["heating_demand", "t_air", "t_m", "t_s", "t_operative"]:
             assert all(np.isfinite(results[key])), f"Non-finite values in {key}"
 
     def test_constant_conditions_reach_steady_state(self):
@@ -1070,7 +1172,7 @@ class TestSimulateTimeSeries:
         t_out = np.full(200, 0.0)
         results = b.simulate(t_out)
         # Last 10 hours should have <1% variation
-        last_10 = results['heating_demand'][-10:]
+        last_10 = results["heating_demand"][-10:]
         variation = (last_10.max() - last_10.min()) / last_10.mean() if last_10.mean() > 0 else 0
         assert variation < 0.01
 
@@ -1114,7 +1216,9 @@ class TestEnergyConservation:
     def test_internal_gains_reduce_heating(self):
         """Internal gains should offset heating demand."""
         b = Building5R1C(
-            floor_area_m2=100, internal_gains_w_per_m2=0, delta_theta_er=0.0,
+            floor_area_m2=100,
+            internal_gains_w_per_m2=0,
+            delta_theta_er=0.0,
         )
         b.reset(20.0)
         for _ in range(50):
@@ -1131,12 +1235,18 @@ class TestEnergyConservation:
     def test_better_insulation_less_heating(self):
         """Lower U-values → less heating."""
         poor = Building5R1C(
-            floor_area_m2=100, u_walls=0.50, wall_area_m2=120,
-            ach_ventilation=0.5, delta_theta_er=0.0,
+            floor_area_m2=100,
+            u_walls=0.50,
+            wall_area_m2=120,
+            ach_ventilation=0.5,
+            delta_theta_er=0.0,
         )
         good = Building5R1C(
-            floor_area_m2=100, u_walls=0.15, wall_area_m2=120,
-            ach_ventilation=0.5, delta_theta_er=0.0,
+            floor_area_m2=100,
+            u_walls=0.15,
+            wall_area_m2=120,
+            ach_ventilation=0.5,
+            delta_theta_er=0.0,
         )
         poor.reset(20.0)
         good.reset(20.0)

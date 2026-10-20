@@ -26,8 +26,12 @@ differ between reference and candidate. First-call and repeated timings are
 reported separately. Preparation reuse is not a cached final simulation result.
 No absolute timing threshold is imposed on shared CI runners.
 
-`--warm --batch` additionally scopes source-hash reuse to this sequential batch.
-Source-file/directory metadata and dependency versions are still checked per run.
+`--warm --batch` retains the compatibility batch context. Calculation identity
+is captured lazily once per process; restart Python after changing code or dependencies.
 The first call includes initial preparation; repeated timings exclude that fill.
 Warm repetitions reuse the same physical fixture, so these are not measured
 throughput for a stock of different buildings or parallel worker processes.
+
+Use `--no-output` to measure in-memory results separately from compressed output.
+`--policy 2` exercises angular optics against a reference that supports v2
+(RC 0.7.1 or newer). Both modes retain exact numerical comparisons.

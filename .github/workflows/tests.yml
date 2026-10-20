@@ -27,13 +27,17 @@ jobs:
           repository: SB-Chalmers/epsm_core
           ssh-key: ${{ secrets.EPSM_CORE_DEPLOY_KEY }}
           persist-credentials: false
-          ref: ${{ matrix.dependencies == 'dev' && 'dev' || '22cf2f19d8b50bba4f33d631f0a9d5bbdb5edd96' }}
+          ref: ${{ matrix.dependencies == 'dev' && 'dev' || '961eab0d063c0dec43e3ad6ac5d2ca5b5474c29d' }}
           path: .ci/epsm_core
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
       - name: Install platform dependencies and test tools
-        run: python -m pip install build setuptools wheel .ci/epsm_data '.ci/epsm_core[geometry]' '.[platform,dev,gis,notebook]'
+        run: python -m pip install build setuptools wheel .ci/epsm_data '.ci/epsm_core[geometry]' '.[platform,dev,gis,notebook,docs]'
+      - name: Check source style
+        run: |
+          python -m ruff check src tests benchmarks examples docs/conf.py
+          python -m ruff format --check src tests benchmarks examples docs/conf.py
       - name: Record tested revisions
         run: |
           git rev-parse HEAD
@@ -48,18 +52,23 @@ jobs:
           python -m pip check
           cd /tmp
           python -c 'from epsm_rc import RCSettings, simulate_building; print(RCSettings, simulate_building)'
+      - name: Build installed API documentation and execute offline examples
+        run: |
+          python -m sphinx -W --keep-going -b html docs outputs/docs
+          python -m sphinx -W --keep-going -b doctest docs outputs/doctest
+          python examples/00_standalone.py
       - uses: actions/checkout@v4
         if: matrix.dependencies == 'pinned'
         with:
           repository: SB-Chalmers/epsm_core
           ssh-key: ${{ secrets.EPSM_CORE_DEPLOY_KEY }}
           persist-credentials: false
-          ref: 76b9c93978d26d5f27f0616b51fbb1ca19fb6801
+          ref: 3e0256d70c5e82849308b05544b1ad2fd0573665
           path: .ci/core_reference
       - uses: actions/checkout@v4
         if: matrix.dependencies == 'pinned'
         with:
-          ref: d8f42ab69e61cfe580f234b20ddc47cf6d056e59
+          ref: 5a9d5f4251847e270b5dc4a526a4b2260915a4f9
           path: .ci/rc_reference
       - name: Compare released and candidate installed calculations exactly
         if: matrix.dependencies == 'pinned'
@@ -69,6 +78,8 @@ jobs:
           python benchmarks/run.py --directory outputs/legacy-regression --reference-python .ci/reference_venv/bin/python --repeats 2
           python benchmarks/run.py --directory outputs/prepared-regression --warm --reference-directory outputs/legacy-regression/reference --repeats 2
           python benchmarks/run.py --directory outputs/batch-regression --warm --batch --reference-directory outputs/legacy-regression/reference --repeats 2
+          python benchmarks/run.py --directory outputs/angular-regression --policy 2 --reference-python .ci/reference_venv/bin/python --repeats 2
+          python benchmarks/run.py --directory outputs/angular-prepared-regression --policy 2 --warm --reference-directory outputs/angular-regression/reference --repeats 2
       - name: Execute installed-package notebook in a fresh kernel
         run: |
           python - <<'PY'
@@ -110,7 +121,7 @@ jobs:
           repository: SB-Chalmers/epsm_core
           ssh-key: ${{ secrets.EPSM_CORE_DEPLOY_KEY }}
           persist-credentials: false
-          ref: ${{ matrix.dependencies == 'dev' && 'dev' || '22cf2f19d8b50bba4f33d631f0a9d5bbdb5edd96' }}
+          ref: ${{ matrix.dependencies == 'dev' && 'dev' || '961eab0d063c0dec43e3ad6ac5d2ca5b5474c29d' }}
           path: .ci/epsm_core
       - uses: actions/setup-python@v5
         with:
@@ -147,3 +158,51 @@ jobs:
           path: |
             integration-results.xml
             outputs/integration/
+
+  standalone:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install base wheel without Core or Data
+        run: |
+          python -m pip install build pytest
+          python -m build
+          python -m pip install dist/epsm_rc-*.whl
+          python -m pip check
+          python -c "import importlib.util; assert importlib.util.find_spec('epsm_core') is None; assert importlib.util.find_spec('epsm_data') is None"
+      - name: Execute supported Core-free numerical APIs
+        run: |
+          python examples/00_standalone.py
+          python -m pytest tests/unit/test_iso13790.py tests/unit/test_iso13790_physics.py tests/unit/test_iso13790_compliance.py tests/unit/test_heat_pump.py tests/unit/test_heating.py tests/unit/test_public_readiness.py -q
+
+  heatpump:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install mandatory hplib extra
+        run: |
+          python -m pip install '.[heatpump,dev]'
+          python -m pip check
+          python -c "from epsm_rc.heating import HPLIB_AVAILABLE; assert HPLIB_AVAILABLE, 'Required hplib is unavailable'"
+      - name: Execute real hplib models with no skips
+        run: |
+          python -m pytest tests/unit/test_heating.py tests/unit/test_heat_pump.py tests/unit/test_public_readiness.py --junitxml=heatpump-results.xml -q
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          report = ET.parse('heatpump-results.xml').getroot()
+          assert not report.findall('.//skipped'), 'Required heat-pump checks must execute'
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: heatpump-${{ matrix.python }}
+          path: heatpump-results.xml
