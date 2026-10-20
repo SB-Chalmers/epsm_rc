@@ -40,7 +40,7 @@ jobs:
           repository: SB-Chalmers/epsm_core
           ssh-key: ${{ secrets.EPSM_CORE_DEPLOY_KEY }}
           persist-credentials: false
-          ref: ${{ inputs.development_dependencies && 'dev' || '43c830bf9cd5babb2f2beac146e44d31b8796b93' }}
+          ref: ${{ inputs.development_dependencies && 'dev' || '5f43f1c4bff655acc95812ebbbef66d75e001f3c' }}
           path: .ci/epsm_core
       - uses: actions/setup-python@v5
         with:
