@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       development_dependencies:
-        description: Test Core/Data development branches instead of release pins
+        description: Check current Core/Data main branches on Python 3.13
         type: boolean
         default: false
 
@@ -20,12 +20,43 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  combination:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: SB-Chalmers/epsm
+          ssh-key: ${{ secrets.EPSM_REPO_DEPLOY_KEY }}
+          persist-credentials: false
+          ref: main
+          path: .ci/platform
+          sparse-checkout: |
+            /compatibility.json
+            /scripts/compatibility_matrix.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - id: matrix
+        env:
+          MATRIX_MODE: ${{ inputs.development_dependencies && 'main' || 'pinned' }}
+        run: |
+          python .ci/platform/scripts/compatibility_matrix.py \
+            --manifest .ci/platform/compatibility.json --consumer epsm_rc \
+            --packages epsm_data epsm_core \
+            --manifest-revision "$(git -C .ci/platform rev-parse HEAD)" \
+            --mode "$MATRIX_MODE" >> "$GITHUB_OUTPUT"
   package:
+    name: package (${{ matrix.python }})
+    needs: combination
     runs-on: ubuntu-22.04
+    timeout-minutes: 30
     strategy:
       fail-fast: false
-      matrix:
-        python: ${{ inputs.development_dependencies && fromJSON('["3.13"]') || fromJSON('["3.11", "3.13"]') }}
+      matrix: ${{ fromJSON(needs.combination.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
@@ -33,14 +64,14 @@ jobs:
           repository: SB-Chalmers/epsm_data
           ssh-key: ${{ secrets.EPSM_DATA_DEPLOY_KEY }}
           persist-credentials: false
-          ref: ${{ inputs.development_dependencies && 'dev' || 'bc8449402b9e0dbe0ea85ff76c954cf36d209f86' }}
+          ref: ${{ matrix.epsm_data }}
           path: .ci/epsm_data
       - uses: actions/checkout@v4
         with:
           repository: SB-Chalmers/epsm_core
           ssh-key: ${{ secrets.EPSM_CORE_DEPLOY_KEY }}
           persist-credentials: false
-          ref: ${{ inputs.development_dependencies && 'dev' || '5f43f1c4bff655acc95812ebbbef66d75e001f3c' }}
+          ref: ${{ matrix.epsm_core }}
           path: .ci/epsm_core
       - uses: actions/setup-python@v5
         with:
@@ -56,6 +87,7 @@ jobs:
           python -c "from epsm_rc.heating import HPLIB_AVAILABLE; assert HPLIB_AVAILABLE, 'Required hplib is unavailable'"
           mkdir -p outputs
           python -m pip freeze > outputs/environment.txt
+          echo "EPSM compatibility manifest: ${{ matrix.manifest_revision }}"
           git rev-parse HEAD
           git -C .ci/epsm_core rev-parse HEAD
           git -C .ci/epsm_data rev-parse HEAD
@@ -137,6 +169,7 @@ jobs:
   standalone:
     if: ${{ !inputs.development_dependencies }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
