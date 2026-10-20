@@ -43,9 +43,12 @@ python -m sphinx -W --keep-going -b html docs outputs/docs
 python -m sphinx -W --keep-going -b doctest docs outputs/doctest
 ```
 
-Run tests with `python -m pytest tests`. The CI base lane verifies Python 3.10
-without Core; platform lanes cover Python 3.11 and 3.13 with pinned and development
-dependencies. The optional heat-pump lane requires hplib and executes its tests.
+Run tests with `python -m pytest tests`. CI verifies Python 3.10 without Core and
+Python 3.11/3.13 with pinned Core/Data, required EnergyPlus 24.2 and hplib. Each
+platform lane runs the full installed-wheel suite once. Documentation, notebooks,
+style and exact released-output comparisons run once on Python 3.13. PR updates
+cancel superseded runs; feature pushes do not create a second workflow. A manual
+`development_dependencies` run checks Core/Data development branches on 3.13.
 
 The package was previously `SweThermalModel` / `swethermalmodel`. The supported
 standalone solver remains available. Deprecated interfaces will be removed no
@@ -152,9 +155,9 @@ python -m epsm_rc.parametric --building building-snapshot.json --weather weather
   --rc-settings rc-settings.json --directory comparison --energyplus /path/to/energyplus
 ```
 
-Local integration tests require EnergyPlus 24.2 and exercise rectangle and concave
-polygon compilation, supplied materials/glazing/schedules, boundary geometry and
-output identity. These two tests explicitly skip if EnergyPlus is absent in CI.
+Integration tests use EnergyPlus 24.2 and exercise rectangle and concave polygon
+compilation, supplied materials/glazing/schedules, boundary geometry and output
+identity. The CI platform lanes require the engine and reject skipped checks.
 
 GIS height inputs have no implicit defaults. Omitted `num_floors` is resolved from
 `building:levels`, `levels`, `floors` or `num_floors`; omitted `floor_height` is
@@ -239,15 +242,13 @@ with cache.batch():
     ]
 ```
 
-Each call checks weather bytes, source-file and directory metadata, and numerical
-dependency versions. Unchanged source hashes are reused only within the batch;
-edits, additions, removals and replacements trigger fresh hashes. This requires a
-filesystem that reports edits normally; install packages outside active runs.
-Use a separate cache in each worker. Preparation arrays have immutable storage;
-thermal states and returned results remain independent. The public
-`cache.get_or_compute()` continues returning detached writable copies.
-`cache.clear()` releases preparation and source reuse. Batch exit releases source
-reuse even on failure, retaining bounded weather/geometry preparation.
+Each call verifies weather bytes. Source and numerical dependency identity is
+captured lazily once per Python process; restart after source or dependency edits.
+`batch()` remains a compatibility context manager and does not change cache
+lifetime. Use a separate cache in each worker. Preparation arrays have immutable
+storage; thermal states and returned results remain independent. The public
+`cache.get_or_compute()` returns detached writable copies. `cache.clear()` releases
+bounded preparation entries without changing the process implementation identity.
 
 ### Reduction assumptions
 

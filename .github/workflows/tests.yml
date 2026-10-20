@@ -1,18 +1,31 @@
 name: RC release checks
 
-on: [push, pull_request, workflow_dispatch]
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      development_dependencies:
+        description: Test Core/Data development branches instead of release pins
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   package:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
-        python: ['3.11', '3.13']
-        dependencies: ['pinned', 'dev']
+        python: ${{ inputs.development_dependencies && fromJSON('["3.13"]') || fromJSON('["3.11", "3.13"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
@@ -20,45 +33,68 @@ jobs:
           repository: SB-Chalmers/epsm_data
           ssh-key: ${{ secrets.EPSM_DATA_DEPLOY_KEY }}
           persist-credentials: false
-          ref: ${{ matrix.dependencies == 'dev' && 'dev' || 'bc8449402b9e0dbe0ea85ff76c954cf36d209f86' }}
+          ref: ${{ inputs.development_dependencies && 'dev' || 'bc8449402b9e0dbe0ea85ff76c954cf36d209f86' }}
           path: .ci/epsm_data
       - uses: actions/checkout@v4
         with:
           repository: SB-Chalmers/epsm_core
           ssh-key: ${{ secrets.EPSM_CORE_DEPLOY_KEY }}
           persist-credentials: false
-          ref: ${{ matrix.dependencies == 'dev' && 'dev' || '961eab0d063c0dec43e3ad6ac5d2ca5b5474c29d' }}
+          ref: ${{ inputs.development_dependencies && 'dev' || '43c830bf9cd5babb2f2beac146e44d31b8796b93' }}
           path: .ci/epsm_core
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - name: Install platform dependencies and test tools
-        run: python -m pip install build setuptools wheel .ci/epsm_data '.ci/epsm_core[geometry]' '.[platform,dev,gis,notebook,docs]'
-      - name: Check source style
-        run: |
-          python -m ruff check src tests benchmarks examples docs/conf.py
-          python -m ruff format --check src tests benchmarks examples docs/conf.py
-      - name: Record tested revisions
-        run: |
-          git rev-parse HEAD
-          git -C .ci/epsm_core rev-parse HEAD
-          git -C .ci/epsm_data rev-parse HEAD
-      - name: Run full RC suite
-        run: python -m pytest -q
-      - name: Build and check installed wheel
+          cache: pip
+      - name: Install coordinated dependencies and test tools
+        run: python -m pip install build setuptools wheel .ci/epsm_data '.ci/epsm_core[geometry]' '.[platform,dev,gis,notebook,docs,heatpump]'
+      - name: Build and install release wheel
         run: |
           python -m build
           python -m pip install --no-deps --force-reinstall dist/epsm_rc-*.whl
           python -m pip check
-          cd /tmp
-          python -c 'from epsm_rc import RCSettings, simulate_building; print(RCSettings, simulate_building)'
-      - name: Build installed API documentation and execute offline examples
+          python -c "from epsm_rc.heating import HPLIB_AVAILABLE; assert HPLIB_AVAILABLE, 'Required hplib is unavailable'"
+          mkdir -p outputs
+          python -m pip freeze > outputs/environment.txt
+          git rev-parse HEAD
+          git -C .ci/epsm_core rev-parse HEAD
+          git -C .ci/epsm_data rev-parse HEAD
+      - name: Restore EnergyPlus 24.2
+        id: energyplus-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/energyplus
+          key: energyplus-24.2.0-e7ecb2d53b-Ubuntu22.04-x86_64
+      - name: Install EnergyPlus 24.2
+        if: steps.energyplus-cache.outputs.cache-hit != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          gh release download v24.2.0 --repo NatLabRockies/EnergyPlus --pattern 'EnergyPlus-24.2.0-e7ecb2d53b-Linux-Ubuntu22.04-x86_64.tar.gz' --dir "$RUNNER_TEMP"
+          mkdir -p "$RUNNER_TEMP/energyplus"
+          tar -xzf "$RUNNER_TEMP/EnergyPlus-24.2.0-e7ecb2d53b-Linux-Ubuntu22.04-x86_64.tar.gz" -C "$RUNNER_TEMP/energyplus" --strip-components=1
+      - name: Run full installed-wheel suite with required EnergyPlus and hplib
+        env:
+          EPSM_REQUIRE_ENERGYPLUS: '1'
+          ENERGYPLUS_EXE: ${{ runner.temp }}/energyplus/energyplus
+        run: |
+          "$ENERGYPLUS_EXE" --version
+          python -m pytest --junitxml=outputs/results.xml --basetemp=outputs/integration -q
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse('outputs/results.xml').getroot()
+          assert not root.findall('.//skipped'), 'Required platform and heat-pump checks must execute'
+          PY
+      - name: Check source style, documentation and offline examples
+        if: matrix.python == '3.13'
+        run: |
+          python -m ruff check src tests benchmarks examples docs/conf.py
+          python -m ruff format --check src tests benchmarks examples docs/conf.py
           python -m sphinx -W --keep-going -b html docs outputs/docs
           python -m sphinx -W --keep-going -b doctest docs outputs/doctest
           python examples/00_standalone.py
       - uses: actions/checkout@v4
-        if: matrix.dependencies == 'pinned'
+        if: matrix.python == '3.13' && !inputs.development_dependencies
         with:
           repository: SB-Chalmers/epsm_core
           ssh-key: ${{ secrets.EPSM_CORE_DEPLOY_KEY }}
@@ -66,27 +102,25 @@ jobs:
           ref: 3e0256d70c5e82849308b05544b1ad2fd0573665
           path: .ci/core_reference
       - uses: actions/checkout@v4
-        if: matrix.dependencies == 'pinned'
+        if: matrix.python == '3.13' && !inputs.development_dependencies
         with:
           ref: 5a9d5f4251847e270b5dc4a526a4b2260915a4f9
           path: .ci/rc_reference
-      - name: Compare released and candidate installed calculations exactly
-        if: matrix.dependencies == 'pinned'
+      - name: Compare released and candidate calculations exactly
+        if: matrix.python == '3.13' && !inputs.development_dependencies
         run: |
           python -m venv --system-site-packages .ci/reference_venv
           .ci/reference_venv/bin/python -m pip install --ignore-installed --no-deps --no-build-isolation .ci/core_reference .ci/rc_reference
-          python benchmarks/run.py --directory outputs/legacy-regression --reference-python .ci/reference_venv/bin/python --repeats 2
-          python benchmarks/run.py --directory outputs/prepared-regression --warm --reference-directory outputs/legacy-regression/reference --repeats 2
-          python benchmarks/run.py --directory outputs/batch-regression --warm --batch --reference-directory outputs/legacy-regression/reference --repeats 2
-          python benchmarks/run.py --directory outputs/angular-regression --policy 2 --reference-python .ci/reference_venv/bin/python --repeats 2
-          python benchmarks/run.py --directory outputs/angular-prepared-regression --policy 2 --warm --reference-directory outputs/angular-regression/reference --repeats 2
-      - name: Execute installed-package notebook in a fresh kernel
+          python benchmarks/run.py --directory outputs/legacy-regression --reference-python .ci/reference_venv/bin/python --repeats 1
+          python benchmarks/run.py --directory outputs/prepared-regression --warm --reference-directory outputs/legacy-regression/reference --repeats 1
+          python benchmarks/run.py --directory outputs/angular-regression --policy 2 --reference-python .ci/reference_venv/bin/python --repeats 1
+          python benchmarks/run.py --directory outputs/angular-prepared-regression --policy 2 --warm --reference-directory outputs/angular-regression/reference --repeats 1
+      - name: Execute installed-package notebooks in fresh kernels
+        if: matrix.python == '3.13'
         run: |
           python - <<'PY'
           import nbformat
-          from pathlib import Path
           from nbclient import NotebookClient
-          Path('outputs').mkdir(exist_ok=True)
           for name in ('12_prepared_radiation', '13_shared_wall_boundaries', '14_roofs_and_basements'):
               book = nbformat.read(f'examples/{name}.ipynb', as_version=4)
               NotebookClient(book, timeout=120, kernel_name='python3').execute()
@@ -95,77 +129,20 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: rc-package-${{ matrix.python }}-${{ matrix.dependencies }}
+          name: rc-package-${{ matrix.python }}
           path: |
             outputs/
             dist/
 
-  annual-integration:
-    runs-on: ubuntu-22.04
-    strategy:
-      fail-fast: false
-      matrix:
-        python: ['3.11', '3.13']
-        dependencies: ['pinned', 'dev']
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
-        with:
-          repository: SB-Chalmers/epsm_data
-          ssh-key: ${{ secrets.EPSM_DATA_DEPLOY_KEY }}
-          persist-credentials: false
-          ref: ${{ matrix.dependencies == 'dev' && 'dev' || 'bc8449402b9e0dbe0ea85ff76c954cf36d209f86' }}
-          path: .ci/epsm_data
-      - uses: actions/checkout@v4
-        with:
-          repository: SB-Chalmers/epsm_core
-          ssh-key: ${{ secrets.EPSM_CORE_DEPLOY_KEY }}
-          persist-credentials: false
-          ref: ${{ matrix.dependencies == 'dev' && 'dev' || '961eab0d063c0dec43e3ad6ac5d2ca5b5474c29d' }}
-          path: .ci/epsm_core
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python }}
-      - name: Install coordinated inputs and test tools
-        run: python -m pip install build .ci/epsm_data '.ci/epsm_core[dev,geometry]' '.[platform,dev,gis]'
-      - name: Install EnergyPlus 24.2
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release download v24.2.0 --repo NatLabRockies/EnergyPlus --pattern 'EnergyPlus-24.2.0-e7ecb2d53b-Linux-Ubuntu22.04-x86_64.tar.gz' --dir "$RUNNER_TEMP"
-          mkdir -p "$RUNNER_TEMP/energyplus"
-          tar -xzf "$RUNNER_TEMP/EnergyPlus-24.2.0-e7ecb2d53b-Linux-Ubuntu22.04-x86_64.tar.gz" -C "$RUNNER_TEMP/energyplus" --strip-components=1
-          echo "ENERGYPLUS_EXE=$RUNNER_TEMP/energyplus/energyplus" >> "$GITHUB_ENV"
-      - name: Record revisions and execute required real-engine cases
-        env:
-          EPSM_REQUIRE_ENERGYPLUS: '1'
-        run: |
-          git rev-parse HEAD
-          git -C .ci/epsm_core rev-parse HEAD
-          git -C .ci/epsm_data rev-parse HEAD
-          "$ENERGYPLUS_EXE" --version
-          mkdir -p outputs
-          python -m pytest tests/unit/test_annual_engine_integration.py tests/unit/test_core_engine_comparison.py tests/unit/test_radiation_engine_comparison.py tests/unit/test_geometry_sensitivity_engine_integration.py --junitxml=integration-results.xml --basetemp=outputs/integration -q
-          python - <<'PY'
-          import xml.etree.ElementTree as ET
-          root = ET.parse('integration-results.xml').getroot()
-          assert not root.findall('.//skipped'), 'Required real-engine integration cases must execute'
-          PY
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: annual-integration-${{ matrix.python }}-${{ matrix.dependencies }}
-          path: |
-            integration-results.xml
-            outputs/integration/
-
   standalone:
+    if: ${{ !inputs.development_dependencies }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+          cache: pip
       - name: Install base wheel without Core or Data
         run: |
           python -m pip install build pytest
@@ -177,32 +154,3 @@ jobs:
         run: |
           python examples/00_standalone.py
           python -m pytest tests/unit/test_iso13790.py tests/unit/test_iso13790_physics.py tests/unit/test_iso13790_compliance.py tests/unit/test_heat_pump.py tests/unit/test_heating.py tests/unit/test_public_readiness.py tests/unit/test_standalone_readiness.py -q
-
-  heatpump:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python: ['3.11', '3.13']
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python }}
-      - name: Install mandatory hplib extra
-        run: |
-          python -m pip install '.[heatpump,dev]'
-          python -m pip check
-          python -c "from epsm_rc.heating import HPLIB_AVAILABLE; assert HPLIB_AVAILABLE, 'Required hplib is unavailable'"
-      - name: Execute real hplib models with no skips
-        run: |
-          python -m pytest tests/unit/test_heating.py tests/unit/test_heat_pump.py tests/unit/test_public_readiness.py --junitxml=heatpump-results.xml -q
-          python - <<'PY'
-          import xml.etree.ElementTree as ET
-          report = ET.parse('heatpump-results.xml').getroot()
-          assert not report.findall('.//skipped'), 'Required heat-pump checks must execute'
-          PY
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: heatpump-${{ matrix.python }}
-          path: heatpump-results.xml

@@ -9,7 +9,7 @@ illustrative construction and operation provenance. Goteborg weather is the
 existing packaged EPW with its original source terms; controlled weather is
 generated explicitly by this runner.
 
-Build and install released Core/RC 0.4.0 wheels in a reference environment and
+Build and install released Core 0.7.0 and RC 0.7.1 wheels in a reference environment and
 candidate wheels in another. Both need the same pinned Data 0.6.0 and numerical
 dependencies. Run this checkout's script with the candidate interpreter:
 
