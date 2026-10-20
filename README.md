@@ -344,7 +344,10 @@ RC_BuildingSimulator/ETH. Retain their original notices. EPSM-owned additions us
 MIT; see LICENSE. Local ISO reference extracts are excluded from publication.
 Bundled weather inputs retain their source headers.
 
-## Migrating to 0.3.0
+## Historical migration to 0.3.0
+
+This section describes the original 0.3.0 API transition. For current package
+versions, use the [EPSM supported combination](https://github.com/SB-Chalmers/epsm/blob/main/compatibility.json).
 
 Select explicit `RCSettings.from_policy(...)`, weather and physical authoring
 inputs. Courtyard, concave and multipart geometry requires an explicit
