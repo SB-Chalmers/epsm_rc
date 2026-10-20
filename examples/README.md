@@ -1,7 +1,7 @@
 # RC examples
 
-The recommended physical Building route uses RC 0.8.0, Core 0.7.1 and Data 0.6.x
-on Python 3.11 or newer. Install `epsm_rc[platform,gis,notebook]` in the notebook
+Use the [EPSM supported package combination](https://github.com/SB-Chalmers/epsm/blob/main/compatibility.json)
+for the physical Building route on Python 3.11 or newer. Install `epsm_rc[platform,gis,notebook]` in the notebook
 kernel. Install EnergyPlus 24.2 for engine comparison. Environment installation
 belongs outside notebook cells. Base numerical examples also support Python 3.10.
 
