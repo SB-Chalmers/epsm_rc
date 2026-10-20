@@ -5,7 +5,7 @@
 # Author: Sanjay Somanath
 # Research attribution: Numerical solver credits remain in iso13790.py.
 # Date created: 2026-10-14
-# Date modified: 2026-10-14
+# Date modified: 2026-10-20
 # Changelog:
 #   2026-10-14 - Replace independent IDF emitters with shared compilation and RC input identity.
 """Compile Core inputs and calculate RC demand from one captured physical Building.
@@ -108,9 +108,13 @@ def prepare_engine_comparison(
     try:
         from epsm_core import Building, EnergyPlusCompiler, Weather
     except ImportError as error:
-        raise ImportError("Install epsm_rc[platform] with coordinated Core/Data versions") from error
+        raise ImportError(
+            "Install epsm_rc[platform] with coordinated Core/Data versions"
+        ) from error
     if not isinstance(building, Building):
-        raise TypeError("Author an explicit Core Building; legacy ParametricBuilding conversion is retired")
+        raise TypeError(
+            "Author an explicit Core Building; legacy ParametricBuilding conversion is retired"
+        )
     snapshot = building.snapshot()
     captured = snapshot.to_building()
     weather = weather if isinstance(weather, Weather) else Weather.from_epw(weather)
@@ -124,27 +128,38 @@ def prepare_engine_comparison(
     directory = Path(directory)
     report = compiler.write(spec, directory / "energyplus")
     result = simulate_building(
-        captured, weather=weather, settings=settings, directory=directory / "rc",
+        captured,
+        weather=weather,
+        settings=settings,
+        directory=directory / "rc",
     )
     if report.spec_sha256 != result.diagnostics["physical_inputs_sha256"]:
-        raise ValueError("EnergyPlus compilation and RC calculation consumed different physical inputs")
+        raise ValueError(
+            "EnergyPlus compilation and RC calculation consumed different physical inputs"
+        )
     if captured.snapshot().sha256 != snapshot.sha256:
         raise ValueError("An engine changed the captured physical Building during comparison")
     result.diagnostics["building_snapshot_sha256"] = snapshot.sha256
     model_path = directory / "energyplus" / "model.epJSON"
     manifest_path = directory / "comparison.json"
-    manifest_path.write_text(json.dumps({
-        "building_snapshot_sha256": snapshot.sha256,
-        "physical_inputs_sha256": report.spec_sha256,
-        "weather_sha256": weather.sha256,
-        "energyplus_status": "compiled_only",
-        "energyplus_run_id": report.run_id,
-        "energyplus_model_path": str(model_path),
-        "rc_status": "simulated",
-        "rc_run_id": result.run_id,
-        "rc_effective_configuration": result.diagnostics["effective_configuration"],
-        "rc_airflow_capabilities": result.diagnostics["airflow_capabilities"],
-        "rc_ground_reduction": result.diagnostics["ground_reduction"],
-        "rc_self_shadowing": result.diagnostics["self_shadowing"],
-    }, indent=2, allow_nan=False))
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "building_snapshot_sha256": snapshot.sha256,
+                "physical_inputs_sha256": report.spec_sha256,
+                "weather_sha256": weather.sha256,
+                "energyplus_status": "compiled_only",
+                "energyplus_run_id": report.run_id,
+                "energyplus_model_path": str(model_path),
+                "rc_status": "simulated",
+                "rc_run_id": result.run_id,
+                "rc_effective_configuration": result.diagnostics["effective_configuration"],
+                "rc_airflow_capabilities": result.diagnostics["airflow_capabilities"],
+                "rc_ground_reduction": result.diagnostics["ground_reduction"],
+                "rc_self_shadowing": result.diagnostics["self_shadowing"],
+            },
+            indent=2,
+            allow_nan=False,
+        )
+    )
     return EngineComparison(snapshot.sha256, report, result, str(model_path), str(manifest_path))

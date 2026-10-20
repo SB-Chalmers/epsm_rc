@@ -1,3 +1,7 @@
+# Archived from scripts/bestest_case600_validation.py.
+# Source revision: 79c04461f1f2675d310eb8629d662db9ac8422c0 (RC 0.7.1).
+# Historical experiment only; not an executable current release check or certification.
+# Its original weather prerequisite and source-relative paths are preserved below.
 #!/usr/bin/env python3
 """
 ASHRAE Standard 140-2020 BESTEST Case 600 Validation

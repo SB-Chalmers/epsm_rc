@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 EPSM Development contributors
+# License: See LICENSE at the project root.
+# Date modified: 2026-10-20
 """
 =============================================================================
 Demo: Simulate a Neighbourhood of Buildings from OpenStreetMap
@@ -22,20 +26,18 @@ Requirements (install with `pip install epsm_rc[platform,gis]`):
 Reference: ISO 13790:2008 "Energy performance of buildings"
 """
 
-import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.patches import Polygon as MplPolygon
-from matplotlib.collections import PatchCollection
 from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
 
 from epsm_rc import (
     Building5R1C,
     BuildingClass,
-    FootprintImporter,
     BuildingGeometry,
+    FootprintImporter,
 )
 from epsm_rc.weather import load_epw
-
 
 # =============================================================================
 # 1. FETCH BUILDINGS FROM OPENSTREETMAP
@@ -47,12 +49,12 @@ from epsm_rc.weather import load_epw
 BUILDINGS = [
     {"way_id": 90851303, "era": "1960_1975", "num_floors": None, "label": "A"},
     {"way_id": 90851304, "era": "1976_1990", "num_floors": 3, "label": "B"},
-    {"way_id": 90851305, "era": "pre_1960",  "num_floors": None, "label": "C"},
+    {"way_id": 90851305, "era": "pre_1960", "num_floors": None, "label": "C"},
 ]
 
 # U-values by Swedish construction era [W/(m²K)]
 U_VALUES_BY_ERA = {
-    "pre_1960":  {"u_walls": 0.60, "u_roof": 0.40, "u_floor": 0.40, "u_windows": 2.8},
+    "pre_1960": {"u_walls": 0.60, "u_roof": 0.40, "u_floor": 0.40, "u_windows": 2.8},
     "1960_1975": {"u_walls": 0.40, "u_roof": 0.25, "u_floor": 0.30, "u_windows": 2.5},
     "1976_1990": {"u_walls": 0.25, "u_roof": 0.15, "u_floor": 0.25, "u_windows": 1.8},
     "1991_2010": {"u_walls": 0.20, "u_roof": 0.12, "u_floor": 0.20, "u_windows": 1.4},
@@ -61,8 +63,8 @@ U_VALUES_BY_ERA = {
 
 # Ventilation parameters by era — older buildings lack mechanical heat recovery
 VENTILATION_BY_ERA = {
-    "pre_1960":  {"ach_inf": 0.40, "ach_vent": 0.3, "hr": 0.0},   # natural ventilation, leaky
-    "1960_1975": {"ach_inf": 0.30, "ach_vent": 0.5, "hr": 0.0},   # exhaust-only (F-system)
+    "pre_1960": {"ach_inf": 0.40, "ach_vent": 0.3, "hr": 0.0},  # natural ventilation, leaky
+    "1960_1975": {"ach_inf": 0.30, "ach_vent": 0.5, "hr": 0.0},  # exhaust-only (F-system)
     "1976_1990": {"ach_inf": 0.20, "ach_vent": 0.5, "hr": 0.50},  # early FTX, moderate recovery
     "1991_2010": {"ach_inf": 0.15, "ach_vent": 0.5, "hr": 0.70},  # good FTX
     "post_2010": {"ach_inf": 0.10, "ach_vent": 0.5, "hr": 0.85},  # modern FTX, tight envelope
@@ -98,17 +100,21 @@ def fetch_buildings(building_defs: list[dict]) -> list[dict]:
         geom.set_wwr_cardinal({"N": 0.12, "S": 0.25, "E": 0.15, "W": 0.15})
 
         params = geom.get_5r1c_params()
-        print(f"    → {params['floor_area_m2']:.0f} m², "
-              f"{params['num_floors']} floors, "
-              f"{len(geom.wall_segments)} wall segments")
+        print(
+            f"    → {params['floor_area_m2']:.0f} m², "
+            f"{params['num_floors']} floors, "
+            f"{len(geom.wall_segments)} wall segments"
+        )
 
-        results.append({
-            "geometry": geom,
-            "era": bdef["era"],
-            "label": bdef["label"],
-            "way_id": way_id,
-            "params_5r1c": params,
-        })
+        results.append(
+            {
+                "geometry": geom,
+                "era": bdef["era"],
+                "label": bdef["label"],
+                "way_id": way_id,
+                "params_5r1c": params,
+            }
+        )
 
     return results
 
@@ -116,6 +122,7 @@ def fetch_buildings(building_defs: list[dict]) -> list[dict]:
 # =============================================================================
 # 2. CREATE THERMAL MODELS
 # =============================================================================
+
 
 def create_thermal_models(buildings: list[dict]) -> list[dict]:
     """Create a Building5R1C for each fetched building.
@@ -159,8 +166,10 @@ def create_thermal_models(buildings: list[dict]) -> list[dict]:
             internal_gains_w_per_m2=4.0,
         )
         b["model"] = model
-        print(f"  [{b['label']}] H_tr = {model.heat_loss_coefficient:.1f} W/K, "
-              f"τ = {model.time_constant_hours:.1f} h")
+        print(
+            f"  [{b['label']}] H_tr = {model.heat_loss_coefficient:.1f} W/K, "
+            f"τ = {model.time_constant_hours:.1f} h"
+        )
 
     return buildings
 
@@ -168,6 +177,7 @@ def create_thermal_models(buildings: list[dict]) -> list[dict]:
 # =============================================================================
 # 3. SIMULATE ALL BUILDINGS
 # =============================================================================
+
 
 def simulate_neighbourhood(
     buildings: list[dict],
@@ -217,8 +227,10 @@ def simulate_neighbourhood(
         b["kwh_m2"] = kwh_m2
         b["peak_kw"] = peak_kw
 
-        print(f"  [{b['label']}] {annual_kwh:,.0f} kWh/yr  "
-              f"({kwh_m2:.1f} kWh/m²)  peak {peak_kw:.1f} kW")
+        print(
+            f"  [{b['label']}] {annual_kwh:,.0f} kWh/yr  "
+            f"({kwh_m2:.1f} kWh/m²)  peak {peak_kw:.1f} kW"
+        )
 
     return buildings
 
@@ -226,6 +238,7 @@ def simulate_neighbourhood(
 # =============================================================================
 # 4. VISUALISATION
 # =============================================================================
+
 
 def plot_footprints(buildings: list[dict], save_path: Path | None = None):
     """Plot all building footprints side-by-side with key metrics."""
@@ -277,8 +290,20 @@ def plot_footprints(buildings: list[dict], save_path: Path | None = None):
 def plot_monthly_comparison(buildings: list[dict], save_path: Path | None = None):
     """Bar chart comparing monthly heating demand across all buildings."""
     month_days = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-    month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    month_names = [
+        "Jan",
+        "Feb",
+        "Mar",
+        "Apr",
+        "May",
+        "Jun",
+        "Jul",
+        "Aug",
+        "Sep",
+        "Oct",
+        "Nov",
+        "Dec",
+    ]
     n_buildings = len(buildings)
 
     monthly = np.zeros((n_buildings, 12))
@@ -286,7 +311,7 @@ def plot_monthly_comparison(buildings: list[dict], save_path: Path | None = None
         hour = 0
         for m, days in enumerate(month_days):
             h = days * 24
-            monthly[i, m] = b["results"]["heating_demand"][hour:hour + h].sum() / 1000
+            monthly[i, m] = b["results"]["heating_demand"][hour : hour + h].sum() / 1000
             hour += h
 
     x = np.arange(12)
@@ -333,8 +358,13 @@ def plot_annual_summary(buildings: list[dict], save_path: Path | None = None):
     ax.legend(loc="lower right")
 
     for bar, v in zip(bars, values):
-        ax.text(bar.get_width() + 1, bar.get_y() + bar.get_height() / 2,
-                f"{v:.1f}", va="center", fontsize=10)
+        ax.text(
+            bar.get_width() + 1,
+            bar.get_y() + bar.get_height() / 2,
+            f"{v:.1f}",
+            va="center",
+            fontsize=10,
+        )
 
     plt.tight_layout()
     if save_path:
@@ -348,26 +378,33 @@ def print_neighbourhood_summary(buildings: list[dict]):
     total_area = sum(b["params_5r1c"]["floor_area_m2"] for b in buildings)
     total_kwh = sum(b["annual_kwh"] for b in buildings)
 
-    print(f"\n{'='*72}")
+    print(f"\n{'=' * 72}")
     print("NEIGHBOURHOOD SUMMARY")
-    print(f"{'='*72}")
-    print(f"{'Bldg':>4}  {'OSM Way':>10}  {'Era':>10}  {'Area m²':>8}  "
-          f"{'kWh/yr':>10}  {'kWh/m²':>8}  {'Peak kW':>8}")
-    print(f"{'-'*72}")
+    print(f"{'=' * 72}")
+    print(
+        f"{'Bldg':>4}  {'OSM Way':>10}  {'Era':>10}  {'Area m²':>8}  "
+        f"{'kWh/yr':>10}  {'kWh/m²':>8}  {'Peak kW':>8}"
+    )
+    print(f"{'-' * 72}")
     for b in buildings:
-        print(f"{b['label']:>4}  {b['way_id']:>10}  {b['era']:>10}  "
-              f"{b['params_5r1c']['floor_area_m2']:>8.0f}  "
-              f"{b['annual_kwh']:>10,.0f}  {b['kwh_m2']:>8.1f}  "
-              f"{b['peak_kw']:>8.1f}")
-    print(f"{'-'*72}")
-    print(f"{'Total':>4}  {'':>10}  {'':>10}  {total_area:>8.0f}  "
-          f"{total_kwh:>10,.0f}  {total_kwh/total_area:>8.1f}")
-    print(f"{'='*72}\n")
+        print(
+            f"{b['label']:>4}  {b['way_id']:>10}  {b['era']:>10}  "
+            f"{b['params_5r1c']['floor_area_m2']:>8.0f}  "
+            f"{b['annual_kwh']:>10,.0f}  {b['kwh_m2']:>8.1f}  "
+            f"{b['peak_kw']:>8.1f}"
+        )
+    print(f"{'-' * 72}")
+    print(
+        f"{'Total':>4}  {'':>10}  {'':>10}  {total_area:>8.0f}  "
+        f"{total_kwh:>10,.0f}  {total_kwh / total_area:>8.1f}"
+    )
+    print(f"{'=' * 72}\n")
 
 
 # =============================================================================
 # MAIN
 # =============================================================================
+
 
 def main():
     print("""
@@ -391,8 +428,7 @@ def main():
     print("\n[3/4] Loading weather & running annual simulations ...")
     epw = load_epw(preset="goteborg")  # explicitly selected illustrative TMY
     t_outdoor = epw.temp_c
-    print(f"  Weather: {epw.location}, {len(t_outdoor)} hours, "
-          f"mean {t_outdoor.mean():.1f} °C")
+    print(f"  Weather: {epw.location}, {len(t_outdoor)} hours, mean {t_outdoor.mean():.1f} °C")
     buildings = simulate_neighbourhood(buildings, t_outdoor)
 
     # --- 4. Visualise and summarise ---

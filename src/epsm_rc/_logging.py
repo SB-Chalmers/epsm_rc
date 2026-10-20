@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import inspect
 import logging
-from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import wraps
 from pathlib import Path
@@ -62,7 +61,7 @@ def operation(event, *, level=logging.INFO, traceback=False):
 
     ``log_context`` is an optional keyword-only mapping of scalar identifiers.
     Identifiers never enter physical models or scientific calculation options.
-    Generator context is restored between yields so consumers remain isolated.
+    RC operations are synchronous; callers retain their surrounding context.
     """
 
     def decorate(function):
@@ -91,33 +90,11 @@ def operation(event, *, level=logging.INFO, traceback=False):
                 identifier = getattr(value, "identifier", None)
                 if isinstance(identifier, str):
                     context.setdefault("building_id", identifier)
-            if event == "study.protocol.save" and "self" in bound.arguments:
-                context.setdefault("study_id", bound.arguments["self"].id)
             selected = {}
-            for key in (
-                "category",
-                "construction_year",
-                "archetype_id",
-                "state",
-                "renovation_state",
-                "year",
-                "station_id",
-                "batch_size",
-                "workers",
-            ):
-                value = bound.arguments.get(key)
-                if isinstance(value, (str, int, bool)):
-                    selected[key] = value
             for key in ("path", "directory", "output"):
                 value = bound.arguments.get(key)
                 if isinstance(value, (str, Path)):
                     selected[key] = str(value)
-            config = bound.arguments.get("config")
-            if config is not None and event == "weather.compile":
-                for key in ("year", "station_id", "weather_policy"):
-                    value = getattr(config, key, None)
-                    if isinstance(value, (str, int, bool)):
-                        selected[key] = value
             return context, selected
 
         def emit(context, suffix, started, *, selected=None, error=None):
@@ -147,7 +124,7 @@ def operation(event, *, level=logging.INFO, traceback=False):
             details = {}
             if isinstance(result, Path):
                 details["path"] = str(result)
-            for name in ("run_id", "dataset_id", "source_version", "rows"):
+            for name in ("run_id",):
                 value = vars(result).get(name) if hasattr(result, "__dict__") else None
                 if isinstance(value, (str, int)):
                     details[name] = value
@@ -157,13 +134,6 @@ def operation(event, *, level=logging.INFO, traceback=False):
                     details["hours"] = len(axis)
             if isinstance(result, (list, tuple)):
                 details["item_count"] = len(result)
-            if isinstance(result, tuple) and result and isinstance(result[0], dict):
-                for name, label in (
-                    ("Zone", "zone_count"),
-                    ("BuildingSurface:Detailed", "surface_count"),
-                ):
-                    if name in result[0]:
-                        details[label] = len(result[0][name])
             return details
 
         @wraps(function)
@@ -188,34 +158,7 @@ def operation(event, *, level=logging.INFO, traceback=False):
             finally:
                 _context.reset(token)
 
-        @wraps(function)
-        def generated(*args, log_context=None, **kwargs):
-            """Advance a lazy operation and restore context before yielding each item."""
-            context, selected = begin(args, kwargs, log_context)
-            started = monotonic()
-            emit(context, "started", None, selected=selected)
-            iterator = function(*args, **kwargs)
-            try:
-                while True:
-                    token = _context.set(context)
-                    try:
-                        item = next(iterator)
-                    except StopIteration:
-                        emit(context, "completed", started, selected=selected)
-                        return
-                    finally:
-                        _context.reset(token)
-                    yield item
-            except Exception as error:
-                emit(context, "failed", started, selected=selected, error=error)
-                raise
-            except BaseException:
-                emit(context, "cancelled", started, selected=selected)
-                raise
-            finally:
-                iterator.close()
-
-        result = generated if inspect.isgeneratorfunction(function) else wrapped
+        result = wrapped
         parameters = list(signature.parameters.values())
         index = next(
             (i for i, p in enumerate(parameters) if p.kind == p.VAR_KEYWORD), len(parameters)
@@ -227,25 +170,3 @@ def operation(event, *, level=logging.INFO, traceback=False):
         return result
 
     return decorate
-
-
-@contextmanager
-def configure_cli(level, namespace):
-    """Temporarily configure a CLI entrypoint, restoring an embedding host."""
-    threshold = logging.CRITICAL + 1 if level == "OFF" else getattr(logging, level)
-    logger = logging.getLogger(namespace)
-    original = logger.handlers[:], logger.level, logger.propagate
-    if any(not isinstance(handler, logging.NullHandler) for handler in logger.handlers):
-        raise ValueError(f"Unmanaged log handler on {namespace}")
-    handler = logging.StreamHandler() if level != "OFF" else logging.NullHandler()
-    handler.setLevel(threshold)
-    handler.setFormatter(logging.Formatter("%(levelname)-7s %(name)s %(message)s"))
-    logger.addHandler(handler)
-    logger.setLevel(threshold)
-    logger.propagate = False
-    try:
-        yield
-    finally:
-        logger.removeHandler(handler)
-        handler.close()
-        logger.handlers, logger.level, logger.propagate = original

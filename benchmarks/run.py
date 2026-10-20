@@ -72,7 +72,13 @@ def main(argv=None):
     parser.add_argument("--reference-directory", type=Path)
     parser.add_argument("--repeats", type=int, default=9)
     parser.add_argument("--warm", action="store_true")
-    parser.add_argument("--batch", action="store_true", help="Reuse source hashes within --warm")
+    parser.add_argument(
+        "--batch", action="store_true", help="Use the compatibility batch context within --warm"
+    )
+    parser.add_argument(
+        "--no-output", action="store_true", help="Measure in-memory results without NPZ writes"
+    )
+    parser.add_argument("--policy", choices=(1, 2), type=int, default=1)
     args = parser.parse_args(argv)
     if args.repeats < 2:
         parser.error("--repeats must be at least 2 (first call is reported separately)")
@@ -101,24 +107,29 @@ def run(args, cache):
                 str(reference),
                 "--repeats",
                 str(args.repeats),
+                "--policy",
+                str(args.policy),
+                *(["--no-output"] if args.no_output else []),
             ],
             check=True,
         )
     synthetic = controlled_weather(args.directory / "controlled.epw")
     settings = RCSettings.from_policy(
-        "epsm_rc_5r1c_v1",
+        f"epsm_rc_5r1c_v{args.policy}",
         airflow_policy="sensible_only_unlimited_supply",
         self_shadowing_policy="ignore",
     )
     report = {
         "python": sys.version,
         "warm_preparation": args.warm,
-        "batch_source_reuse": args.batch,
+        "batch_context": args.batch,
+        "policy": args.policy,
+        "write_hourly_output": not args.no_output,
         "versions": {
             name: metadata.version(name)
             for name in ("epsm_core", "epsm_rc", "epsm_data", "numpy", "pandas", "pvlib")
         },
-        "method": "First annual adapter call separate; median of remaining calls, includes preparation and NPZ output, excludes imports and Building reconstruction.",
+        "method": "First annual adapter call separate; median of remaining calls, includes preparation and optionally NPZ output, excludes imports and Building reconstruction.",
         "cases": {},
     }
     for path in sorted((Path(__file__).parent / "fixtures").glob("*.json")):
@@ -139,7 +150,7 @@ def run(args, cache):
                 building,
                 weather=weather,
                 settings=settings,
-                directory=args.directory / path.stem / str(repeat),
+                directory=None if args.no_output else args.directory / path.stem / str(repeat),
                 **kwargs,
             )
             samples.append(time.perf_counter() - started)

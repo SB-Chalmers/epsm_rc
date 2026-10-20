@@ -1,3 +1,40 @@
+# Release 0.8.0 — 20 October 2026
+
+RC prepares one captured physical Building per annual simulation, reusing its
+validated Core specification, geometry, weather and schedule values across
+conditioned domains. Each domain retains independent thermal state. Preparation,
+numerical execution, result accounting and optional output writing have separate
+responsibilities. Core 0.7.1 and Data 0.6.0 are the coordinated dependency baseline.
+
+Correctness fixes honor the sky-radiation switch, supplied DNI/DHI, elapsed-hour
+occupancy setbacks without monthly ground configuration, parametric cooling
+setpoints and rotated rectangular footprints. Standalone and TABULA calculations
+refresh derived coefficients after edits. The first standalone EPW run now
+prepares conductance for its selected monthly ground boundary, matching repeated
+runs and explicit identical ground inputs. Invalid physical inputs and incomplete
+or nonfinite series fail before advancing thermal state. Cooling capacity retains
+its supported signed or magnitude forms; infinite capacities remain supported.
+Explicit Hplib failures no longer substitute a generic model or half-capacity
+estimate, and unknown factory keywords are rejected.
+
+Captured weather bytes are verified, validated and parsed together. Cached
+weather wrappers and result arrays are isolated between callers. Source and
+numerical dependency identity is captured lazily once per process; restart Python
+after edits or dependency changes. `PreparationCache.batch()` remains a compatible
+context manager, without monitoring sources or changing cache lifetime.
+
+Documentation now follows NumPy conventions with executable examples, generated
+API reference and migration guidance. Retired public helpers remain through at
+least 0.9.0. Historical validation reports are explicitly archived; synthetic
+BESTEST-inspired checks establish plausibility rather than certification. This
+release does not establish measured-building accuracy or general RC/EnergyPlus
+agreement. Scientific equations, method versions and third-party notices remain.
+
+Python 3.10 remains supported for standalone numerics; platform integration needs
+Python 3.11+. Required EnergyPlus 24.2, hplib, installed-wheel, documentation,
+notebook and source-style checks accompany the release. See `docs/migration.rst`
+for intentional behavior changes and deprecations.
+
 # Release 0.7.1 — 19 October 2026
 
 Deterministic runs skip reference heating/cooling trials when the relevant system

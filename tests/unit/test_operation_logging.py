@@ -54,13 +54,21 @@ def test_rejected_operation_keeps_context_and_reports_failure(caplog):
 
 def test_completed_calculation_identifies_run(caplog, reference_building):
     from importlib.resources import files
+
     from epsm_core import Weather
+
     from epsm_rc import RCSettings
 
     weather = Weather.from_epw(files("epsm_rc") / "data/epw/goteborg.epw")
-    settings = RCSettings(airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier")
+    settings = RCSettings(
+        airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier"
+    )
     with caplog.at_level(logging.INFO):
         result = simulate_building(reference_building, weather=weather, settings=settings)
-    completed = next(record for record in caplog.records if getattr(record, "epsm_event", "") == "energy.rc.completed")
+    completed = next(
+        record
+        for record in caplog.records
+        if getattr(record, "epsm_event", "") == "energy.rc.completed"
+    )
     assert completed.epsm_context["run_id"] == result.run_id
     assert completed.epsm_details["hours"] == len(result.time_axis)

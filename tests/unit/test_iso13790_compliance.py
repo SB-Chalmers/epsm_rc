@@ -12,8 +12,8 @@ Reference:
     use for space heating and cooling"
 """
 
-import pytest
 import numpy as np
+import pytest
 
 from epsm_rc.iso13790 import (
     Building5R1C,
@@ -35,7 +35,7 @@ class TestSupplyAirTemperature:
         )
         b.t_air = 20.0
         t_out = -5.0
-        
+
         t_supply = b.calc_supply_air_temperature(t_out)
         assert t_supply == t_out
 
@@ -47,7 +47,7 @@ class TestSupplyAirTemperature:
         )
         b.t_air = 21.0
         t_out = -10.0
-        
+
         t_supply = b.calc_supply_air_temperature(t_out)
         assert t_supply == t_out
         assert b._h_ve == pytest.approx(1200 * b._building_vol * b.ach_infiltration / 3600)
@@ -60,7 +60,7 @@ class TestSupplyAirTemperature:
         )
         b.t_air = 20.0
         t_out = 0.0
-        
+
         t_supply = b.calc_supply_air_temperature(t_out)
         assert t_supply == t_out
         expected_ach = b.ach_infiltration + b.ach_ventilation * (1 - 0.7)
@@ -75,7 +75,7 @@ class TestSupplyAirTemperature:
         b.t_air = 25.0
         b._windows_open = True  # Simulate windows open
         t_out = 18.0
-        
+
         t_supply = b.calc_supply_air_temperature(t_out)
         # Windows open → no HR → θ_sup = θ_e
         assert t_supply == t_out
@@ -88,7 +88,7 @@ class TestSupplyAirTemperature:
         )
         b.t_air = 21.0
         t_out = -20.0
-        
+
         t_supply = b.calc_supply_air_temperature(t_out)
         assert t_supply == t_out
         expected_ach = b.ach_infiltration + b.ach_ventilation * (1 - 0.85)
@@ -110,7 +110,7 @@ class TestIntermittentHeating:
             t_set_heating=21.0,
             t_set_cooling=26.0,
         )
-        
+
         t_heat, t_cool = b.get_active_setpoints(hour_of_year=0)
         assert t_heat == 21.0
         assert t_cool == 26.0
@@ -126,7 +126,7 @@ class TestIntermittentHeating:
             t_set_cooling_setback=28.0,
             occupancy_schedule=schedule,
         )
-        
+
         t_heat, t_cool = b.get_active_setpoints(hour_of_year=100)
         assert t_heat == 21.0
         assert t_cool == 26.0
@@ -142,7 +142,7 @@ class TestIntermittentHeating:
             t_set_cooling_setback=28.0,
             occupancy_schedule=schedule,
         )
-        
+
         t_heat, t_cool = b.get_active_setpoints(hour_of_year=100)
         assert t_heat == 16.0  # Setback heating
         assert t_cool == 28.0  # Setback cooling
@@ -158,7 +158,7 @@ class TestIntermittentHeating:
             t_set_cooling_setback=None,  # No cooling setback
             occupancy_schedule=schedule,
         )
-        
+
         t_heat, t_cool = b.get_active_setpoints(hour_of_year=100)
         assert t_heat == 16.0
         assert t_cool == 26.0  # Unchanged
@@ -172,11 +172,11 @@ class TestIntermittentHeating:
             t_set_heating_setback=16.0,
             occupancy_schedule=schedule,
         )
-        
+
         # Hour 0 = occupied
         t_heat, _ = b.get_active_setpoints(hour_of_year=0)
         assert t_heat == 21.0
-        
+
         # Hour 1 = unoccupied
         t_heat, _ = b.get_active_setpoints(hour_of_year=1)
         assert t_heat == 16.0
@@ -190,18 +190,18 @@ class TestIntermittentHeating:
                 h = hour % 24
                 if h >= 22 or h < 6:
                     schedule[day * 24 + h % 24] = False
-        
+
         b = Building5R1C(
             floor_area_m2=100,
             t_set_heating=21.0,
             t_set_heating_setback=17.0,
             occupancy_schedule=schedule,
         )
-        
+
         # Hour 3 of day 1 (index 3) - night, should be setback
         t_heat, _ = b.get_active_setpoints(hour_of_year=3)
         assert t_heat == 17.0
-        
+
         # Hour 12 of day 1 (index 12) - day, should be normal
         t_heat, _ = b.get_active_setpoints(hour_of_year=12)
         assert t_heat == 21.0
@@ -222,7 +222,7 @@ class TestDetailedShadingFactors:
             f_shading_overhang=1.0,
             f_shading_fins=1.0,
         )
-        
+
         f_total = b.calc_detailed_shading_factor()
         assert abs(f_total - 1.0) < 0.001
 
@@ -235,7 +235,7 @@ class TestDetailedShadingFactors:
             f_shading_overhang=1.0,
             f_shading_fins=1.0,
         )
-        
+
         f_total = b.calc_detailed_shading_factor()
         assert abs(f_total - 0.8) < 0.001
 
@@ -243,12 +243,12 @@ class TestDetailedShadingFactors:
         """Combined factor is product of all individual factors."""
         b = Building5R1C(
             floor_area_m2=100,
-            shading_factor=0.9,       # External blind/awning
-            f_shading_horizon=0.95,   # Small horizon obstruction
+            shading_factor=0.9,  # External blind/awning
+            f_shading_horizon=0.95,  # Small horizon obstruction
             f_shading_overhang=0.85,  # Balcony overhang
-            f_shading_fins=0.90,      # Side wall/fin
+            f_shading_fins=0.90,  # Side wall/fin
         )
-        
+
         f_total = b.calc_detailed_shading_factor()
         expected = 0.9 * 0.95 * 0.85 * 0.90
         assert abs(f_total - expected) < 0.001
@@ -258,11 +258,11 @@ class TestDetailedShadingFactors:
         b = Building5R1C(
             floor_area_m2=100,
             shading_factor=1.0,
-            f_shading_horizon=0.6,   # Tall surrounding buildings
+            f_shading_horizon=0.6,  # Tall surrounding buildings
             f_shading_overhang=0.7,  # Deep balconies
-            f_shading_fins=0.8,      # Adjacent walls
+            f_shading_fins=0.8,  # Adjacent walls
         )
-        
+
         f_total = b.calc_detailed_shading_factor()
         expected = 0.6 * 0.7 * 0.8
         assert abs(f_total - expected) < 0.001
@@ -280,7 +280,7 @@ class TestStrictISOHeatFlows:
         b = Building5R1C(floor_area_m2=100)
         internal_gains = 1000.0  # W
         solar_gains = 500.0  # W
-        
+
         phi_ia, phi_st, phi_m = b.calc_heat_flows(
             t_out=0.0,
             internal_gains=internal_gains,
@@ -288,7 +288,7 @@ class TestStrictISOHeatFlows:
             strict_iso=True,
             include_sky_radiation=False,
         )
-        
+
         # Φ_ia = 0.5 × 1000 = 500 W (before energy demand)
         assert abs(phi_ia - 500.0) < 0.1
 
@@ -300,7 +300,7 @@ class TestStrictISOHeatFlows:
         )
         internal_gains = 1000.0
         solar_gains = 500.0
-        
+
         phi_ia, phi_st, phi_m = b.calc_heat_flows(
             t_out=0.0,
             internal_gains=internal_gains,
@@ -308,7 +308,7 @@ class TestStrictISOHeatFlows:
             strict_iso=True,
             include_sky_radiation=False,
         )
-        
+
         # Expected: (A_m/A_t) × 0.5 × (1000 + 500)
         ratio_mass = b._mass_area / b._a_tot
         expected_phi_m = ratio_mass * 0.5 * (internal_gains + solar_gains)
@@ -322,7 +322,7 @@ class TestStrictISOHeatFlows:
         )
         internal_gains = 1000.0
         solar_gains = 500.0
-        
+
         phi_ia, phi_st, phi_m = b.calc_heat_flows(
             t_out=0.0,
             internal_gains=internal_gains,
@@ -330,12 +330,12 @@ class TestStrictISOHeatFlows:
             strict_iso=True,
             include_sky_radiation=False,
         )
-        
+
         # Calculate expected ratio_surface
         ratio_mass = b._mass_area / b._a_tot
         ratio_window = b._h_tr_w / (9.1 * b._a_tot)
         ratio_surface = max(0.0, 1.0 - ratio_mass - ratio_window)
-        
+
         expected_phi_st = ratio_surface * 0.5 * (internal_gains + solar_gains)
         assert abs(phi_st - expected_phi_st) < 0.1
 
@@ -344,7 +344,7 @@ class TestStrictISOHeatFlows:
         b = Building5R1C(floor_area_m2=100)
         internal_gains = 800.0
         solar_gains = 400.0
-        
+
         phi_ia, phi_st, phi_m = b.calc_heat_flows(
             t_out=0.0,
             internal_gains=internal_gains,
@@ -352,7 +352,7 @@ class TestStrictISOHeatFlows:
             strict_iso=True,
             include_sky_radiation=False,
         )
-        
+
         # In strict ISO mode, sum should be close to total gains
         # Φ_ia + Φ_st + Φ_m = 0.5×Φ_int + 0.5×(Φ_int + Φ_sol) = Φ_int + 0.5×Φ_sol
         # Wait, let me recalculate:
@@ -379,7 +379,7 @@ class TestFlexibleHeatFlows:
         )
         internal_gains = 1000.0
         solar_gains = 0.0
-        
+
         phi_ia, phi_st, phi_m = b.calc_heat_flows(
             t_out=0.0,
             internal_gains=internal_gains,
@@ -387,7 +387,7 @@ class TestFlexibleHeatFlows:
             strict_iso=False,  # Default
             include_sky_radiation=False,
         )
-        
+
         # Φ_ia = convective_fraction × Φ_int = 0.67 × 1000 = 670
         assert abs(phi_ia - 670.0) < 0.1
 
@@ -399,7 +399,7 @@ class TestFlexibleHeatFlows:
         )
         internal_gains = 1000.0
         solar_gains = 0.0
-        
+
         # Flexible mode
         phi_ia_flex, _, _ = b.calc_heat_flows(
             t_out=0.0,
@@ -408,7 +408,7 @@ class TestFlexibleHeatFlows:
             strict_iso=False,
             include_sky_radiation=False,
         )
-        
+
         # Strict mode
         phi_ia_strict, _, _ = b.calc_heat_flows(
             t_out=0.0,
@@ -417,7 +417,7 @@ class TestFlexibleHeatFlows:
             strict_iso=True,
             include_sky_radiation=False,
         )
-        
+
         # Should be equal for Φ_ia when convective_fraction matches
         assert abs(phi_ia_flex - phi_ia_strict) < 0.1
 
@@ -431,24 +431,24 @@ class TestCombinedConductances:
     def test_h_tr_1_parallel_combination(self):
         """Eq. C.6: H_tr,1 = 1/(1/H_ve + 1/H_tr,is)."""
         b = Building5R1C(floor_area_m2=100)
-        
+
         if b._h_ve > 0 and b._h_tr_is > 0:
-            expected = 1.0 / (1.0/b._h_ve + 1.0/b._h_tr_is)
+            expected = 1.0 / (1.0 / b._h_ve + 1.0 / b._h_tr_is)
             assert abs(b.h_tr_1 - expected) < 0.01
 
     def test_h_tr_2_sum(self):
         """Eq. C.7: H_tr,2 = H_tr,1 + H_tr,w."""
         b = Building5R1C(floor_area_m2=100)
-        
+
         expected = b.h_tr_1 + b._h_tr_w
         assert abs(b.h_tr_2 - expected) < 0.01
 
     def test_h_tr_3_parallel_combination(self):
         """Eq. C.8: H_tr,3 = 1/(1/H_tr,2 + 1/H_tr,ms)."""
         b = Building5R1C(floor_area_m2=100)
-        
+
         if b.h_tr_2 > 0 and b._h_tr_ms > 0:
-            expected = 1.0 / (1.0/b.h_tr_2 + 1.0/b._h_tr_ms)
+            expected = 1.0 / (1.0 / b.h_tr_2 + 1.0 / b._h_tr_ms)
             assert abs(b.h_tr_3 - expected) < 0.01
 
 
@@ -466,14 +466,14 @@ class TestSupplyAirIntegration:
         )
         b.t_air = 21.0
         t_out = -5.0
-        
+
         b.calc_phi_m_tot(
             t_out=t_out,
             phi_ia=500,
             phi_st=200,
             phi_m=100,
         )
-        
+
         # The reduced driving temperature remains outdoors; H_ve contains HR.
         expected_t_supply = t_out  # Mechanical conductance already contains recovery.
         assert abs(b._t_supply - expected_t_supply) < 0.1
@@ -486,20 +486,20 @@ class TestSupplyAirIntegration:
             heat_recovery_efficiency=0.8,
             ach_ventilation=0.5,
         )
-        
+
         # Building without HR
         b_no_hr = Building5R1C(
             floor_area_m2=100,
             heat_recovery_efficiency=0.0,
             ach_ventilation=0.5,
         )
-        
+
         # Cold outdoor conditions
         t_out = -10.0
-        
+
         q_hr = b_hr.calc_heating_demand(t_out=t_out, solar_gains=0)
         q_no_hr = b_no_hr.calc_heating_demand(t_out=t_out, solar_gains=0)
-        
+
         # HR should reduce heating demand
         assert q_hr < q_no_hr
 
@@ -514,25 +514,25 @@ class TestSetbackIntegration:
         """Lower setpoint during setback should reduce heating demand."""
         schedule_occupied = np.ones(8760, dtype=bool)
         schedule_unoccupied = np.zeros(8760, dtype=bool)
-        
+
         b_occupied = Building5R1C(
             floor_area_m2=100,
             t_set_heating=21.0,
             t_set_heating_setback=16.0,
             occupancy_schedule=schedule_occupied,
         )
-        
+
         b_setback = Building5R1C(
             floor_area_m2=100,
             t_set_heating=21.0,
             t_set_heating_setback=16.0,
             occupancy_schedule=schedule_unoccupied,
         )
-        
+
         t_out = 5.0  # Mild cold
-        
+
         q_occupied = b_occupied.calc_heating_demand(t_out=t_out, hour_of_year=100)
         q_setback = b_setback.calc_heating_demand(t_out=t_out, hour_of_year=100)
-        
+
         # Setback should require less heating
         assert q_setback < q_occupied

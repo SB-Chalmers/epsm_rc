@@ -11,7 +11,9 @@ from epsm_rc.gis_footprint import FootprintImporter
 class TestBuildingGeometry:
     def test_rectangular_geometry_metrics_and_balance(self):
         geometry = BuildingGeometry.from_polygon(
-            [(0, 0), (20, 0), (20, 10), (0, 10)], num_floors=2, floor_height=3.0,
+            [(0, 0), (20, 0), (20, 10), (0, 10)],
+            num_floors=2,
+            floor_height=3.0,
         )
         assert math.isclose(geometry.footprint_area, 200.0)
         assert math.isclose(geometry.floor_area, 400.0)
@@ -55,10 +57,12 @@ class TestFootprintImporter:
             return _Resp()
 
         import requests
-        monkeypatch.setattr(requests, 'get', _fake_get)
+
+        monkeypatch.setattr(requests, "get", _fake_get)
 
         geom = FootprintImporter.from_osm(
-            url="https://www.openstreetmap.org/way/90851303", floor_height=2.5,
+            url="https://www.openstreetmap.org/way/90851303",
+            floor_height=2.5,
         )
 
         assert geom.num_floors == 4  # inferred from building:levels tag
@@ -74,13 +78,15 @@ class TestFootprintImporter:
                     "properties": {"levels": 3},
                     "geometry": {
                         "type": "Polygon",
-                        "coordinates": [[
-                            [11.9710, 57.7080],
-                            [11.9713, 57.7080],
-                            [11.9713, 57.7082],
-                            [11.9710, 57.7082],
-                            [11.9710, 57.7080],
-                        ]],
+                        "coordinates": [
+                            [
+                                [11.9710, 57.7080],
+                                [11.9713, 57.7080],
+                                [11.9713, 57.7082],
+                                [11.9710, 57.7082],
+                                [11.9710, 57.7080],
+                            ]
+                        ],
                     },
                 }
             ],
