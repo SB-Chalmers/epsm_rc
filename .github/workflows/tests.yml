@@ -176,7 +176,7 @@ jobs:
       - name: Execute supported Core-free numerical APIs
         run: |
           python examples/00_standalone.py
-          python -m pytest tests/unit/test_iso13790.py tests/unit/test_iso13790_physics.py tests/unit/test_iso13790_compliance.py tests/unit/test_heat_pump.py tests/unit/test_heating.py tests/unit/test_public_readiness.py -q
+          python -m pytest tests/unit/test_iso13790.py tests/unit/test_iso13790_physics.py tests/unit/test_iso13790_compliance.py tests/unit/test_heat_pump.py tests/unit/test_heating.py tests/unit/test_public_readiness.py tests/unit/test_standalone_readiness.py -q
 
   heatpump:
     runs-on: ubuntu-latest
