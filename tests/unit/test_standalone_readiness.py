@@ -59,6 +59,27 @@ def test_supplied_radiation_channels_are_forwarded():
     np.testing.assert_array_equal(actual, expected)
 
 
+def test_epw_default_ground_matches_explicit_boundary_on_first_and_repeated_runs():
+    from importlib.resources import files
+
+    from epsm_rc.iso13790 import SWEDISH_DEFAULT_GROUND_TEMPS
+
+    weather = files("epsm_rc").joinpath("data/epw/goteborg.epw")
+    automatic = Building5R1C()
+    first = automatic.simulate_with_epw(weather)
+    repeated = automatic.simulate_with_epw(weather)
+    explicit = Building5R1C(
+        ground_temps_monthly=SWEDISH_DEFAULT_GROUND_TEMPS.copy()
+    ).simulate_with_epw(weather)
+
+    # The selected boundary values and all other physical inputs are identical;
+    # neither how the defaults were supplied nor a prior run may change demand.
+    for actual in (first, repeated):
+        for name in ("heating_demand", "t_air", "t_m", "ground_temps_monthly"):
+            np.testing.assert_array_equal(actual[name], explicit[name])
+        assert actual["heating_demand_kwh"] == explicit["heating_demand_kwh"]
+
+
 @pytest.mark.parametrize(
     "kwargs",
     [

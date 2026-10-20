@@ -29,6 +29,12 @@ design calculations now raise actionable errors instead of choosing a generic
 model or estimating half the reference capacity. Treat that behavior as a
 scientific failure correction, not numerical equivalence with the fallback.
 
+The first ``Building5R1C.simulate_with_epw`` call now rebuilds ground conductance
+when it selects the existing monthly defaults. Its demand matches repeated runs
+and runs with those same defaults supplied explicitly. Earlier first runs could
+combine monthly ground forcing with conductance prepared for the static boundary;
+affected standalone results intentionally change.
+
 Historical calculation reports and the BESTEST script are retained under
 ``docs/history`` with their source revision. Those records are not current release
 validation or certification. Bundled weather files remain distributed resources;

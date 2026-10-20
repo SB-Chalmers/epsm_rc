@@ -2783,6 +2783,10 @@ class Building5R1C:
             # Based on typical Swedish climate with damped seasonal variation
             # and ~2-3°C warming from building thermal pillow effect in winter
             self.ground_temps_monthly = SWEDISH_DEFAULT_GROUND_TEMPS.copy()
+            # Monthly forcing uses full ground conductance rather than the
+            # static multiplier. Rebuild after selecting that boundary; the
+            # nested simulate() call shares this operation's prepared inputs.
+            self._calculate_thermal_properties()
 
         # Create solar calculator from EPW
         self._solar_calc = solar_calc

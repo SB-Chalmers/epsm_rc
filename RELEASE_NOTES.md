@@ -9,7 +9,9 @@ responsibilities. Core 0.7.1 and Data 0.6.0 are the coordinated dependency basel
 Correctness fixes honor the sky-radiation switch, supplied DNI/DHI, elapsed-hour
 occupancy setbacks without monthly ground configuration, parametric cooling
 setpoints and rotated rectangular footprints. Standalone and TABULA calculations
-refresh derived coefficients after edits. Invalid physical inputs and incomplete
+refresh derived coefficients after edits. The first standalone EPW run now
+prepares conductance for its selected monthly ground boundary, matching repeated
+runs and explicit identical ground inputs. Invalid physical inputs and incomplete
 or nonfinite series fail before advancing thermal state. Cooling capacity retains
 its supported signed or magnitude forms; infinite capacities remain supported.
 Explicit Hplib failures no longer substitute a generic model or half-capacity
