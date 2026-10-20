@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from epsm_rc.coupled import solve_controls, step_domains
+from epsm_rc.coupled import CoupledStep, solve_controls, step_domains
 from epsm_rc.iso13790 import Building5R1C
 
 
@@ -71,3 +71,42 @@ def test_zero_conductance_matches_two_existing_independent_5r1c_steps():
         assert (old.t_air, old.t_s, old.t_m) == pytest.approx(
             (new.t_air, new.t_s, new.t_m), abs=1e-7
         )
+
+
+@pytest.mark.parametrize(
+    ("expected", "committed", "accepted"),
+    [
+        (0.0, 1e-7, True),
+        (0.0, -1e-7, True),
+        (0.0, np.nextafter(1e-7, np.inf), False),
+        (0.0, np.nextafter(-1e-7, -np.inf), False),
+        (1e6, 1e6 + 1e-4, False),
+        (20.0, np.nan, False),
+        (20.0, np.inf, False),
+        (20.0, -np.inf, False),
+    ],
+)
+def test_committed_temperature_uses_absolute_tolerance(monkeypatch, expected, committed, accepted):
+    models = [Building5R1C(), Building5R1C()]
+    solution = CoupledStep((0.0, 0.0), (expected, expected), (0.0, 0.0), 0.0)
+    monkeypatch.setattr("epsm_rc.coupled.solve_controls", lambda *args: solution)
+
+    # Isolate the final state check from the already-tested control equations.
+    for model in models:
+        temperatures = iter((10.0, 11.0, committed))
+
+        def step(*, energy_demand, model=model, temperatures=temperatures):
+            model.t_air = next(temperatures)
+
+        monkeypatch.setattr(model, "step", step)
+
+    def advance():
+        return step_domains(
+            models, [{}, {}], 0, heating_limit_w=(np.inf, np.inf), cooling_limit_w=(0, 0)
+        )
+
+    if accepted:
+        assert advance() is solution
+    else:
+        with pytest.raises(ValueError, match="committed-state temperature balance"):
+            advance()

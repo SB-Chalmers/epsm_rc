@@ -188,3 +188,43 @@ def test_batch_still_rejects_changed_weather(reference_building, tmp_path, synth
             simulate_building(
                 reference_building, weather=weather, settings=settings, preparation_cache=cache
             )
+
+
+@pytest.mark.parametrize("policy", ["epsm_rc_5r1c_v1", "epsm_rc_5r1c_v2"])
+@pytest.mark.parametrize("conditioned_basement", [False, True])
+def test_adapter_uses_prepared_calculations_without_public_dispatch(
+    reference_building, synthetic_weather, policy, conditioned_basement, monkeypatch
+):
+    """Prepared execution preserves results without re-entering the editable API."""
+    from epsm_core import Weather
+
+    from epsm_rc import RCSettings, simulate_building
+
+    if conditioned_basement:
+        reference_building.geometry = reference_building.geometry.updated(
+            basement_depth_m=2.5, basement_conditioned=True
+        )
+    weather = Weather.from_epw(synthetic_weather)
+    settings = RCSettings.from_policy(
+        policy,
+        airflow_policy="sensible_only_unlimited_supply",
+        ground_policy="conductance_multiplier",
+        self_shadowing_policy="ignore",
+    )
+    before = reference_building.snapshot().sha256
+    expected = simulate_building(reference_building, weather=weather, settings=settings)
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Prepared adapter execution re-entered a public calculation method")
+
+    monkeypatch.setattr(Building5R1C, "step", forbidden)
+    monkeypatch.setattr(Building5R1C, "calc_heating_demand", forbidden)
+    actual = simulate_building(reference_building, weather=weather, settings=settings)
+
+    assert reference_building.snapshot().sha256 == before
+    assert actual.run_id == expected.run_id
+    assert actual.diagnostics == expected.diagnostics
+    assert actual.scalars == expected.scalars
+    assert actual.hourly.keys() == expected.hourly.keys()
+    for key in actual.hourly:
+        np.testing.assert_array_equal(actual.hourly[key], expected.hourly[key])
