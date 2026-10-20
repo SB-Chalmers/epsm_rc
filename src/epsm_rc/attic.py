@@ -185,6 +185,8 @@ def reduce_attics(
                     * settings.sky_air_temperature_difference_k
                     * sky_view,
                     "physical_element_id": owner.identifier,
+                    "surface_name": face["name"],
+                    "receiver_vertices": face["vertices"],
                 }
             )
         if not ceilings or not shell or hc <= 0 or hs <= 0:

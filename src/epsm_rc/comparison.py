@@ -26,6 +26,7 @@ from .platform import (
     RCSettings,
     _airflow_capabilities,
     _ground_reduction,
+    _rc_readiness_engine,
     _self_shadowing_capabilities,
     simulate_building,
 )
@@ -119,8 +120,12 @@ def prepare_engine_comparison(
     captured = snapshot.to_building()
     weather = weather if isinstance(weather, Weather) else Weather.from_epw(weather)
     weather.validate()
-    captured.readiness(engine="epsm_rc", weather=weather).require()
+    captured.readiness(engine=_rc_readiness_engine(captured, weather), weather=weather).require()
     spec = captured.to_spec(weather)
+    if spec.context.buildings and settings.context_shading_method == "reject":
+        raise ValueError(
+            "Context buildings require context_shading_method='iso13790_hourly_horizon'"
+        )
     _airflow_capabilities(spec.airflow, settings)
     _ground_reduction(spec.envelope, settings)
     _self_shadowing_capabilities(spec.geometry, settings)
@@ -157,6 +162,7 @@ def prepare_engine_comparison(
                 "rc_airflow_capabilities": result.diagnostics["airflow_capabilities"],
                 "rc_ground_reduction": result.diagnostics["ground_reduction"],
                 "rc_self_shadowing": result.diagnostics["self_shadowing"],
+                "rc_context_shading": result.diagnostics["context_shading"],
             },
             indent=2,
             allow_nan=False,

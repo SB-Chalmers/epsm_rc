@@ -1,3 +1,23 @@
+# Release 0.8.3 — ISO 13790 hourly context shading
+
+Context buildings use ISO 13790:2008 Annex G.5.4.2 equation G.3 by default:
+prepare an average obstruction angle per physical outdoor receiver, then reduce
+beam irradiance below it. Diffuse and ground-reflected irradiance stay unchanged.
+One representative point and 10-degree azimuth quadrature are recorded numerical
+approximations; roof horizon extensions and the method's limits are explicit.
+This implements the horizon shading method, not whole-standard certification.
+
+PreparationCache reuses geometry-only angles across weather, glazing, construction
+and operation variants. The hourly path performs array comparisons without
+geometry intersections. Both glazing policies and cold-attic shells consume the
+shaded channels. Empty context retains the existing solar arithmetic.
+
+Core 0.8.1 accepts context in RC readiness. Earlier supported Core versions remain
+usable: RC adapts only their obsolete blanket context restriction and retains all
+other physical readiness checks. Dependency bounds and central CI pins remain
+unchanged. Facade shading details and target self-shadowing remain separate.
+See [radiation methods](docs/radiation.md#context-building-shading).
+
 # Release 0.8.2 — Core scene compatibility
 
 The optional `platform` extra accepts Core `>=0.7.1,<0.9` with unchanged Data

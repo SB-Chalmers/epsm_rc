@@ -19,6 +19,7 @@ def finish_domain(
     attic,
     axis,
     convective_gains,
+    context_shading,
     domain,
     effective_configuration,
     elements,
@@ -123,11 +124,12 @@ def finish_domain(
         "airflow_capabilities": airflow_capabilities,
         "ground_reduction": ground_reduction,
         "self_shadowing": self_shadowing,
+        "context_shading": context_shading,
         "attic_reduction": attic.diagnostics,
         "approximations": [
             "One aggregated conditioned thermal domain",
             "Shared walls are adiabatic; shared/internal depth-limited opaque storage is retained",
-            "Perez solar gains with scalar window shading; no geometric site shading",
+            "Perez solar gains with scalar window shading and reported ISO hourly context horizon shading",
             "Room-side mass depth and construction-capacity mass-area rule from explicit policy",
             "Ground boundary or conductance multiplier explicitly selected and reported",
             (
