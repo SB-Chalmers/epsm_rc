@@ -2450,6 +2450,25 @@ class Building5R1C:
         # ISO 13790 Section 13.2.3 - Intermittent Heating/Cooling
         t_set_heat, t_set_cool = self.get_active_setpoints(hour_of_year)
 
+        if "step" not in self.__dict__:
+            from ._core_rs import calc_heating_demand_5r1c
+
+            return calc_heating_demand_5r1c(
+                self,
+                float(t_out),
+                float(solar_gains),
+                float(internal_gains),
+                float(dt_hours),
+                float(max_heating_power),
+                float(max_cooling_power),
+                float(solar_gains_opaque),
+                int(hour_of_year) if hour_of_year is not None else None,
+                bool(include_sky_radiation),
+                float(t_set_heat),
+                float(t_set_cool),
+                random.random if 0.0 < self.ventilation_behaviour < 1.0 else None,
+            )
+
         # Step 1: Calculate temperature with no heating/cooling
         t_m_prev = self.t_m
 
@@ -2649,6 +2668,30 @@ class Building5R1C:
         last_hour = int((n - 1) * dt_hours)
         if self.occupancy_schedule is not None and len(self.occupancy_schedule) <= last_hour:
             raise ValueError("occupancy_schedule does not cover the simulation elapsed hours")
+
+        if "step" not in self.__dict__ and "calc_heating_demand" not in self.__dict__:
+            from ._core_rs import simulate_5r1c_hourly
+
+            occ_arr = (
+                np.ascontiguousarray(self.occupancy_schedule, dtype=bool)
+                if self.occupancy_schedule is not None
+                else None
+            )
+            return dict(
+                simulate_5r1c_hourly(
+                    self,
+                    np.ascontiguousarray(t_outdoor, dtype=np.float64),
+                    np.ascontiguousarray(solar_gains, dtype=np.float64),
+                    np.ascontiguousarray(internal_gains, dtype=np.float64),
+                    np.ascontiguousarray(solar_gains_opaque, dtype=np.float64),
+                    occ_arr,
+                    float(dt_hours),
+                    float(max_heating_power),
+                    float(max_cooling_power),
+                    bool(include_sky_radiation),
+                    random.random if 0.0 < self.ventilation_behaviour < 1.0 else None,
+                )
+            )
 
         # Pre-allocate output arrays
         q_heat = np.zeros(n)
