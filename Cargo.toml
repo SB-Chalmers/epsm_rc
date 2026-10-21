@@ -10,8 +10,11 @@ name = "_core_rs"
 path = "rust/src/lib.rs"
 crate-type = ["cdylib"]
 
+[features]
+extension-module = ["pyo3/extension-module"]
+
 [dependencies]
-pyo3 = { version = "0.27.2", features = ["extension-module"] }
+pyo3 = "0.27.2"
 numpy = "0.27.1"
 
 [profile.release]

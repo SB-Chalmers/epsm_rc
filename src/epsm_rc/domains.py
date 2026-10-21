@@ -18,6 +18,29 @@ import numpy as np
 from ._logging import bind_context
 
 
+def _immutable_series(values, dtype=np.float64):
+    """Give native workers immutable storage that can be borrowed without the GIL."""
+    array = np.ascontiguousarray(values, dtype=dtype)
+    if array.ndim != 1:
+        raise ValueError("Hourly inputs must be one-dimensional")
+    if isinstance(array.base, bytes):
+        return array
+    return np.frombuffer(array.tobytes(), dtype=dtype)
+
+
+def _immutable_columns(*values):
+    """Pack prepared floating columns into one immutable allocation."""
+    arrays = [np.ascontiguousarray(value, dtype=np.float64) for value in values]
+    if any(array.ndim != 1 for array in arrays):
+        raise ValueError("Hourly inputs must be one-dimensional")
+    storage = np.frombuffer(b"".join(arrays), dtype=np.float64)
+    columns, offset = [], 0
+    for array in arrays:
+        columns.append(storage[offset : offset + len(array)])
+        offset += len(array)
+    return tuple(columns)
+
+
 @dataclass(frozen=True)
 class DomainSelection:
     name: str

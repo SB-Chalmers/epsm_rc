@@ -20,6 +20,20 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --all --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
+
   package:
     runs-on: ubuntu-22.04
     strategy:
@@ -106,7 +120,7 @@ jobs:
         with:
           ref: 5a9d5f4251847e270b5dc4a526a4b2260915a4f9
           path: .ci/rc_reference
-      - name: Compare released and candidate calculations exactly
+      - name: Compare released and candidate calculations within numerical tolerance
         if: matrix.python == '3.13' && !inputs.development_dependencies
         run: |
           python -m venv --system-site-packages .ci/reference_venv
@@ -137,11 +151,14 @@ jobs:
   standalone:
     if: ${{ !inputs.development_dependencies }}
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.10', '3.14']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: ${{ matrix.python }}
           cache: pip
       - name: Install base wheel without Core or Data
         run: |
@@ -153,4 +170,4 @@ jobs:
       - name: Execute supported Core-free numerical APIs
         run: |
           python examples/00_standalone.py
-          python -m pytest tests/unit/test_iso13790.py tests/unit/test_iso13790_physics.py tests/unit/test_iso13790_compliance.py tests/unit/test_heat_pump.py tests/unit/test_heating.py tests/unit/test_public_readiness.py tests/unit/test_standalone_readiness.py -q
+          python -m pytest tests/unit/test_iso13790.py tests/unit/test_iso13790_physics.py tests/unit/test_iso13790_compliance.py tests/unit/test_heat_pump.py tests/unit/test_heating.py tests/unit/test_public_readiness.py tests/unit/test_standalone_readiness.py tests/unit/test_native_kernels.py -q

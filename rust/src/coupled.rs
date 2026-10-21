@@ -1,9 +1,48 @@
-use numpy::{PyArray1, PyArray2, PyReadonlyArray1};
-use pyo3::exceptions::PyValueError;
-use pyo3::prelude::*;
-
 use crate::domain::DomainArrays;
 use crate::iso13790::Core5R1C;
+use crate::types::{ControlSolution, CoupledOutput, KernelResult, StepInputs};
+
+pub fn run_coupled_domains(
+    core0: &mut Core5R1C,
+    core1: &mut Core5R1C,
+    arrays0: &DomainArrays<'_>,
+    arrays1: &DomainArrays<'_>,
+    conductance_w_k: f64,
+) -> KernelResult<CoupledOutput> {
+    let count = arrays0.temperatures.len();
+    let mut result = CoupledOutput {
+        powers: std::array::from_fn(|_| Vec::with_capacity(count)),
+        temperatures: std::array::from_fn(|_| Vec::with_capacity(count)),
+        exchanges: std::array::from_fn(|_| Vec::with_capacity(count)),
+        residuals: Vec::with_capacity(count),
+    };
+    for hour in 0..count {
+        let inputs0 = arrays0.apply_at(core0, hour)?;
+        let inputs1 = arrays1.apply_at(core1, hour)?;
+        let solution = step_coupled_pair(
+            core0,
+            core1,
+            inputs0,
+            inputs1,
+            conductance_w_k,
+            [
+                arrays0.heating_limits_w[hour],
+                arrays1.heating_limits_w[hour],
+            ],
+            [
+                arrays0.cooling_limits_w[hour],
+                arrays1.cooling_limits_w[hour],
+            ],
+        )?;
+        for index in 0..2 {
+            result.powers[index].push(solution.powers[index]);
+            result.temperatures[index].push(solution.temperatures[index]);
+            result.exchanges[index].push(solution.exchanges[index]);
+        }
+        result.residuals.push(solution.residual);
+    }
+    Ok(result)
+}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum ControlMode {
@@ -14,7 +53,7 @@ enum ControlMode {
     CoolLimit,
 }
 
-#[inline(always)]
+#[inline]
 fn solve_2x2(mut a: [[f64; 2]; 2], mut b: [f64; 2]) -> [f64; 2] {
     if a[1][0].abs() > a[0][0].abs() {
         a.swap(0, 1);
@@ -38,7 +77,7 @@ pub fn solve_controls_inner(
     cool: [f64; 2],
     maximum: [f64; 2],
     minimum: [f64; 2],
-) -> Result<([f64; 2], [f64; 2], [f64; 2], f64), &'static str> {
+) -> KernelResult<ControlSolution> {
     if !free[0].is_finite()
         || !free[1].is_finite()
         || !response[0].is_finite()
@@ -176,7 +215,12 @@ pub fn solve_controls_inner(
                 let res0 = ((mat_t[0] - free[0] - response[0] * powers[0]) / response[0]).abs();
                 let res1 = ((mat_t[1] - free[1] - response[1] * powers[1]) / response[1]).abs();
                 let max_res = if res0 >= res1 { res0 } else { res1 };
-                return Ok((powers, temperatures, [exchange, -exchange], max_res));
+                return Ok(ControlSolution {
+                    powers,
+                    temperatures,
+                    exchanges: [exchange, -exchange],
+                    residual: max_res,
+                });
             }
         }
     }
@@ -188,24 +232,29 @@ pub fn solve_controls_inner(
 pub fn step_coupled_pair(
     core0: &mut Core5R1C,
     core1: &mut Core5R1C,
-    in0: (f64, f64, f64, f64, Option<i64>, f64, bool),
-    in1: (f64, f64, f64, f64, Option<i64>, f64, bool),
+    in0: StepInputs,
+    in1: StepInputs,
     conductance_w_k: f64,
     heating_limit_w: [f64; 2],
     cooling_limit_w: [f64; 2],
-) -> Result<([f64; 2], [f64; 2], [f64; 2], f64), &'static str> {
+) -> KernelResult<ControlSolution> {
     if core0.ventilation_behaviour <= 0.0 && core1.ventilation_behaviour <= 0.0 {
         core0.hour_heat_flows = None;
-        core0.step_deterministic(in0.0, in0.1, in0.2, 0.0, in0.5, in0.3, in0.6, in0.4)?;
-        let free0 = (core0.t_air, core0.t_s, core0.t_m);
-        let (k_m0, k_s0, resp0) = core0.sensitivities(in0.5);
+        core0.step_deterministic(in0, 0.0)?;
+        let free0 = (core0.state.t_air, core0.state.t_s, core0.state.t_m);
+        let (k_m0, k_s0, resp0) = core0.sensitivities(in0.dt_hours);
 
         core1.hour_heat_flows = None;
-        core1.step_deterministic(in1.0, in1.1, in1.2, 0.0, in1.5, in1.3, in1.6, in1.4)?;
-        let free1 = (core1.t_air, core1.t_s, core1.t_m);
-        let (k_m1, k_s1, resp1) = core1.sensitivities(in1.5);
+        core1.step_deterministic(in1, 0.0)?;
+        let free1 = (core1.state.t_air, core1.state.t_s, core1.state.t_m);
+        let (k_m1, k_s1, resp1) = core1.sensitivities(in1.dt_hours);
 
-        let (powers, temperatures, exchanges, residual) = solve_controls_inner(
+        let ControlSolution {
+            powers,
+            temperatures,
+            exchanges,
+            residual,
+        } = solve_controls_inner(
             [free0.0, free1.0],
             [resp0, resp1],
             conductance_w_k,
@@ -216,60 +265,70 @@ pub fn step_coupled_pair(
         )?;
 
         let q0 = powers[0] + exchanges[0];
-        core0.t_air = free0.0 + resp0 * q0;
-        core0.t_s = free0.1 + k_s0 * q0;
-        core0.t_m = free0.2 + k_m0 * q0;
-        if !(core0.t_air.is_finite() && temperatures[0].is_finite())
-            || (core0.t_air - temperatures[0]).abs() > 1e-7
+        core0.state.t_air = free0.0 + resp0 * q0;
+        core0.state.t_s = free0.1 + k_s0 * q0;
+        core0.state.t_m = free0.2 + k_m0 * q0;
+        if !(core0.state.t_air.is_finite() && temperatures[0].is_finite())
+            || (core0.state.t_air - temperatures[0]).abs() > 1e-7
         {
             return Err("Coupled control failed its committed-state temperature balance");
         }
 
         let q1 = powers[1] + exchanges[1];
-        core1.t_air = free1.0 + resp1 * q1;
-        core1.t_s = free1.1 + k_s1 * q1;
-        core1.t_m = free1.2 + k_m1 * q1;
-        if !(core1.t_air.is_finite() && temperatures[1].is_finite())
-            || (core1.t_air - temperatures[1]).abs() > 1e-7
+        core1.state.t_air = free1.0 + resp1 * q1;
+        core1.state.t_s = free1.1 + k_s1 * q1;
+        core1.state.t_m = free1.2 + k_m1 * q1;
+        if !(core1.state.t_air.is_finite() && temperatures[1].is_finite())
+            || (core1.state.t_air - temperatures[1]).abs() > 1e-7
         {
             return Err("Coupled control failed its committed-state temperature balance");
         }
 
-        return Ok((powers, temperatures, exchanges, residual));
+        return Ok(ControlSolution {
+            powers,
+            temperatures,
+            exchanges,
+            residual,
+        });
     }
 
-    let state0 = (core0.t_air, core0.t_s, core0.t_m);
-    let state1 = (core1.t_air, core1.t_s, core1.t_m);
+    let state0 = (core0.state.t_air, core0.state.t_s, core0.state.t_m);
+    let state1 = (core1.state.t_air, core1.state.t_s, core1.state.t_m);
 
     // Domain 0 trial steps
     core0.hour_heat_flows = None;
-    core0.step_deterministic(in0.0, in0.1, in0.2, 0.0, in0.5, in0.3, in0.6, in0.4)?;
-    let base0 = core0.t_air;
-    core0.t_air = state0.0;
-    core0.t_s = state0.1;
-    core0.t_m = state0.2;
+    core0.step_deterministic(in0, 0.0)?;
+    let base0 = core0.state.t_air;
+    core0.state.t_air = state0.0;
+    core0.state.t_s = state0.1;
+    core0.state.t_m = state0.2;
     let ref0 = 10.0 * core0.floor_area_m2;
-    core0.step_deterministic(in0.0, in0.1, in0.2, ref0, in0.5, in0.3, in0.6, in0.4)?;
-    let resp0 = (core0.t_air - base0) / ref0;
-    core0.t_air = state0.0;
-    core0.t_s = state0.1;
-    core0.t_m = state0.2;
+    core0.step_deterministic(in0, ref0)?;
+    let resp0 = (core0.state.t_air - base0) / ref0;
+    core0.state.t_air = state0.0;
+    core0.state.t_s = state0.1;
+    core0.state.t_m = state0.2;
 
     // Domain 1 trial steps
     core1.hour_heat_flows = None;
-    core1.step_deterministic(in1.0, in1.1, in1.2, 0.0, in1.5, in1.3, in1.6, in1.4)?;
-    let base1 = core1.t_air;
-    core1.t_air = state1.0;
-    core1.t_s = state1.1;
-    core1.t_m = state1.2;
+    core1.step_deterministic(in1, 0.0)?;
+    let base1 = core1.state.t_air;
+    core1.state.t_air = state1.0;
+    core1.state.t_s = state1.1;
+    core1.state.t_m = state1.2;
     let ref1 = 10.0 * core1.floor_area_m2;
-    core1.step_deterministic(in1.0, in1.1, in1.2, ref1, in1.5, in1.3, in1.6, in1.4)?;
-    let resp1 = (core1.t_air - base1) / ref1;
-    core1.t_air = state1.0;
-    core1.t_s = state1.1;
-    core1.t_m = state1.2;
+    core1.step_deterministic(in1, ref1)?;
+    let resp1 = (core1.state.t_air - base1) / ref1;
+    core1.state.t_air = state1.0;
+    core1.state.t_s = state1.1;
+    core1.state.t_m = state1.2;
 
-    let (powers, temperatures, exchanges, residual) = solve_controls_inner(
+    let ControlSolution {
+        powers,
+        temperatures,
+        exchanges,
+        residual,
+    } = solve_controls_inner(
         [base0, base1],
         [resp0, resp1],
         conductance_w_k,
@@ -280,288 +339,90 @@ pub fn step_coupled_pair(
     )?;
 
     // Commit step for both domains
-    core0.step_deterministic(
-        in0.0,
-        in0.1,
-        in0.2,
-        powers[0] + exchanges[0],
-        in0.5,
-        in0.3,
-        in0.6,
-        in0.4,
-    )?;
-    if !(core0.t_air.is_finite() && temperatures[0].is_finite())
-        || (core0.t_air - temperatures[0]).abs() > 1e-7
+    core0.step_deterministic(in0, powers[0] + exchanges[0])?;
+    if !(core0.state.t_air.is_finite() && temperatures[0].is_finite())
+        || (core0.state.t_air - temperatures[0]).abs() > 1e-7
     {
         return Err("Coupled control failed its committed-state temperature balance");
     }
 
-    core1.step_deterministic(
-        in1.0,
-        in1.1,
-        in1.2,
-        powers[1] + exchanges[1],
-        in1.5,
-        in1.3,
-        in1.6,
-        in1.4,
-    )?;
-    if !(core1.t_air.is_finite() && temperatures[1].is_finite())
-        || (core1.t_air - temperatures[1]).abs() > 1e-7
+    core1.step_deterministic(in1, powers[1] + exchanges[1])?;
+    if !(core1.state.t_air.is_finite() && temperatures[1].is_finite())
+        || (core1.state.t_air - temperatures[1]).abs() > 1e-7
     {
         return Err("Coupled control failed its committed-state temperature balance");
     }
 
-    Ok((powers, temperatures, exchanges, residual))
+    Ok(ControlSolution {
+        powers,
+        temperatures,
+        exchanges,
+        residual,
+    })
 }
 
-#[pyfunction]
-#[pyo3(signature = (
-    free_c,
-    response_k_w,
-    conductance_w_k,
-    heat_c,
-    cool_c,
-    heating_limit_w=None,
-    cooling_limit_w=None
-))]
-pub fn solve_controls_rs(
-    free_c: Vec<f64>,
-    response_k_w: Vec<f64>,
-    conductance_w_k: f64,
-    heat_c: Vec<f64>,
-    cool_c: Vec<f64>,
-    heating_limit_w: Option<Vec<f64>>,
-    cooling_limit_w: Option<Vec<f64>>,
-) -> PyResult<((f64, f64), (f64, f64), (f64, f64), f64)> {
-    let heating_limit_w = heating_limit_w.unwrap_or_else(|| vec![f64::INFINITY, f64::INFINITY]);
-    let cooling_limit_w = cooling_limit_w.unwrap_or_else(|| vec![0.0, 0.0]);
-    if free_c.len() != 2 || response_k_w.len() != 2 {
-        return Err(PyValueError::new_err(
-            "Two finite free temperatures and positive responses are required",
-        ));
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pivoted_solver_handles_zero_first_diagonal() {
+        assert_eq!(solve_2x2([[0.0, 2.0], [1.0, 3.0]], [4.0, 7.0]), [1.0, 2.0]);
     }
-    if heat_c.len() != 2 || cool_c.len() != 2 {
-        return Err(PyValueError::new_err(
-            "Finite ordered heating and cooling setpoints are required",
-        ));
-    }
-    if heating_limit_w.len() != 2 || cooling_limit_w.len() != 2 {
-        return Err(PyValueError::new_err(
-            "Heating limits must be nonnegative; cooling limits nonpositive",
-        ));
-    }
-    let (powers, temps, exch, res) = solve_controls_inner(
-        [free_c[0], free_c[1]],
-        [response_k_w[0], response_k_w[1]],
-        conductance_w_k,
-        [heat_c[0], heat_c[1]],
-        [cool_c[0], cool_c[1]],
-        [heating_limit_w[0], heating_limit_w[1]],
-        [cooling_limit_w[0], cooling_limit_w[1]],
-    )
-    .map_err(PyValueError::new_err)?;
 
-    Ok((
-        (powers[0], powers[1]),
-        (temps[0], temps[1]),
-        (exch[0], exch[1]),
-        res,
-    ))
-}
-
-#[pyfunction]
-#[pyo3(signature = (
-    model0,
-    model1,
-    temperatures0,
-    gains0,
-    convective0,
-    heating_setpoints0,
-    cooling_setpoints0,
-    wind0,
-    infiltration0,
-    natural0,
-    ventilation0,
-    solar0,
-    opaque0,
-    month_hours0,
-    coefficients0,
-    aggregate_split0,
-    heating_limits_w0,
-    cooling_limits_w0,
-    temperatures1,
-    gains1,
-    convective1,
-    heating_setpoints1,
-    cooling_setpoints1,
-    wind1,
-    infiltration1,
-    natural1,
-    ventilation1,
-    solar1,
-    opaque1,
-    month_hours1,
-    coefficients1,
-    aggregate_split1,
-    heating_limits_w1,
-    cooling_limits_w1,
-    conductance_w_k
-))]
-#[allow(clippy::too_many_arguments)]
-pub fn run_coupled_domains_hourly<'py>(
-    py: Python<'py>,
-    model0: &Bound<'py, PyAny>,
-    model1: &Bound<'py, PyAny>,
-    temperatures0: PyReadonlyArray1<'py, f64>,
-    gains0: PyReadonlyArray1<'py, f64>,
-    convective0: PyReadonlyArray1<'py, f64>,
-    heating_setpoints0: PyReadonlyArray1<'py, f64>,
-    cooling_setpoints0: PyReadonlyArray1<'py, f64>,
-    wind0: PyReadonlyArray1<'py, f64>,
-    infiltration0: PyReadonlyArray1<'py, f64>,
-    natural0: PyReadonlyArray1<'py, f64>,
-    ventilation0: PyReadonlyArray1<'py, f64>,
-    solar0: PyReadonlyArray1<'py, f64>,
-    opaque0: PyReadonlyArray1<'py, f64>,
-    month_hours0: Option<PyReadonlyArray1<'py, i64>>,
-    coefficients0: (f64, f64, f64, f64),
-    aggregate_split0: bool,
-    heating_limits_w0: PyReadonlyArray1<'py, f64>,
-    cooling_limits_w0: PyReadonlyArray1<'py, f64>,
-    temperatures1: PyReadonlyArray1<'py, f64>,
-    gains1: PyReadonlyArray1<'py, f64>,
-    convective1: PyReadonlyArray1<'py, f64>,
-    heating_setpoints1: PyReadonlyArray1<'py, f64>,
-    cooling_setpoints1: PyReadonlyArray1<'py, f64>,
-    wind1: PyReadonlyArray1<'py, f64>,
-    infiltration1: PyReadonlyArray1<'py, f64>,
-    natural1: PyReadonlyArray1<'py, f64>,
-    ventilation1: PyReadonlyArray1<'py, f64>,
-    solar1: PyReadonlyArray1<'py, f64>,
-    opaque1: PyReadonlyArray1<'py, f64>,
-    month_hours1: Option<PyReadonlyArray1<'py, i64>>,
-    coefficients1: (f64, f64, f64, f64),
-    aggregate_split1: bool,
-    heating_limits_w1: PyReadonlyArray1<'py, f64>,
-    cooling_limits_w1: PyReadonlyArray1<'py, f64>,
-    conductance_w_k: f64,
-) -> PyResult<(
-    Bound<'py, PyArray2<f64>>,
-    Bound<'py, PyArray2<f64>>,
-    Bound<'py, PyArray2<f64>>,
-    Bound<'py, PyArray1<f64>>,
-)> {
-    let mut core0 = Core5R1C::from_py(model0)?;
-    let mut core1 = Core5R1C::from_py(model1)?;
-
-    let mh0_slice = match &month_hours0 {
-        Some(arr) => Some(arr.as_slice()?),
-        None => None,
-    };
-    let mh1_slice = match &month_hours1 {
-        Some(arr) => Some(arr.as_slice()?),
-        None => None,
-    };
-
-    let arrays0 = DomainArrays {
-        temperatures: temperatures0.as_slice()?,
-        gains: gains0.as_slice()?,
-        convective: convective0.as_slice()?,
-        heating_setpoints: heating_setpoints0.as_slice()?,
-        cooling_setpoints: cooling_setpoints0.as_slice()?,
-        wind: wind0.as_slice()?,
-        infiltration: infiltration0.as_slice()?,
-        natural: natural0.as_slice()?,
-        ventilation: ventilation0.as_slice()?,
-        solar: solar0.as_slice()?,
-        opaque: opaque0.as_slice()?,
-        month_hours: mh0_slice,
-        coefficients: coefficients0,
-        aggregate_split: aggregate_split0,
-        heating_limits_w: heating_limits_w0.as_slice()?,
-        cooling_limits_w: cooling_limits_w0.as_slice()?,
-    };
-
-    let arrays1 = DomainArrays {
-        temperatures: temperatures1.as_slice()?,
-        gains: gains1.as_slice()?,
-        convective: convective1.as_slice()?,
-        heating_setpoints: heating_setpoints1.as_slice()?,
-        cooling_setpoints: cooling_setpoints1.as_slice()?,
-        wind: wind1.as_slice()?,
-        infiltration: infiltration1.as_slice()?,
-        natural: natural1.as_slice()?,
-        ventilation: ventilation1.as_slice()?,
-        solar: solar1.as_slice()?,
-        opaque: opaque1.as_slice()?,
-        month_hours: mh1_slice,
-        coefficients: coefficients1,
-        aggregate_split: aggregate_split1,
-        heating_limits_w: heating_limits_w1.as_slice()?,
-        cooling_limits_w: cooling_limits_w1.as_slice()?,
-    };
-
-    let count = arrays0.temperatures.len();
-    let mut powers0 = Vec::with_capacity(count);
-    let mut powers1 = Vec::with_capacity(count);
-    let mut temps0 = Vec::with_capacity(count);
-    let mut temps1 = Vec::with_capacity(count);
-    let mut exch0 = Vec::with_capacity(count);
-    let mut exch1 = Vec::with_capacity(count);
-    let mut residuals = Vec::with_capacity(count);
-
-    for hour in 0..count {
-        let f0 = match arrays0.apply_at(&mut core0, hour) {
-            Ok(v) => v,
-            Err(msg) => {
-                core0.sync_to_py(model0)?;
-                core1.sync_to_py(model1)?;
-                return Err(PyValueError::new_err(msg));
+    #[test]
+    fn mixed_active_sets_conserve_exchange_and_obey_limits() {
+        for h in [0.0, 10.0, 1000.0] {
+            for free in [[10.0, 35.0], [30.0, 10.0], [22.0, 24.0]] {
+                for maximum in [[100.0, 0.0], [f64::INFINITY; 2]] {
+                    let response = [0.01, 0.02];
+                    let minimum = [0.0, -100.0];
+                    let result = solve_controls_inner(
+                        free,
+                        response,
+                        h,
+                        [20.0, 18.0],
+                        [26.0; 2],
+                        maximum,
+                        minimum,
+                    )
+                    .unwrap();
+                    assert_eq!(result.exchanges[0] + result.exchanges[1], 0.0);
+                    assert!(result.residual < 1e-8);
+                    for i in 0..2 {
+                        assert!(result.powers[i] >= minimum[i] && result.powers[i] <= maximum[i]);
+                        let balanced =
+                            free[i] + response[i] * (result.powers[i] + result.exchanges[i]);
+                        assert!((balanced - result.temperatures[i]).abs() < 1e-9);
+                    }
+                }
             }
-        };
-        let f1 = match arrays1.apply_at(&mut core1, hour) {
-            Ok(v) => v,
-            Err(msg) => {
-                core0.sync_to_py(model0)?;
-                core1.sync_to_py(model1)?;
-                return Err(PyValueError::new_err(msg));
-            }
-        };
-
-        let (p, t, ex, res) = match step_coupled_pair(
-            &mut core0,
-            &mut core1,
-            (f0.0, f0.1, f0.2, f0.3, f0.4, 1.0, true),
-            (f1.0, f1.1, f1.2, f1.3, f1.4, 1.0, true),
-            conductance_w_k,
-            [arrays0.heating_limits_w[hour], arrays1.heating_limits_w[hour]],
-            [arrays0.cooling_limits_w[hour], arrays1.cooling_limits_w[hour]],
-        ) {
-            Ok(v) => v,
-            Err(msg) => {
-                core0.sync_to_py(model0)?;
-                core1.sync_to_py(model1)?;
-                return Err(PyValueError::new_err(msg));
-            }
-        };
-
-        powers0.push(p[0]);
-        powers1.push(p[1]);
-        temps0.push(t[0]);
-        temps1.push(t[1]);
-        exch0.push(ex[0]);
-        exch1.push(ex[1]);
-        residuals.push(res);
+        }
     }
 
-    core0.sync_to_py(model0)?;
-    core1.sync_to_py(model1)?;
-
-    let powers_arr = PyArray2::from_vec2(py, &[powers0, powers1])?;
-    let temps_arr = PyArray2::from_vec2(py, &[temps0, temps1])?;
-    let exch_arr = PyArray2::from_vec2(py, &[exch0, exch1])?;
-    let res_arr = PyArray1::from_vec(py, residuals);
-
-    Ok((powers_arr, temps_arr, exch_arr, res_arr))
+    #[test]
+    fn invalid_conductance_and_response_fail_before_solving() {
+        for conductance in [-1.0, f64::INFINITY, f64::NAN] {
+            assert!(solve_controls_inner(
+                [10.0; 2],
+                [0.01; 2],
+                conductance,
+                [20.0; 2],
+                [26.0; 2],
+                [f64::INFINITY; 2],
+                [0.0; 2]
+            )
+            .is_err());
+        }
+        assert!(solve_controls_inner(
+            [10.0; 2],
+            [0.0; 2],
+            10.0,
+            [20.0; 2],
+            [26.0; 2],
+            [f64::INFINITY; 2],
+            [0.0; 2]
+        )
+        .is_err());
+    }
 }

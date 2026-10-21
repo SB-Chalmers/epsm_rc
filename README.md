@@ -43,10 +43,10 @@ python -m sphinx -W --keep-going -b html docs outputs/docs
 python -m sphinx -W --keep-going -b doctest docs outputs/doctest
 ```
 
-Run tests with `python -m pytest tests`. CI verifies Python 3.10 without Core and
+Run tests with `python -m pytest tests`. CI verifies Python 3.10/3.14 without Core and
 Python 3.11/3.13 with pinned Core/Data, required EnergyPlus 24.2 and hplib. Each
 platform lane runs the full installed-wheel suite once. Documentation, notebooks,
-style and exact released-output comparisons run once on Python 3.13. PR updates
+style and released-output comparisons within 0.1% numerical tolerance run once on Python 3.13. PR updates
 cancel superseded runs; feature pushes do not create a second workflow. A manual
 `development_dependencies` run checks Core/Data development branches on 3.13.
 

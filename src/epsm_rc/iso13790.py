@@ -2450,7 +2450,8 @@ class Building5R1C:
         # ISO 13790 Section 13.2.3 - Intermittent Heating/Cooling
         t_set_heat, t_set_cool = self.get_active_setpoints(hour_of_year)
 
-        if "step" not in self.__dict__:
+        # This guard is on the per-step hot path; avoid a Python helper call.
+        if "step" not in self.__dict__ and type(self).step is _NATIVE_STEP:
             from ._core_rs import calc_heating_demand_5r1c
 
             return calc_heating_demand_5r1c(
@@ -2669,7 +2670,7 @@ class Building5R1C:
         if self.occupancy_schedule is not None and len(self.occupancy_schedule) <= last_hour:
             raise ValueError("occupancy_schedule does not cover the simulation elapsed hours")
 
-        if "step" not in self.__dict__ and "calc_heating_demand" not in self.__dict__:
+        if _can_use_native(self, needs_demand=True):
             from ._core_rs import simulate_5r1c_hourly
 
             occ_arr = (
@@ -2923,6 +2924,33 @@ class Building5R1C:
         self.t_s = t_initial
         self.t_air = t_initial
         self._windows_open = False
+
+
+# Preserve the original implementations even if callers patch the class itself.
+_NATIVE_STEP = Building5R1C.step
+_NATIVE_DEMAND = Building5R1C.calc_heating_demand
+_NATIVE_RESET = Building5R1C.reset
+_NATIVE_SETPOINTS = Building5R1C.get_active_setpoints
+
+
+def _can_use_native(model, *, needs_demand=False):
+    """Keep instance patches, subclass overrides and class patches on Python paths."""
+    cls = type(model)
+    return (
+        "step" not in model.__dict__
+        and getattr(cls, "step", None) is _NATIVE_STEP
+        and "reset" not in model.__dict__
+        and getattr(cls, "reset", None) is _NATIVE_RESET
+        and "get_active_setpoints" not in model.__dict__
+        and getattr(cls, "get_active_setpoints", None) is _NATIVE_SETPOINTS
+        and (
+            not needs_demand
+            or (
+                "calc_heating_demand" not in model.__dict__
+                and getattr(cls, "calc_heating_demand", None) is _NATIVE_DEMAND
+            )
+        )
+    )
 
 
 def create_swedish_villa(

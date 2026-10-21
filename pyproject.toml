@@ -9,7 +9,7 @@ description = "Reduced-order building thermal simulation from explicit physical 
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE", "src/epsm_rc/notices/*.txt"]
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 authors = [
     {name = "EPSM Development contributors"}
 ]
@@ -30,6 +30,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering",
 ]
 
@@ -45,7 +46,7 @@ Repository = "https://github.com/SB-Chalmers/epsm_rc"
 Issues = "https://github.com/SB-Chalmers/epsm_rc/issues"
 
 [project.optional-dependencies]
-platform = ["epsm_core>=0.7.1,<0.8", "epsm_data>=0.6.0,<0.7"]
+platform = ["epsm_core>=0.7.1,<0.9", "epsm_data>=0.6.0,<0.7"]
 heatpump = [
     "hplib>=1.9",
 ]
@@ -66,7 +67,7 @@ dev = [
 [tool.maturin]
 python-source = "src"
 module-name = "epsm_rc._core_rs"
-features = ["pyo3/extension-module"]
+features = ["extension-module"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

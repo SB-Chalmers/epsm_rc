@@ -1058,22 +1058,24 @@ def _prepare_domain(preparation, *, domain=None):
         use=use,
     )
 
-    from .domains import HourlyInputs, PreparedDomain
+    from .domains import HourlyInputs, PreparedDomain, _immutable_columns, _immutable_series
 
     forcing = HourlyInputs(
         model,
-        np.ascontiguousarray(temperatures, dtype=np.float64),
-        np.ascontiguousarray(gains, dtype=np.float64),
-        np.ascontiguousarray(convective_gains, dtype=np.float64),
-        np.ascontiguousarray(heat_set, dtype=np.float64),
-        np.ascontiguousarray(cool_set, dtype=np.float64),
-        np.ascontiguousarray(wind, dtype=np.float64),
-        np.ascontiguousarray(infiltration, dtype=np.float64),
-        np.ascontiguousarray(natural, dtype=np.float64),
-        np.ascontiguousarray(ventilation, dtype=np.float64),
-        np.ascontiguousarray(solar, dtype=np.float64),
-        np.ascontiguousarray(opaque, dtype=np.float64),
-        month_hours,
+        *_immutable_columns(
+            temperatures,
+            gains,
+            convective_gains,
+            heat_set,
+            cool_set,
+            wind,
+            infiltration,
+            natural,
+            ventilation,
+            solar,
+            opaque,
+        ),
+        _immutable_series(month_hours, np.int64) if month_hours is not None else None,
         coefficients,
         gain_reduction["aggregate_split_applied"],
     )
@@ -1083,6 +1085,8 @@ def _prepare_domain(preparation, *, domain=None):
         if use.cooling_enabled
         else np.zeros(len(cooling_on), dtype=np.float64)
     )
+    heating_limits_w = _immutable_series(heating_limits_w)
+    cooling_limits_w = _immutable_series(cooling_limits_w)
     return PreparedDomain(
         domain.name if domain is not None else "aggregate",
         model,

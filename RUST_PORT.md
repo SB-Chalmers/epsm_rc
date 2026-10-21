@@ -31,7 +31,7 @@ Measured on an 8,760-hour annual simulation (Python 3.14.2 in `/Users/dagwastber
   - Python package source remains in `src/epsm_rc/` (`[tool.maturin] python-source = "src"`, `module-name = "epsm_rc._core_rs"`).
   - Rust crate lives at the repository root (`Cargo.toml`) with source files in `rust/` (`src/lib.rs`, `src/iso13790.rs`, `src/domain.rs`, `src/coupled.rs`).
 - **Dependencies**:
-  - `pyo3` (with `extension-module` and `abi3-py310` for broad Python 3.10–3.14 compatibility)
+  - `pyo3` (the `extension-module` feature is enabled by maturin; wheels target each supported CPython version, starting at 3.10)
   - `numpy` (Rust PyO3-NumPy bindings for zero-copy array reads and allocations)
 
 ---
@@ -41,7 +41,7 @@ Measured on an 8,760-hour annual simulation (Python 3.14.2 in `/Users/dagwastber
 ### Phase 1: Core 5R1C Thermal Kernel & Platform Single-Domain Solver
 1. **Rust 5R1C Kernel (`rust/src/iso13790.rs`)**:
    - Port `Building5R1C` thermal parameters, precomputed hourly factors (`_h_tr_em_base`, `_one_minus_hr`, `_vent_factor_base`, `_ach_to_h_ve`), and mutable state (`t_air`, `t_s`, `t_m`, `t_supply`, `windows_open`) into a Rust struct `Core5R1C`.
-   - Implement exact IEEE-754 `f64` equivalents of:
+   - Implement `f64` equivalents, checked against Python trial steps, of:
      - `calc_h_ve`
      - `calc_heat_flows`
      - `calc_phi_m_tot`
@@ -59,16 +59,16 @@ Measured on an 8,760-hour annual simulation (Python 3.14.2 in `/Users/dagwastber
 ### Phase 2: Coupled Multi-Domain Solver (`coupled.py` & `domains.py`)
 1. **Rust Coupled Active-Set Solver (`rust/src/coupled.rs`)**:
    - Port `step_domains`, `solve_controls`, `_solve_for_active_modes`, `_within_active_power_limits`, `_unmet_limits_satisfied`, `_violation_score`, and `_commit_step` from `src/epsm_rc/coupled.py`.
-   - Implement exact 1×1 and 2×2 linear system solves matching `np.linalg.solve` (LAPACK `dgesv` partial pivoting) so coupled active-set transitions and power allocations match Python bit-for-bit.
+   - Implement pivoted 2×2 linear system solves with the same active-set ordering as Python and numerical agreement within the stated tolerance.
    - Expose both:
      - `run_coupled_domains_hourly`: runs the full 8,760-hour coupled simulation loop for `simulate_conditioned_domains` in `src/epsm_rc/domains.py`.
-     - `step_coupled_domains`: accelerates single-step `step_domains` in `src/epsm_rc/coupled.py`.
+     - `solve_controls_rs`: accelerates the active-set solve while retaining Python `step_domains` for reference calculations and method overrides.
 
 ### Phase 3: Standalone `Building5R1C` & Heating System Loops (`iso13790.py` & `heating.py`)
 1. **Standalone `Building5R1C.simulate` (`src/epsm_rc/iso13790.py`)**:
    - Delegate `Building5R1C.simulate` to Rust (`simulate_5r1c_hourly`) whenever `step` and `calc_heating_demand` are not monkeypatched on the `Building5R1C` instance (`"step" not in self.__dict__ and "calc_heating_demand" not in self.__dict__`).
-   - Support arbitrary `dt_hours`, `occupancy_schedule` setback deltas, scalar or array `ach_schedule` / `ventilation_schedule`, scalar or 12-month `t_ground` (using exact `bisect_right` month boundaries), operative temperature control, and deterministic/stochastic window opening (preserving `np.random.default_rng(window_opening_seed)` draw values when stochastic window opening is enabled).
-2. **Single-Step `Building5R1C.calc_heating_demand` & `step` Acceleration**:
+   - Support arbitrary `dt_hours`, hourly occupancy setbacks, 12-month ground temperatures with the same month boundaries, operative temperature control, and deterministic/stochastic window opening with Python's existing `random.random` draws.
+2. **Single-Step `Building5R1C.calc_heating_demand` Acceleration**:
    - Accelerate single-step `calc_heating_demand` (used by `heating.py` models: `HeatPumpHPLib`, `HeatPumpCarnot`, `DistrictHeating`) via Rust when `self.step` is not monkeypatched in `self.__dict__`.
 
 ### Phase 4 (Future Work): Radiation, Angular Optics & Gain Preparation
@@ -101,4 +101,29 @@ Measured on an 8,760-hour annual simulation (Python 3.14.2 in `/Users/dagwastber
 
 - **Overall Maximum Scalar Relative Error**: $3.33 \times 10^{-13}\% \ll 0.1\%$
 - **Overall Maximum Hourly Array Relative Error**: $7.08 \times 10^{-9}\% \ll 0.1\%$
-- **Unit Test Suite**: 526 passed, 0 failed.
+- **Original port's unit-test snapshot**: 526 passed, 0 failed.
+
+### Hardening and repeatable verification
+
+`rust/src/bindings.rs` owns Python conversion and synchronization. The numerical
+kernels use named forcing, control and state structs in `rust/src/types.rs`.
+Shapes are checked before state changes. Deterministic batches release the GIL;
+prepared immutable byte buffers are borrowed, while mutable inputs are copied
+into owned snapshots. A NumPy read-only flag alone does not authorize borrowing.
+Original method identities preserve instance, class and subclass overrides.
+
+Native binary hashes now participate in calculation provenance. Release
+comparisons use the stated 0.1% numerical tolerance and retain exact structural
+and identity checks. Rust unit tests, differential Python/native tests and
+concurrent-writer tests cover the accelerated paths. Run:
+
+```sh
+cargo fmt --all --check
+cargo clippy --locked --all-targets -- -D warnings
+cargo test --locked
+python -m pytest tests
+```
+
+See `benchmarks/README.md` for before/after timing commands. Keep forced inlining
+limited to measured hot paths, and compare end-to-end preparation as well as the
+native loops when changing input ownership or dispatch.

@@ -104,6 +104,32 @@ def test_process_identity_is_lazy_detached_and_does_not_watch_sources(tmp_path, 
         _identity._process_identity.cache_clear()
 
 
+def test_native_binary_changes_implementation_identity(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from epsm_rc import _identity
+
+    source = tmp_path / "__init__.py"
+    source.write_text("value = 1\n")
+    native = tmp_path / "_core_rs.so"
+    native.write_bytes(b"first native kernel")
+    monkeypatch.setattr(
+        _identity,
+        "import_module",
+        lambda name: SimpleNamespace(__file__=native if name.endswith("._core_rs") else source),
+    )
+    _identity._process_identity.cache_clear()
+    try:
+        first = _identity.implementation_identity()
+        native.write_bytes(b"second native kernel")
+        _identity._process_identity.cache_clear()
+        second = _identity.implementation_identity()
+        assert first["source_sha256"] == second["source_sha256"]
+        assert first["native_sha256"] != second["native_sha256"]
+    finally:
+        _identity._process_identity.cache_clear()
+
+
 def test_batch_context_preserves_preparation_after_failure():
     cache = PreparationCache()
     with pytest.raises(RuntimeError), cache.batch() as active:

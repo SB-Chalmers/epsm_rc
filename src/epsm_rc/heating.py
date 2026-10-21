@@ -108,6 +108,11 @@ def _compute_5r1c_heat_demand(
     """Compute 5R1C heat demand series in one batch Rust call when possible."""
     import random
 
+    from .iso13790 import _can_use_native
+
+    outdoor_temp_c = np.asarray(outdoor_temp_c, dtype=np.float64)
+    if outdoor_temp_c.ndim != 1:
+        raise ValueError("outdoor_temp_c must be one-dimensional")
     n = len(outdoor_temp_c)
     if solar_gains is None:
         solar_gains = np.zeros(n, dtype=np.float64)
@@ -117,44 +122,48 @@ def _compute_5r1c_heat_demand(
             building_model.internal_gains_w_per_m2 * building_model.floor_area_m2,
             dtype=np.float64,
         )
-    building_model.reset()
+    # Validate before resetting state and before crossing the native boundary.
+    sol_arr = np.ascontiguousarray(solar_gains, dtype=np.float64)
+    int_arr = np.ascontiguousarray(internal_gains, dtype=np.float64)
+    out_arr = np.ascontiguousarray(outdoor_temp_c, dtype=np.float64)
+    for name, array in (
+        ("outdoor_temp_c", out_arr),
+        ("solar_gains", sol_arr),
+        ("internal_gains", int_arr),
+    ):
+        if array.shape != (n,):
+            raise ValueError(f"{name} must be one-dimensional and match outdoor_temp_c length")
+        if not np.isfinite(array).all() or (name != "outdoor_temp_c" and (array < 0).any()):
+            raise ValueError(
+                f"{name} must contain finite{' nonnegative' if name != 'outdoor_temp_c' else ''} values"
+            )
     if (
         hasattr(building_model, "_refresh_inputs")
-        and "step" not in building_model.__dict__
-        and "calc_heating_demand" not in building_model.__dict__
+        and _can_use_native(building_model, needs_demand=True)
         and n > 0
     ):
         from ._core_rs import simulate_5r1c_hourly
 
         building_model._refresh_inputs()
         building_model._validate_timestep_and_capacity(dt_hours, np.inf, 0.0)
-        sol_arr = np.ascontiguousarray(solar_gains, dtype=np.float64)
-        int_arr = np.ascontiguousarray(internal_gains, dtype=np.float64)
-        out_arr = np.ascontiguousarray(outdoor_temp_c, dtype=np.float64)
-        if (
-            np.isfinite(out_arr).all()
-            and np.isfinite(sol_arr).all()
-            and np.isfinite(int_arr).all()
-            and (sol_arr >= 0).all()
-            and (int_arr >= 0).all()
-        ):
-            opq_arr = np.zeros(n, dtype=np.float64)
-            res = simulate_5r1c_hourly(
-                building_model,
-                out_arr,
-                sol_arr,
-                int_arr,
-                opq_arr,
-                None,
-                float(dt_hours),
-                float(np.inf),
-                0.0,
-                True,
-                random.random if 0.0 < building_model.ventilation_behaviour < 1.0 else None,
-                False,
-            )
-            return np.maximum(0.0, res["heating_demand"])
+        opq_arr = np.zeros(n, dtype=np.float64)
+        res = simulate_5r1c_hourly(
+            building_model,
+            out_arr,
+            sol_arr,
+            int_arr,
+            opq_arr,
+            None,
+            float(dt_hours),
+            float(np.inf),
+            0.0,
+            True,
+            random.random if 0.0 < building_model.ventilation_behaviour < 1.0 else None,
+            False,
+        )
+        return np.maximum(0.0, res["heating_demand"])
 
+    building_model.reset()
     q_demand = np.zeros(n)
     for i in range(n):
         q_demand[i] = building_model.calc_heating_demand(

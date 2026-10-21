@@ -30,8 +30,10 @@ def _process_identity():
             digest.update(path.read_bytes())
             digest.update(b"\0")
         sources[package] = digest.hexdigest()
+    native = Path(import_module("epsm_rc._core_rs").__file__)
     return {
         "source_sha256": sources,
+        "native_sha256": {"epsm_rc._core_rs": hashlib.sha256(native.read_bytes()).hexdigest()},
         "dependencies": {
             package: metadata.version(package)
             for package in ("numpy", "pandas", "pvlib", "shapely", "pydantic")
@@ -43,7 +45,7 @@ def _process_identity():
 def implementation_identity():
     """Return detached provenance for this process's installed calculation.
 
-    The first call reads installed Python sources and numerical dependency
+    The first call reads installed Python sources, the native extension and numerical dependency
     versions. Later calls copy the captured metadata without filesystem access.
     Restart Python after changing source or installed dependencies.
     """
