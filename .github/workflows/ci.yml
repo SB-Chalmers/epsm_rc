@@ -25,5 +25,5 @@ jobs:
       run: python -m pip install build '.[dev,heatpump]'
     - name: Run offline development checks
       run: |
-        python -m pytest -q tests/unit/test_iso13790*.py tests/unit/test_heating.py tests/unit/test_heat_pump.py tests/unit/test_standalone_readiness.py
+        python -m pytest -q tests/unit/test_iso13790.py tests/unit/test_iso13790_compliance.py tests/unit/test_iso13790_physics.py tests/unit/test_heating.py tests/unit/test_heat_pump.py tests/unit/test_standalone_readiness.py
         python -m build --wheel

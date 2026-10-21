@@ -15,3 +15,7 @@ Do not retry dependency conflicts or missing credentials unchanged. Fix their
 cause, then rerun only the affected checks. Preserve failing evidence.
 
 See the [shared branch and CI policy](https://github.com/SB-Chalmers/epsm_development/blob/main/docs/branches-and-releases.md).
+
+RC development checks exercise standalone thermal balances, physics and heat
+pumps. The validation suite that loads strict EPW weather through Core/Data is
+retained in the full release workflow with its platform prerequisites.
