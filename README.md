@@ -1,5 +1,16 @@
 # EPSM RC
 
+<!-- EPSM introduction: Pocket CAD -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/epsm_rc-dark.png">
+  <img src="docs/assets/brand/epsm_rc.png" width="64" height="64" alt="EPSM RC — thermal circuit">
+</picture>
+
+Estimate hourly building heating and cooling with a reduced thermal model and explicit assumptions.
+
+[Explore the EPSM platform](https://github.com/SB-Chalmers/epsm/blob/main/docs/platform.md)
+<!-- /EPSM introduction -->
+
 Version **0.8.3**. RC reduces the same physical Building used by Core to an hourly
 ISO 13790 5R1C thermal network. Core owns physical inputs and weather inspection;
 RC owns reduction assumptions, the thermal calculation and its result meaning.
