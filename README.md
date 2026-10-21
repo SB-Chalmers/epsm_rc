@@ -14,7 +14,13 @@ actionable errors; inspection never silently enables an approximation. Selected
 weather is read to check its captured checksum and annual calendar. This check
 does not guarantee later numerical acceptance or scientific accuracy.
 
-The shared Building route accepts **Core 0.7.1 or 0.8.x** and **Data 0.6.x**, on Python 3.11+.
+`epsm_rc.output_capabilities(building, settings=settings)` describes exact
+hourly/annual names, units and conditional availability without entering the
+solver. Optics and coupled-basement channels remain unavailable until selected.
+The shared-building route supports leap calendars; the standalone weather loader
+retains its explicit ordinary-year restriction.
+
+The shared Building route requires **Core 0.8.2 or later in 0.8.x** and **Data 0.6.x**, on Python 3.11+.
 RC 0.8.2 widens package compatibility for Core's separate Viewer ownership;
 the RC solver and numerical methods are unchanged.
 The standalone numerical API continues to support Python 3.10 without Core.

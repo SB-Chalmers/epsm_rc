@@ -842,16 +842,12 @@ def _prepare_radiation(preparation, model, elements, attic, areas, optical_model
 
     solar, opaque = np.zeros(len(axis)), np.zeros(len(axis))
     orientation_irradiance = {}
+    from ._results import ANGULAR_WINDOW_OUTPUTS
+
     radiation_hourly = (
         {
             name: np.zeros(len(axis))
-            for name in (
-                "window_incident_beam_w",
-                "window_incident_sky_diffuse_w",
-                "window_incident_ground_diffuse_w",
-                "window_transmitted_solar_w",
-                "window_inward_absorbed_solar_w",
-            )
+            for name in ANGULAR_WINDOW_OUTPUTS
         }
         if settings.window_optics_method == "simple_glazing_angular_v1"
         else {}
