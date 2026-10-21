@@ -41,6 +41,7 @@ from .weather import EPWData, get_irradiance, get_temperature, load_epw, parse_g
 
 __all__ = [
     "simulate_building",
+    "preflight",
     "RCSettings",
     "PreparationCache",
     # Core model
@@ -92,6 +93,7 @@ def __getattr__(name):
         "EngineComparison": "comparison",
         "prepare_engine_comparison": "comparison",
         "simulate_building": "platform",
+        "preflight": "platform",
         "RCSettings": "platform",
         "ParametricBuilding": "parametric",
         "generate_idf": "parametric",

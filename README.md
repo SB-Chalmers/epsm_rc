@@ -6,6 +6,14 @@ RC owns reduction assumptions, the thermal calculation and its result meaning.
 The [compute-efficiency notes](docs/performance.rst) explain prepared execution,
 standalone validation and reproducible performance checks.
 
+`epsm_rc.preflight(building, weather=weather, settings=settings)` inspects the
+same physical inputs and explicit reduction choices without initializing a
+thermal solver. It returns `ready` and structured diagnostics with `code`,
+`field`, `message` and `severity`. Missing airflow/ground/attic policies remain
+actionable errors; inspection never silently enables an approximation. Selected
+weather is read to check its captured checksum and annual calendar. This check
+does not guarantee later numerical acceptance or scientific accuracy.
+
 The shared Building route accepts **Core 0.7.1 or 0.8.x** and **Data 0.6.x**, on Python 3.11+.
 RC 0.8.2 widens package compatibility for Core's separate Viewer ownership;
 the RC solver and numerical methods are unchanged.

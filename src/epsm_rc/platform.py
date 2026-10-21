@@ -5,7 +5,7 @@
 # Author: Sanjay Somanath
 # Research attribution: Existing numerical solver credits are retained in iso13790.py.
 # Date created: 2026-10-14
-# Date modified: 2026-10-20
+# Date modified: 2026-10-21
 # Changelog:
 #   2026-10-19 - Preserve conditioned-basement controls and finite cold-attic buffers.
 #   2026-10-14 - Add the Core adapter with explicit reduction and delivery assumptions.
@@ -530,32 +530,139 @@ def _rc_readiness_engine(building, weather):
     return "epsm_rc"
 
 
+def _settings(settings):
+    if settings is None:
+        raise ValueError("epsm_rc requires explicit settings or a named reduction policy")
+    settings = RCSettings(**settings) if isinstance(settings, dict) else settings
+    if not isinstance(settings, RCSettings):
+        raise TypeError("settings must be RCSettings or an explicit settings dictionary")
+    return settings
+
+
+def _authoring_checks(building, settings):
+    """Keep settings-dependent authoring gates shared by inspection and execution."""
+    if building.context.buildings and settings.context_shading_method == "reject":
+        yield "rc_context", "settings.context_shading_method", lambda: _reject_context()
+    if building.hvac is not None:
+        yield "rc_airflow", "settings.airflow_policy", lambda: _airflow_capabilities(
+            building.hvac.airflow, settings)
+        if building.hvac.delivery.fvp or building.hvac.renewables.pv_systems:
+            yield "rc_delivery", "hvac", lambda: _reject_delivery()
+    if building.geometry is not None:
+        yield "rc_self_shadowing", "settings.self_shadowing_policy", lambda: _self_shadowing_capabilities(
+            building.geometry, settings)
+
+
+def _reject_context():
+    raise ValueError("Context buildings require context_shading_method='iso13790_hourly_horizon'")
+
+
+def _reject_delivery():
+    raise ValueError("epsm_rc adapter does not yet support FVP or PV delivery")
+
+
+def preflight(building, *, weather=None, settings=None):
+    """Inspect physical inputs and explicit RC policies without running a solver.
+
+    Parameters
+    ----------
+    building : epsm_core.Building
+        Authoring inputs to inspect; they are not changed.
+    weather : epsm_core.Weather or path-like, optional
+        Explicit annual EPW. A path is inspected; a Weather object's file
+        checksum/calendar is verified. Missing weather remains a diagnostic.
+    settings : RCSettings or dict, optional
+        Explicit versioned reduction policies. Missing/invalid choices produce
+        diagnostics instead of silently choosing approximations.
+
+    Returns
+    -------
+    dict
+        ``ready``, ``engine``, structured ``diagnostics`` (code, field, message,
+        severity), and effective ``settings``. A ready report means these
+        input/capability checks passed; it does not assert scientific accuracy
+        or successful engine output. No thermal model or solver is initialized.
+
+    Examples
+    --------
+    >>> from epsm_core import Building
+    >>> preflight(Building())["ready"]
+    False
+    """
+    from epsm_core import Building, Weather
+    from epsm_core.resolved import resolve_snapshot_inputs
+
+    diagnostics = []
+
+    def issue(code, field, message):
+        diagnostics.append(dict(code=code, field=field, message=str(message), severity="error"))
+
+    def check(code, field, operation):
+        try:
+            return operation()
+        except (ValueError, TypeError, OSError) as error:
+            issue(code, field, error)
+            return None
+
+    if not isinstance(building, Building):
+        issue("invalid_input", "building", "building must be an epsm_core.Building")
+        return dict(ready=False, engine="epsm_rc", diagnostics=diagnostics, settings=None)
+    settings = check("rc_settings", "settings", lambda: _settings(settings))
+    report = building.readiness(engine="epsm_rc", weather=weather)
+    for field in report.missing:
+        issue("missing_input", field, f"Required input is missing: {field}")
+    for message in report.unsupported:
+        # RC owns the newer context capability while retaining older Core support.
+        if building.context.buildings and message == "epsm_rc does not model explicit context shading":
+            continue
+        issue("unsupported_input", "building", message)
+    if weather is None:
+        issue("missing_input", "weather", "Explicit annual weather is required")
+    elif not isinstance(weather, Weather):
+        weather = check("weather", "weather", lambda: Weather.from_epw(weather))
+    if weather is not None:
+        check("weather", "weather", weather.validate)
+    if settings is not None:
+        for code, field, operation in _authoring_checks(building, settings):
+            check(code, field, operation)
+    physical_issues = any(row["code"] in {"missing_input", "unsupported_input", "weather"}
+                          for row in diagnostics)
+    if settings is not None and not physical_issues:
+        inputs = check("physical_inputs", "building", lambda: resolve_snapshot_inputs(
+            building.snapshot(), weather, engine=_rc_readiness_engine(building, weather)))
+        if inputs is not None:
+            spec = inputs.spec
+            check("rc_topology", "geometry", lambda: _validate_rc_spec(spec))
+            check("rc_ground", "settings.ground_policy", lambda: _ground_reduction(spec.envelope, settings))
+            check("rc_gains", "operation", lambda: _gain_inputs(
+                spec.use, spec.load_reference_area_m2 or spec.geometry.conditioned_floor_area_m2,
+                spec.climate.calendar_year, settings))
+            from .attic import reduce_attics
+
+            check("rc_attic", "settings.cold_attic_policy", lambda: reduce_attics(
+                inputs.building, spec, weather, settings, resolved=inputs.resolved))
+            if spec.geometry.basement_conditioned:
+                from .domains import select_domains
+
+                check("rc_domains", "zone_uses", lambda: select_domains(
+                    inputs.building, inputs.resolved, settings))
+    return dict(ready=not diagnostics, engine="epsm_rc", diagnostics=diagnostics,
+                settings=settings.effective_configuration() if settings is not None else None)
+
+
 def _prepare_building(building, weather, settings, preparation_cache):
     """Capture and check a building once, with fresh state reserved for each domain."""
     from epsm_core import Building, Weather
     from epsm_core.resolved import resolve_snapshot_inputs
     from epsm_core.weather import hourly_axis, validate_epw_calendar
 
-    if settings is None:
-        raise ValueError("epsm_rc requires explicit settings or a named reduction policy")
-    settings = RCSettings(**settings) if isinstance(settings, dict) else settings
-    if not isinstance(settings, RCSettings):
-        raise TypeError("settings must be RCSettings or an explicit settings dictionary")
+    settings = _settings(settings)
     if preparation_cache is not None and not isinstance(preparation_cache, PreparationCache):
         raise TypeError("preparation_cache must be a PreparationCache")
     if not isinstance(building, Building):
         raise TypeError("building must be an epsm_core.Building")
-    if building.context.buildings and settings.context_shading_method == "reject":
-        raise ValueError(
-            "Context buildings require context_shading_method='iso13790_hourly_horizon'"
-        )
-    # These checks depend only on supplied authoring inputs and selected settings.
-    if building.hvac is not None:
-        _airflow_capabilities(building.hvac.airflow, settings)
-        if building.hvac.delivery.fvp or building.hvac.renewables.pv_systems:
-            raise ValueError("epsm_rc adapter does not yet support FVP or PV delivery")
-    if building.geometry is not None:
-        _self_shadowing_capabilities(building.geometry, settings)
+    for _, _, operation in _authoring_checks(building, settings):
+        operation()
     snapshot = building.snapshot()
     inputs = resolve_snapshot_inputs(
         snapshot,
