@@ -8,6 +8,27 @@ from dataclasses import asdict
 
 import numpy as np
 
+BASE_OUTPUT_UNITS = {
+    "space_heating_demand_kwh": "kWh",
+    "cooling_demand_kwh": "kWh",
+    "indoor_temperature_c": "C",
+    "internal_gains_convective_w": "W",
+    "internal_gains_radiant_w": "W",
+    "dhw_load_kwh": "kWh",
+}
+ANGULAR_WINDOW_OUTPUTS = (
+    "window_incident_beam_w",
+    "window_incident_sky_diffuse_w",
+    "window_incident_ground_diffuse_w",
+    "window_transmitted_solar_w",
+    "window_inward_absorbed_solar_w",
+)
+ANGULAR_DERIVED_OUTPUTS = (
+    "window_solar_heat_gain_w",
+    "opaque_solar_heat_gain_w",
+    "sky_radiation_loss_w",
+)
+
 
 def finish_domain(
     power,
@@ -66,7 +87,10 @@ def finish_domain(
     )
     scalars = {key: float(values.sum()) for key, values in hourly.items() if key.endswith("kwh")}
     units = {
-        key: "kWh" if key.endswith("kwh") else "W" if key.endswith("_w") else "C" for key in hourly
+        key: BASE_OUTPUT_UNITS.get(
+            key, "kWh" if key.endswith("kwh") else "W" if key.endswith("_w") else "C"
+        )
+        for key in hourly
     }
     diagnostics = {
         "accepted": all(np.isfinite(v).all() for v in hourly.values()),

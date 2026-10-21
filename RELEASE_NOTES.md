@@ -1,3 +1,13 @@
+# Release 0.9.0 — public capability preflight
+
+Expose settings-aware preflight through the same authoring preparation used by simulation. Callers can inspect reduction requirements without starting the thermal solver. Numerical models and policy defaults retain their existing meaning.
+
+Public output discovery describes exact hourly/annual signals, units and
+conditional optics/basement availability. Shared delivery descriptors come from
+Core 0.8.2; the platform extra now requires Core `>=0.8.2,<0.9`. The shared-building
+engine preserves leap calendars, while standalone weather loading retains its
+explicit ordinary-year restriction.
+
 # Release 0.8.3 — ISO 13790 hourly context shading
 
 Context buildings use ISO 13790:2008 Annex G.5.4.2 equation G.3 by default:
