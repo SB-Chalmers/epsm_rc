@@ -1,3 +1,7 @@
+# Release 0.9.0 candidate — public capability preflight
+
+Expose settings-aware preflight through the same authoring preparation used by simulation. Callers can inspect reduction requirements without starting the thermal solver. Numerical models and policy defaults retain their existing meaning.
+
 # Release 0.8.3 — ISO 13790 hourly context shading
 
 Context buildings use ISO 13790:2008 Annex G.5.4.2 equation G.3 by default:
