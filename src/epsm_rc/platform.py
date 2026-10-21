@@ -544,13 +544,19 @@ def _authoring_checks(building, settings):
     if building.context.buildings and settings.context_shading_method == "reject":
         yield "rc_context", "settings.context_shading_method", lambda: _reject_context()
     if building.hvac is not None:
-        yield "rc_airflow", "settings.airflow_policy", lambda: _airflow_capabilities(
-            building.hvac.airflow, settings)
+        yield (
+            "rc_airflow",
+            "settings.airflow_policy",
+            lambda: _airflow_capabilities(building.hvac.airflow, settings),
+        )
         if building.hvac.delivery.fvp or building.hvac.renewables.pv_systems:
             yield "rc_delivery", "hvac", lambda: _reject_delivery()
     if building.geometry is not None:
-        yield "rc_self_shadowing", "settings.self_shadowing_policy", lambda: _self_shadowing_capabilities(
-            building.geometry, settings)
+        yield (
+            "rc_self_shadowing",
+            "settings.self_shadowing_policy",
+            lambda: _self_shadowing_capabilities(building.geometry, settings),
+        )
 
 
 def _reject_context():
@@ -613,7 +619,10 @@ def preflight(building, *, weather=None, settings=None):
         issue("missing_input", field, f"Required input is missing: {field}")
     for message in report.unsupported:
         # RC owns the newer context capability while retaining older Core support.
-        if building.context.buildings and message == "epsm_rc does not model explicit context shading":
+        if (
+            building.context.buildings
+            and message == "epsm_rc does not model explicit context shading"
+        ):
             continue
         issue("unsupported_input", "building", message)
     if weather is None:
@@ -625,29 +634,58 @@ def preflight(building, *, weather=None, settings=None):
     if settings is not None:
         for code, field, operation in _authoring_checks(building, settings):
             check(code, field, operation)
-    physical_issues = any(row["code"] in {"missing_input", "unsupported_input", "weather"}
-                          for row in diagnostics)
+    physical_issues = any(
+        row["code"] in {"missing_input", "unsupported_input", "weather"} for row in diagnostics
+    )
     if settings is not None and not physical_issues:
-        inputs = check("physical_inputs", "building", lambda: resolve_snapshot_inputs(
-            building.snapshot(), weather, engine=_rc_readiness_engine(building, weather)))
+        inputs = check(
+            "physical_inputs",
+            "building",
+            lambda: resolve_snapshot_inputs(
+                building.snapshot(), weather, engine=_rc_readiness_engine(building, weather)
+            ),
+        )
         if inputs is not None:
             spec = inputs.spec
             check("rc_topology", "geometry", lambda: _validate_rc_spec(spec))
-            check("rc_ground", "settings.ground_policy", lambda: _ground_reduction(spec.envelope, settings))
-            check("rc_gains", "operation", lambda: _gain_inputs(
-                spec.use, spec.load_reference_area_m2 or spec.geometry.conditioned_floor_area_m2,
-                spec.climate.calendar_year, settings))
+            check(
+                "rc_ground",
+                "settings.ground_policy",
+                lambda: _ground_reduction(spec.envelope, settings),
+            )
+            check(
+                "rc_gains",
+                "operation",
+                lambda: _gain_inputs(
+                    spec.use,
+                    spec.load_reference_area_m2 or spec.geometry.conditioned_floor_area_m2,
+                    spec.climate.calendar_year,
+                    settings,
+                ),
+            )
             from .attic import reduce_attics
 
-            check("rc_attic", "settings.cold_attic_policy", lambda: reduce_attics(
-                inputs.building, spec, weather, settings, resolved=inputs.resolved))
+            check(
+                "rc_attic",
+                "settings.cold_attic_policy",
+                lambda: reduce_attics(
+                    inputs.building, spec, weather, settings, resolved=inputs.resolved
+                ),
+            )
             if spec.geometry.basement_conditioned:
                 from .domains import select_domains
 
-                check("rc_domains", "zone_uses", lambda: select_domains(
-                    inputs.building, inputs.resolved, settings))
-    return dict(ready=not diagnostics, engine="epsm_rc", diagnostics=diagnostics,
-                settings=settings.effective_configuration() if settings is not None else None)
+                check(
+                    "rc_domains",
+                    "zone_uses",
+                    lambda: select_domains(inputs.building, inputs.resolved, settings),
+                )
+    return dict(
+        ready=not diagnostics,
+        engine="epsm_rc",
+        diagnostics=diagnostics,
+        settings=settings.effective_configuration() if settings is not None else None,
+    )
 
 
 def _prepare_building(building, weather, settings, preparation_cache):
@@ -845,10 +883,7 @@ def _prepare_radiation(preparation, model, elements, attic, areas, optical_model
     from ._results import ANGULAR_WINDOW_OUTPUTS
 
     radiation_hourly = (
-        {
-            name: np.zeros(len(axis))
-            for name in ANGULAR_WINDOW_OUTPUTS
-        }
+        {name: np.zeros(len(axis)) for name in ANGULAR_WINDOW_OUTPUTS}
         if settings.window_optics_method == "simple_glazing_angular_v1"
         else {}
     )
