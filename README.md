@@ -1,6 +1,6 @@
 # EPSM RC
 
-Version **0.8.3**. RC reduces the same physical Building used by Core to an hourly
+Version **0.9.0**. RC reduces the same physical Building used by Core to an hourly
 ISO 13790 5R1C thermal network. Core owns physical inputs and weather inspection;
 RC owns reduction assumptions, the thermal calculation and its result meaning.
 The [compute-efficiency notes](docs/performance.rst) explain prepared execution,

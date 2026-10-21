@@ -1,4 +1,4 @@
-# Release 0.9.0 candidate — public capability preflight
+# Release 0.9.0 — public capability preflight
 
 Expose settings-aware preflight through the same authoring preparation used by simulation. Callers can inspect reduction requirements without starting the thermal solver. Numerical models and policy defaults retain their existing meaning.
 
