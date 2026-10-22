@@ -2,6 +2,9 @@
 .venv
 __pycache__/
 *.py[cod]
+*.so
+*.pyd
+*.dylib
 *.egg-info/
 .pytest_cache/
 .ruff_cache/
@@ -9,9 +12,17 @@ __pycache__/
 htmlcov/
 build/
 dist/
+target/
+*.whl
+**/*.rs.bk
+*.pdb
+.cargo/config.local.toml
 output/
 outputs/
 examples/output/
 .ipynb_checkpoints/
 references/iso13790.MD
 references/iso13790_pymupdf.md
+
+.idea
+.vscode
