@@ -98,6 +98,83 @@ class HeatingSystem(ABC):
         raise NotImplementedError
 
 
+def _compute_5r1c_heat_demand(
+    building_model,
+    outdoor_temp_c: np.ndarray,
+    solar_gains: Optional[np.ndarray],
+    internal_gains: Optional[np.ndarray],
+    dt_hours: float,
+) -> np.ndarray:
+    """Compute 5R1C heat demand series in one batch Rust call when possible."""
+    import random
+
+    from .iso13790 import _can_use_native
+
+    outdoor_temp_c = np.asarray(outdoor_temp_c, dtype=np.float64)
+    if outdoor_temp_c.ndim != 1:
+        raise ValueError("outdoor_temp_c must be one-dimensional")
+    n = len(outdoor_temp_c)
+    if solar_gains is None:
+        solar_gains = np.zeros(n, dtype=np.float64)
+    if internal_gains is None:
+        internal_gains = np.full(
+            n,
+            building_model.internal_gains_w_per_m2 * building_model.floor_area_m2,
+            dtype=np.float64,
+        )
+    # Validate before resetting state and before crossing the native boundary.
+    sol_arr = np.ascontiguousarray(solar_gains, dtype=np.float64)
+    int_arr = np.ascontiguousarray(internal_gains, dtype=np.float64)
+    out_arr = np.ascontiguousarray(outdoor_temp_c, dtype=np.float64)
+    for name, array in (
+        ("outdoor_temp_c", out_arr),
+        ("solar_gains", sol_arr),
+        ("internal_gains", int_arr),
+    ):
+        if array.shape != (n,):
+            raise ValueError(f"{name} must be one-dimensional and match outdoor_temp_c length")
+        if not np.isfinite(array).all() or (name != "outdoor_temp_c" and (array < 0).any()):
+            raise ValueError(
+                f"{name} must contain finite{' nonnegative' if name != 'outdoor_temp_c' else ''} values"
+            )
+    if (
+        hasattr(building_model, "_refresh_inputs")
+        and _can_use_native(building_model, needs_demand=True)
+        and n > 0
+    ):
+        from ._core_rs import simulate_5r1c_hourly
+
+        building_model._refresh_inputs()
+        building_model._validate_timestep_and_capacity(dt_hours, np.inf, 0.0)
+        opq_arr = np.zeros(n, dtype=np.float64)
+        res = simulate_5r1c_hourly(
+            building_model,
+            out_arr,
+            sol_arr,
+            int_arr,
+            opq_arr,
+            None,
+            float(dt_hours),
+            float(np.inf),
+            0.0,
+            True,
+            random.random if 0.0 < building_model.ventilation_behaviour < 1.0 else None,
+            False,
+        )
+        return np.maximum(0.0, res["heating_demand"])
+
+    building_model.reset()
+    q_demand = np.zeros(n)
+    for i in range(n):
+        q_demand[i] = building_model.calc_heating_demand(
+            t_out=outdoor_temp_c[i],
+            solar_gains=solar_gains[i] if solar_gains is not None else 0.0,
+            internal_gains=internal_gains[i] if internal_gains is not None else None,
+            dt_hours=dt_hours,
+        )
+    return np.maximum(0.0, q_demand)
+
+
 # =============================================================================
 # hplib-based Heat Pump Model (Primary - Empirically Validated)
 # =============================================================================
@@ -324,35 +401,13 @@ class HeatPumpHPLib(HeatingSystem):
             Heat demand [W] array
         """
         outdoor_temp_c = np.asarray(outdoor_temp_c, dtype=float)
-        n = len(outdoor_temp_c)
 
         if self.building_model is not None:
             # Use ISO 13790 5R1C dynamic model
             dt_hours = minutes_per_slot / 60.0
-
-            # Default solar/internal gains if not provided
-            if solar_gains is None:
-                solar_gains = np.zeros(n)
-            if internal_gains is None:
-                internal_gains = np.full(
-                    n,
-                    self.building_model.internal_gains_w_per_m2 * self.building_model.floor_area_m2,
-                )
-
-            # Reset building model to initial state
-            self.building_model.reset()
-
-            # Calculate heat demand for each timestep
-            q_demand = np.zeros(n)
-            for i in range(n):
-                q_demand[i] = self.building_model.calc_heating_demand(
-                    t_out=outdoor_temp_c[i],
-                    solar_gains=solar_gains[i] if solar_gains is not None else 0.0,
-                    internal_gains=internal_gains[i] if internal_gains is not None else None,
-                    dt_hours=dt_hours,
-                )
-
-            return np.maximum(0.0, q_demand)
+            return _compute_5r1c_heat_demand(
+                self.building_model, outdoor_temp_c, solar_gains, internal_gains, dt_hours
+            )
         else:
             # Fall back to simple steady-state model
             delta = self.indoor_temp_c - outdoor_temp_c
@@ -553,32 +608,13 @@ class HeatPumpCarnot(HeatingSystem):
     ) -> np.ndarray:
         """Compute heat demand [W] using 5R1C if available."""
         outdoor_temp_c = np.asarray(outdoor_temp_c, dtype=float)
-        n = len(outdoor_temp_c)
 
         if self.building_model is not None:
             # Use ISO 13790 5R1C dynamic model
             dt_hours = minutes_per_slot / 60.0
-
-            if solar_gains is None:
-                solar_gains = np.zeros(n)
-            if internal_gains is None:
-                internal_gains = np.full(
-                    n,
-                    self.building_model.internal_gains_w_per_m2 * self.building_model.floor_area_m2,
-                )
-
-            self.building_model.reset()
-
-            q_demand = np.zeros(n)
-            for i in range(n):
-                q_demand[i] = self.building_model.calc_heating_demand(
-                    t_out=outdoor_temp_c[i],
-                    solar_gains=solar_gains[i] if solar_gains is not None else 0.0,
-                    internal_gains=internal_gains[i] if internal_gains is not None else None,
-                    dt_hours=dt_hours,
-                )
-
-            return np.maximum(0.0, q_demand)
+            return _compute_5r1c_heat_demand(
+                self.building_model, outdoor_temp_c, solar_gains, internal_gains, dt_hours
+            )
         else:
             delta = self.indoor_temp_c - outdoor_temp_c
             return np.maximum(0.0, self.u_total_w_per_k * delta)
@@ -790,35 +826,16 @@ class DistrictHeating(HeatingSystem):
         This is the heat that district heating must supply.
         """
         outdoor_temp_c = np.asarray(outdoor_temp_c, dtype=float)
-        n = len(outdoor_temp_c)
 
         if self.building_model is not None:
             dt_hours = minutes_per_slot / 60.0
-
-            if solar_gains is None:
-                solar_gains = np.zeros(n)
-            if internal_gains is None:
-                internal_gains = np.full(
-                    n,
-                    self.building_model.internal_gains_w_per_m2 * self.building_model.floor_area_m2,
-                )
-
-            self.building_model.reset()
-
-            q_demand = np.zeros(n)
-            for i in range(n):
-                q_demand[i] = self.building_model.calc_heating_demand(
-                    t_out=outdoor_temp_c[i],
-                    solar_gains=solar_gains[i] if solar_gains is not None else 0.0,
-                    internal_gains=internal_gains[i] if internal_gains is not None else None,
-                    dt_hours=dt_hours,
-                )
-
-            self._last_thermal_demand_w = np.maximum(0.0, q_demand)
+            self._last_thermal_demand_w = _compute_5r1c_heat_demand(
+                self.building_model, outdoor_temp_c, solar_gains, internal_gains, dt_hours
+            )
             return self._last_thermal_demand_w
         else:
             # No building model - return zeros (unknown demand)
-            self._last_thermal_demand_w = np.zeros(n)
+            self._last_thermal_demand_w = np.zeros(len(outdoor_temp_c))
             return self._last_thermal_demand_w
 
     def calculate_load(
@@ -880,31 +897,12 @@ class DirectElectric(HeatingSystem):
     ) -> np.ndarray:
         """Calculate thermal heat demand [W]."""
         outdoor_temp_c = np.asarray(outdoor_temp_c, dtype=float)
-        n = len(outdoor_temp_c)
 
         if self.building_model is not None:
             dt_hours = minutes_per_slot / 60.0
-
-            if solar_gains is None:
-                solar_gains = np.zeros(n)
-            if internal_gains is None:
-                internal_gains = np.full(
-                    n,
-                    self.building_model.internal_gains_w_per_m2 * self.building_model.floor_area_m2,
-                )
-
-            self.building_model.reset()
-
-            q_demand = np.zeros(n)
-            for i in range(n):
-                q_demand[i] = self.building_model.calc_heating_demand(
-                    t_out=outdoor_temp_c[i],
-                    solar_gains=solar_gains[i] if solar_gains is not None else 0.0,
-                    internal_gains=internal_gains[i] if internal_gains is not None else None,
-                    dt_hours=dt_hours,
-                )
-
-            return np.maximum(0.0, q_demand)
+            return _compute_5r1c_heat_demand(
+                self.building_model, outdoor_temp_c, solar_gains, internal_gains, dt_hours
+            )
         else:
             # Fallback: simple steady-state
             delta = self.indoor_temp_c - outdoor_temp_c
@@ -968,31 +966,12 @@ class WoodPelletHybrid(HeatingSystem):
     ) -> np.ndarray:
         """Calculate thermal heat demand [W]."""
         outdoor_temp_c = np.asarray(outdoor_temp_c, dtype=float)
-        n = len(outdoor_temp_c)
 
         if self.building_model is not None:
             dt_hours = minutes_per_slot / 60.0
-
-            if solar_gains is None:
-                solar_gains = np.zeros(n)
-            if internal_gains is None:
-                internal_gains = np.full(
-                    n,
-                    self.building_model.internal_gains_w_per_m2 * self.building_model.floor_area_m2,
-                )
-
-            self.building_model.reset()
-
-            q_demand = np.zeros(n)
-            for i in range(n):
-                q_demand[i] = self.building_model.calc_heating_demand(
-                    t_out=outdoor_temp_c[i],
-                    solar_gains=solar_gains[i] if solar_gains is not None else 0.0,
-                    internal_gains=internal_gains[i] if internal_gains is not None else None,
-                    dt_hours=dt_hours,
-                )
-
-            return np.maximum(0.0, q_demand)
+            return _compute_5r1c_heat_demand(
+                self.building_model, outdoor_temp_c, solar_gains, internal_gains, dt_hours
+            )
         else:
             # Fallback: simple steady-state
             delta = self.indoor_temp_c - outdoor_temp_c

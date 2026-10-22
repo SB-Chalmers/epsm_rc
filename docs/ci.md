@@ -1,9 +1,22 @@
 # Continuous integration
 
-Pull requests into `dev` or `main` run one `ci` job on Python 3.13
-(Node.js 22 for JavaScript). The development job checks this package and its
-necessary dependencies; it does not certify the entire EPSM ecosystem.
+Pull requests into `dev` or `main` run the Python 3.13 `ci` job and a separate
+Rust kernel job. The Python job exercises standalone thermal balances, physics,
+heat pumps and native differential, dispatch and concurrency regressions, then
+builds a wheel. The Rust job runs `cargo fmt --all --check`,
+`cargo clippy --locked --all-targets -- -D warnings` and `cargo test --locked`.
 The executable commands are in [.github/workflows/ci.yml](../.github/workflows/ci.yml).
+These development checks do not certify the entire EPSM ecosystem.
+
+[Native wheels](../.github/workflows/native-wheels.yml) also builds and installs
+release wheels on pull requests. Its eight combinations cover CPython 3.10–3.14
+on Linux x86_64 and CPython 3.14 on macOS arm64, macOS x86_64 and Windows x86_64.
+Linux builds use manylinux2014 containers and select the Python interpreter
+inside the container; installation tests use the matching host Python.
+Each combination checks package metadata, runs the offline example and exercises
+native and standalone APIs without Core or Data. Wheels are retained as workflow
+artifacts. Manual runs and `v*` tags build all twenty platform/Python combinations;
+this workflow does not publish packages.
 
 Run **Release verification** explicitly before tagging or publishing a release,
 and when a change needs the full engine, database, browser or installed-package
@@ -16,6 +29,9 @@ cause, then rerun only the affected checks. Preserve failing evidence.
 
 See the [shared branch and CI policy](https://github.com/SB-Chalmers/epsm_development/blob/main/docs/branches-and-releases.md).
 
-RC development checks exercise standalone thermal balances, physics and heat
-pumps. The validation suite that loads strict EPW weather through Core/Data is
-retained in the full release workflow with its platform prerequisites.
+The validation suite that loads strict EPW weather through Core/Data remains in
+the full [release workflow](../.github/workflows/tests.yml), using the shared
+compatibility manifest to select coordinated dependencies. It builds and tests
+an installed wheel with required EnergyPlus and hplib, and retains documentation,
+notebook and released-output comparisons. The source build uses maturin and
+requires a Rust toolchain; native wheel checks complement this release gate.

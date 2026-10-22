@@ -1261,44 +1261,16 @@ def _prepare_domain(preparation, *, domain=None):
         annual(airflow.cooling_availability),
     )
     model.t_m = model.t_air = model.t_s = float(heat_set[0])
-    month_offsets = tuple(
-        sum((744, 672, 744, 720, 744, 720, 744, 744, 720, 744, 720, 744)[:m]) for m in range(12)
-    )
-    month_hours = tuple(month_offsets[int(month) - 1] for month in times.month)
-    # Array preparation stays vectorized; the recurrence uses Python doubles to
-    # avoid NumPy scalar dispatch without changing floating-point operation order.
-    (
-        temperatures,
-        scalar_gains,
-        scalar_convective,
-        heat_set,
-        cool_set,
-        wind,
-        infiltration,
-        natural,
-        ventilation,
-        solar,
-        opaque,
-        heating_on,
-        cooling_on,
-    ) = (
-        values.tolist()
-        for values in (
-            temperatures,
-            gains,
-            convective_gains,
-            heat_set,
-            cool_set,
-            wind,
-            infiltration,
-            natural,
-            ventilation,
-            solar,
-            opaque,
-            heating_on,
-            cooling_on,
+    if ground:
+        month_offsets = np.array(
+            (0, 744, 1416, 2160, 2880, 3624, 4344, 5088, 5832, 6552, 7296, 8016),
+            dtype=np.int64,
         )
-    )
+        month_hours = np.ascontiguousarray(
+            month_offsets[times.month.to_numpy(dtype=np.int64) - 1], dtype=np.int64
+        )
+    else:
+        month_hours = None
 
     from functools import partial
 
@@ -1334,50 +1306,90 @@ def _prepare_domain(preparation, *, domain=None):
         use=use,
     )
 
-    from .domains import HourlyInputs, PreparedDomain
+    from .domains import HourlyInputs, PreparedDomain, _immutable_columns, _immutable_series
 
     forcing = HourlyInputs(
         model,
-        temperatures,
-        scalar_gains,
-        scalar_convective,
-        heat_set,
-        cool_set,
-        wind,
-        infiltration,
-        natural,
-        ventilation,
-        solar,
-        opaque,
-        month_hours if ground else None,
+        *_immutable_columns(
+            temperatures,
+            gains,
+            convective_gains,
+            heat_set,
+            cool_set,
+            wind,
+            infiltration,
+            natural,
+            ventilation,
+            solar,
+            opaque,
+        ),
+        _immutable_series(month_hours, np.int64) if month_hours is not None else None,
         coefficients,
         gain_reduction["aggregate_split_applied"],
     )
+    heating_limits_w = np.where(heating_on != 0.0, np.inf, 0.0)
+    cooling_limits_w = (
+        np.where(cooling_on != 0.0, -np.inf, 0.0)
+        if use.cooling_enabled
+        else np.zeros(len(cooling_on), dtype=np.float64)
+    )
+    heating_limits_w = _immutable_series(heating_limits_w)
+    cooling_limits_w = _immutable_series(cooling_limits_w)
     return PreparedDomain(
         domain.name if domain is not None else "aggregate",
         model,
         forcing.at,
         finish,
-        tuple(np.inf if value else 0.0 for value in heating_on),
-        tuple(-np.inf if use.cooling_enabled and value else 0.0 for value in cooling_on),
+        heating_limits_w,
+        cooling_limits_w,
         axis,
         reference_area,
         volume,
+        forcing=forcing,
     )
 
 
 def _run_domain(domain):
     """Advance a fresh prepared domain using the same forcing as coupled runs."""
-    power, indoor = np.zeros(len(domain.time_axis)), np.zeros(len(domain.time_axis))
-    calculate, advance = domain.model._calculate_demand, domain.model._step
-    for hour in range(len(power)):
-        power[hour] = calculate(
-            **domain.input_at(hour),
-            max_heating_power=domain.heating_limits_w[hour],
-            max_cooling_power=domain.cooling_limits_w[hour],
-            advance=advance,
-        )
-        indoor[hour] = domain.model.t_air
+    from .iso13790 import _can_use_native
+
+    if domain.forcing is None or not _can_use_native(
+        domain.model, needs_demand=True, prepared=True
+    ):
+        power, indoor = np.zeros(len(domain.time_axis)), np.zeros(len(domain.time_axis))
+        calculate, advance = domain.model._calculate_demand, domain.model._step
+        for hour in range(len(power)):
+            power[hour] = calculate(
+                **domain.input_at(hour),
+                max_heating_power=domain.heating_limits_w[hour],
+                max_cooling_power=domain.cooling_limits_w[hour],
+                advance=advance,
+            )
+            indoor[hour] = domain.model.t_air
+        return domain.finish(power, indoor)
+
+    from ._core_rs import run_single_domain_hourly
+
+    f = domain.forcing
+    power, indoor = run_single_domain_hourly(
+        domain.model,
+        f.temperatures,
+        f.gains,
+        f.convective,
+        f.heating_setpoints,
+        f.cooling_setpoints,
+        f.wind,
+        f.infiltration,
+        f.natural,
+        f.ventilation,
+        f.solar,
+        f.opaque,
+        f.month_hours,
+        tuple(float(c) for c in f.coefficients),
+        bool(f.aggregate_split),
+        np.ascontiguousarray(domain.heating_limits_w, dtype=np.float64),
+        np.ascontiguousarray(domain.cooling_limits_w, dtype=np.float64),
+    )
     return domain.finish(power, indoor)
 
 

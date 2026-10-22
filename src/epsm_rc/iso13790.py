@@ -2512,6 +2512,38 @@ class Building5R1C:
         # ISO 13790 Section 13.2.3 - Intermittent Heating/Cooling
         t_set_heat, t_set_cool = self.get_active_setpoints(hour_of_year)
 
+        # Prepared engines enter the private equations directly. Public calls
+        # retain their method overrides, including helpers used by those equations.
+        prepared_advance = (
+            self._prepared_hourly
+            and getattr(advance, "__self__", None) is self
+            and getattr(advance, "__func__", None) is _NATIVE_NUMERICAL_METHODS["_step"]
+        )
+        public_advance = (
+            getattr(advance, "__self__", None) is self
+            and getattr(advance, "__func__", None) is _NATIVE_PUBLIC_METHODS["step"]
+        )
+        if (prepared_advance or public_advance) and _can_use_native(
+            self, prepared=prepared_advance
+        ):
+            from ._core_rs import calc_heating_demand_5r1c
+
+            return calc_heating_demand_5r1c(
+                self,
+                float(t_out),
+                float(solar_gains),
+                float(internal_gains),
+                float(dt_hours),
+                float(max_heating_power),
+                float(max_cooling_power),
+                float(solar_gains_opaque),
+                int(hour_of_year) if hour_of_year is not None else None,
+                bool(include_sky_radiation),
+                float(t_set_heat),
+                float(t_set_cool),
+                random.random if 0.0 < self.ventilation_behaviour < 1.0 else None,
+            )
+
         # Step 1: Calculate temperature with no heating/cooling
         t_m_prev = self.t_m
 
@@ -2711,6 +2743,30 @@ class Building5R1C:
         last_hour = int((n - 1) * dt_hours)
         if self.occupancy_schedule is not None and len(self.occupancy_schedule) <= last_hour:
             raise ValueError("occupancy_schedule does not cover the simulation elapsed hours")
+
+        if _can_use_native(self, needs_demand=True):
+            from ._core_rs import simulate_5r1c_hourly
+
+            occ_arr = (
+                np.ascontiguousarray(self.occupancy_schedule, dtype=bool)
+                if self.occupancy_schedule is not None
+                else None
+            )
+            return dict(
+                simulate_5r1c_hourly(
+                    self,
+                    np.ascontiguousarray(t_outdoor, dtype=np.float64),
+                    np.ascontiguousarray(solar_gains, dtype=np.float64),
+                    np.ascontiguousarray(internal_gains, dtype=np.float64),
+                    np.ascontiguousarray(solar_gains_opaque, dtype=np.float64),
+                    occ_arr,
+                    float(dt_hours),
+                    float(max_heating_power),
+                    float(max_cooling_power),
+                    bool(include_sky_radiation),
+                    random.random if 0.0 < self.ventilation_behaviour < 1.0 else None,
+                )
+            )
 
         # Pre-allocate output arrays
         q_heat = np.zeros(n)
@@ -2942,6 +2998,57 @@ class Building5R1C:
         self.t_s = t_initial
         self.t_air = t_initial
         self._windows_open = False
+
+
+# Rust replaces these calls and properties with its base thermal equations.
+# Capture descriptors once so class patches are detected as well as subclasses
+# and instance patches. Unchanged subclasses remain eligible for native batches.
+_NATIVE_NUMERICAL_METHODS = {
+    name: getattr(Building5R1C, name)
+    for name in (
+        "_step",
+        "_calculate_demand",
+        "_month_index_from_hour_of_year",
+        "_update_ventilation_coefficient",
+        "_handle_window_opening",
+        "_update_ventilation_with_window_opening",
+        "calc_supply_air_temperature",
+        "get_active_setpoints",
+        "h_tr_1",
+        "h_tr_2",
+        "h_tr_3",
+        "calc_sky_radiation_loss",
+        "calc_heat_flows",
+        "calc_phi_m_tot",
+        "calc_t_m_next",
+        "calc_t_s",
+        "calc_t_air",
+        "t_operative",
+    )
+}
+_NATIVE_PUBLIC_METHODS = {
+    name: getattr(Building5R1C, name) for name in ("step", "reset", "calc_heating_demand")
+}
+
+
+def _can_use_native(model, *, needs_demand=False, prepared=False):
+    """Use native equations only when all replaced Python behavior is unchanged.
+
+    Owned prepared engines already bypass public ``step`` and demand wrappers;
+    they still honor changes to the private equations and their thermal helpers.
+    """
+    cls = type(model)
+    patched = model.__dict__
+    for name, original in _NATIVE_NUMERICAL_METHODS.items():
+        if name in patched or getattr(cls, name, None) is not original:
+            return False
+    if not prepared:
+        for name, original in _NATIVE_PUBLIC_METHODS.items():
+            if name == "calc_heating_demand" and not needs_demand:
+                continue
+            if name in patched or getattr(cls, name, None) is not original:
+                return False
+    return True
 
 
 def create_swedish_villa(
