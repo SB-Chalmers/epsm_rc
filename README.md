@@ -34,6 +34,11 @@ python examples/00_standalone.py
 The example runs a synthetic 24-hour calculation offline. Its inputs are
 illustrative assumptions; it does not validate a real building.
 
+Thermal solver loops run in a Rust extension while the public interface remains
+Python. Installing a matching wheel needs no Rust toolchain. Building from source,
+including an editable checkout, requires Rust and Cargo; the build backend is
+`maturin`. See [native builds and verification](RUST_PORT.md) for details.
+
 For the shared Building interface and EPW loading, use Python 3.11 or newer,
 install compatible Core/Data packages, then run:
 

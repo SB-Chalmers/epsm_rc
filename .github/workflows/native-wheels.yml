@@ -1,0 +1,65 @@
+name: Native wheels
+
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-wheels-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  wheels:
+    name: Wheel (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, macos-15-intel, windows-2022]
+        # PRs check every Python on Linux and the newest Python on each other OS.
+        # Manual and tagged builds produce every supported OS/Python combination.
+        python: ${{ github.event_name == 'pull_request' && fromJSON('["3.14"]') || fromJSON('["3.10", "3.11", "3.12", "3.13", "3.14"]') }}
+        include:
+        - os: ubuntu-24.04
+          python: '3.10'
+        - os: ubuntu-24.04
+          python: '3.11'
+        - os: ubuntu-24.04
+          python: '3.12'
+        - os: ubuntu-24.04
+          python: '3.13'
+    defaults:
+      run:
+        shell: bash
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python }}
+        cache: pip
+    - uses: dtolnay/rust-toolchain@stable
+    - name: Build portable wheel
+      uses: PyO3/maturin-action@v1
+      with:
+        command: build
+        manylinux: ${{ runner.os == 'Linux' && '2014' || 'off' }}
+        args: --release --locked --out dist --interpreter ${{ runner.os == 'Linux' && format('python{0}', matrix.python) || 'python' }}
+    - name: Install and exercise wheel without Core or Data
+      run: |
+        python -m pip install pytest dist/*.whl
+        python -m pip check
+        python -c "import importlib.util; from importlib.metadata import version; import epsm_rc; from epsm_rc import _core_rs; assert version('epsm_rc') == epsm_rc.__version__; assert importlib.util.find_spec('epsm_core') is None; assert importlib.util.find_spec('epsm_data') is None; print(_core_rs.__file__)"
+        python examples/00_standalone.py
+        python -m pytest -q tests/unit/test_native_kernels.py tests/unit/test_standalone_readiness.py
+    - uses: actions/upload-artifact@v4
+      with:
+        name: wheel-${{ matrix.os }}-cp${{ matrix.python }}
+        path: dist/*.whl
+        if-no-files-found: error

@@ -82,6 +82,7 @@ jobs:
       with:
         python-version: ${{ matrix.python }}
         cache: pip
+    - uses: dtolnay/rust-toolchain@stable
     - name: Install coordinated dependencies and test tools
       run: python -m pip install build setuptools wheel .ci/epsm_data '.ci/epsm_core[geometry]' '.[platform,dev,gis,notebook,docs,heatpump]'
     - name: Build and install release wheel
@@ -143,7 +144,7 @@ jobs:
       with:
         ref: 5a9d5f4251847e270b5dc4a526a4b2260915a4f9
         path: .ci/rc_reference
-    - name: Compare released and candidate calculations exactly
+    - name: Compare released and candidate calculations within numerical tolerance
       if: matrix.python == '3.13' && !inputs.development_dependencies
       run: |
         python -m venv --system-site-packages .ci/reference_venv
@@ -183,6 +184,7 @@ jobs:
       with:
         python-version: '3.10'
         cache: pip
+    - uses: dtolnay/rust-toolchain@stable
     - name: Install base wheel without Core or Data
       run: |
         python -m pip install build pytest
@@ -193,7 +195,7 @@ jobs:
     - name: Execute supported Core-free numerical APIs
       run: |
         python examples/00_standalone.py
-        python -m pytest tests/unit/test_iso13790.py tests/unit/test_iso13790_physics.py tests/unit/test_iso13790_compliance.py tests/unit/test_heat_pump.py tests/unit/test_heating.py tests/unit/test_public_readiness.py tests/unit/test_standalone_readiness.py -q
+        python -m pytest tests/unit/test_iso13790.py tests/unit/test_iso13790_physics.py tests/unit/test_iso13790_compliance.py tests/unit/test_heat_pump.py tests/unit/test_heating.py tests/unit/test_public_readiness.py tests/unit/test_standalone_readiness.py tests/unit/test_native_kernels.py -q
 'on':
   workflow_dispatch:
     inputs:

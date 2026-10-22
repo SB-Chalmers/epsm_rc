@@ -31,9 +31,10 @@ python benchmarks/run.py --directory outputs/benchmark-prepared --warm --referen
 python benchmarks/run.py --directory outputs/benchmark-batch --warm --batch --reference-directory outputs/benchmark-independent/reference
 ```
 
-Each directory must be new. Every hourly channel, calendar, annual total,
-reduced property, snapshot and weather identity is compared exactly; no tolerance
-is used. Installed implementation identities are retained and intentionally
+Each directory must be new. Floating hourly channels and annual totals use
+`rtol=0.001` (0.1%) and `atol=1e-8`, with matching shapes/dtypes and no NaNs.
+Calendars, reduced properties, snapshots and weather identities remain exact.
+Installed implementation identities are retained and intentionally
 differ between reference and candidate. First-call and repeated timings are
 reported separately. Preparation reuse is not a cached final simulation result.
 No absolute timing threshold is imposed on shared CI runners.
@@ -46,4 +47,34 @@ throughput for a stock of different buildings or parallel worker processes.
 
 Use `--no-output` to measure in-memory results separately from compressed output.
 `--policy 2` exercises angular optics against a reference that supports v2
-(RC 0.7.1 or newer). Both modes retain exact numerical comparisons.
+(RC 0.7.1 or newer). Both modes use the same numerical tolerances. Radiation-only
+comparisons remain exact because the Rust port does not change those calculations.
+
+For tighter native-kernel comparisons and annual loop timings, run:
+
+```sh
+python benchmarks/native.py --directory outputs/native-before
+# Rebuild the native extension after making changes, then compare:
+python benchmarks/native.py --directory outputs/native-after --reference-directory outputs/native-before
+```
+
+This measures standalone, heating-system, single-domain and coupled-domain paths
+with repeated batches. It checks outputs at `rtol=1e-10`, `atol=1e-9` and reports
+timing ratios without a machine-dependent pass/fail timing threshold. Compare
+isolated runs on the same machine and repeat close timing differences.
+
+The Rust hardening comparison on macOS arm64, Python 3.14.2 and NumPy 2.5.4 used
+35 batches of 30 annual calls against a saved copy of the original branch:
+
+| Annual path | Before (ms) | After (ms) |
+| --- | ---: | ---: |
+| Standalone simulation | 0.372 | 0.316 |
+| Heating-system demand | 0.367 | 0.322 |
+| Prepared single-domain kernel | 0.473 | 0.438 |
+| Prepared coupled-domain kernel | 0.848 | 0.779 |
+
+All native channels passed the tighter comparison above. Alternating 50 warm
+before/after pairs for each of the six fixtures and a conditioned basement kept
+end-to-end median paired timings within 0.3% of baseline. Scalar heating-demand
+calls stayed within 1%. These local measurements are evidence for the change,
+not portable timing thresholds.
