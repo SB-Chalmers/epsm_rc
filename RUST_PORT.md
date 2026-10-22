@@ -1,10 +1,9 @@
 # Rust + PyO3 Acceleration Plan (`RUST_PORT.md`)
 
 The port originated from RC 0.8.0. It is now integrated with the RC 0.9.0 source
-and its Core `>=0.8.2,<0.9` requirement. The profiling and timing tables below are
-historical measurements from the original 0.8.0 port, not measurements of the
-current 0.9.0 integration. Rerun the installed-package comparisons before making
-performance claims for the integrated release.
+and its Core `>=0.8.2,<0.9` requirement. The profiling and timing tables in
+sections 2 and 5 are historical measurements from the original 0.8.0 port. Section 6 records the
+separate verification of the current 0.9.0 integration against current main.
 
 ## 1. Overview & Goals
 
@@ -161,3 +160,38 @@ python -m pytest tests
 See `benchmarks/README.md` for before/after timing commands. Keep forced inlining
 limited to measured hot paths, and compare end-to-end preparation as well as the
 native loops when changing input ownership or dispatch.
+
+## 6. Local 0.9.0 integration verification — 2026-10-22
+
+The integration was reconciled against main `c4c143a` and checked on macOS arm64
+with CPython 3.12.3, NumPy 2.5.4, Core 0.8.2 and Data 0.6.0. The installed wheel
+passed all 721 Python tests with no skips, including required EnergyPlus 24.2,
+hplib and GIS checks. Rust formatting, Clippy and six Rust tests passed, as did
+Ruff, Sphinx HTML/doctests and the three release notebooks. An sdist was built
+and used to build a second wheel; its Python sources, native extension, packaged
+weather and notices were checked.
+The sdist-built wheel also passed 104 native, dispatch and benchmark-safety tests.
+
+Installed main and candidate wheels were compared using `benchmarks/run.py`
+for all seven fixtures, including the conditioned basement, under both policies.
+Both environments used the same numerical dependencies. Each case ran seven
+times with `--no-output`; repeated timings use the median after the first call.
+Warm runs used `--warm --batch`. Every hourly/scalar comparison passed the stated
+0.1% tolerance, structural checks passed, and standalone radiation outputs
+matched exactly.
+
+| Annual path | Cold speedup | Warm speedup |
+| --- | ---: | ---: |
+| Six single-domain fixtures, both policies | 1.36–1.72× | 3.35–4.56× |
+| Conditioned basement, both policies | 4.87–5.50× | 21.28–24.16× |
+
+These local timings cover repeated illustrative fixtures and exclude compressed
+output writes. They do not measure stock throughput or scientific prediction
+accuracy. A separate differential check of 20,000 randomized coupled-control
+cases matched main's independent Python solver at `rtol=1e-9`, `atol=1e-7`;
+the maximum power difference was below `1e-9 W`.
+
+Linux, Windows, Intel macOS and other Python combinations are configured in
+the native wheel workflow but have not been executed for this local integration.
+Run those checks before promotion through `dev`; no remote branch, PR, tag or
+package was published during this verification.
