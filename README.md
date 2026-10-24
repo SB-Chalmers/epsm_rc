@@ -53,6 +53,7 @@ reduction settings. Private dependencies need an accessible index or local check
 ## Documentation
 
 - [Shared Building quick start](docs/quickstart.rst)
+- [Ground heat-transfer methods and limits](docs/ground.rst)
 - [Standalone numerical API](docs/standalone.rst)
 - [Radiation methods and limits](docs/radiation.md)
 - [Performance and benchmarks](benchmarks/README.md)
