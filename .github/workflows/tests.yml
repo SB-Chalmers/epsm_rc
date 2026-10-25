@@ -83,12 +83,14 @@ jobs:
         python-version: ${{ matrix.python }}
         cache: pip
     - uses: dtolnay/rust-toolchain@stable
-    - name: Install coordinated dependencies and test tools
-      run: python -m pip install build setuptools wheel .ci/epsm_data '.ci/epsm_core[geometry]' '.[platform,dev,gis,notebook,docs,heatpump]'
-    - name: Build and install release wheel
+    - uses: Swatinem/rust-cache@v2
+    # Build the release sdist/wheel once and install that wheel with its extras;
+    # a source install first would compile the native extension a second time.
+    - name: Build release wheel and install coordinated dependencies
       run: |
+        python -m pip install build setuptools wheel
         python -m build
-        python -m pip install --no-deps --force-reinstall dist/epsm_rc-*.whl
+        python -m pip install .ci/epsm_data '.ci/epsm_core[geometry]' "$(ls dist/epsm_rc-*.whl)[platform,dev,gis,notebook,docs,heatpump]"
         python -m pip check
         python -c "from epsm_rc.heating import HPLIB_AVAILABLE; assert HPLIB_AVAILABLE, 'Required hplib is unavailable'"
         mkdir -p outputs
