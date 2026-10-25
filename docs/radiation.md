@@ -111,7 +111,12 @@ including holes and disconnected components, are translated and rotated into
 the same frame as the target; roof heights include the supplied base elevation.
 Overlapping angular obstructions use the maximum elevation in each direction,
 so duplicate obstacles do not double-count shading. Neighbours do not become
-thermal zones and their temperatures are not required.
+thermal zones and their temperatures are not required. A taller neighbour whose
+outline passes through a receiver's representative point is rejected: that point
+would see a 90-degree horizon in every direction and remove all beam radiation
+from the whole receiver, however small the contact. Model such contact as a shared
+boundary or separate the footprints. Contact that does not touch the point, such
+as an aligned terrace neighbour, is retained.
 
 The numerical integration uses equally spaced azimuth midpoints across the
 180-degree horizon facing a facade. The default maximum spacing is 10 degrees;

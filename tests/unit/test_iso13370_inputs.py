@@ -24,15 +24,25 @@ def capture(synthetic_weather, *, basement=0, conditioned=True, rotation=0, buil
 
     if building is None:
         geometry = GeometrySpec.from_footprint(
-            Footprint.rectangle(10, 8), storeys=3, storey_height_m=2.5,
-            basement_depth_m=basement, basement_conditioned=bool(basement and conditioned),
+            Footprint.rectangle(10, 8),
+            storeys=3,
+            storey_height_m=2.5,
+            basement_depth_m=basement,
+            basement_conditioned=bool(basement and conditioned),
             orientation_deg=rotation,
         )
         building = Building(
-            preset="illustrative-reference", geometry=geometry,
-            unconditioned_exchange=(UnconditionedExchangeSpec(
-                zone_kind="basement", outdoor_air_ach=0, source="Explicit closed test basement",
-            ),) if basement and not conditioned else (),
+            preset="illustrative-reference",
+            geometry=geometry,
+            unconditioned_exchange=(
+                UnconditionedExchangeSpec(
+                    zone_kind="basement",
+                    outdoor_air_ach=0,
+                    source="Explicit closed test basement",
+                ),
+            )
+            if basement and not conditioned
+            else (),
         )
     inputs = resolve_snapshot_inputs(building.snapshot(), Weather.from_epw(synthetic_weather))
     return inputs.building, inputs.spec, inputs.resolved
@@ -69,9 +79,10 @@ def test_heated_basement_has_one_soil_slab_full_walls_and_no_main_ground(synthet
     assert result.basement_depth_m == pytest.approx(2.5)
     assert result.report["buried_wall_area_m2"] == pytest.approx(90)
     assert result.basement_wall_resistance_m2k_w > 0
-    main = SimpleNamespace(name="main", elements=tuple(
-        element for element in building.elements if element.boundary != "Ground"
-    ))
+    main = SimpleNamespace(
+        name="main",
+        elements=tuple(element for element in building.elements if element.boundary != "Ground"),
+    )
     assert resolve_ground_inputs(building, spec, resolved, settings(), domain=main) is None
 
 
@@ -91,12 +102,15 @@ def test_bridges_modify_material_resistance_once_without_changing_inventory(synt
     assert building.snapshot().sha256 == before
 
 
-@pytest.mark.parametrize("change", [
-    {"iso13370_wall_thickness_m": None},
-    {"iso13370_wall_thickness_m": 0},
-    {"iso13370_wall_thickness_m": float("nan")},
-    {"iso13370_wall_thickness_source": " "},
-])
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"iso13370_wall_thickness_m": None},
+        {"iso13370_wall_thickness_m": 0},
+        {"iso13370_wall_thickness_m": float("nan")},
+        {"iso13370_wall_thickness_source": " "},
+    ],
+)
 def test_width_and_source_are_required(synthetic_weather, change):
     building, spec, resolved = capture(synthetic_weather)
     with pytest.raises(ValueError, match="wall_thickness"):
@@ -107,16 +121,21 @@ def test_footing_block_width_is_not_used_as_wall_width(synthetic_weather):
     building, _, _ = capture(synthetic_weather)
     building.foundation = building.foundation.updated(footing_width_m=0.9)
     building, spec, resolved = capture(synthetic_weather, building=building)
-    result = resolve_ground_inputs(building, spec, resolved, settings(iso13370_wall_thickness_m=0.24))
+    result = resolve_ground_inputs(
+        building, spec, resolved, settings(iso13370_wall_thickness_m=0.24)
+    )
     assert result.wall_thickness_m == 0.24
 
 
-@pytest.mark.parametrize("change, message", [
-    ({"wall_height_above_grade_m": 0.2}, "plinth"),
-    ({"wall_depth_below_slab_m": 0.1}, "buried wall"),
-    ({"deep_ground_boundary": "GroundWater"}, "groundwater"),
-    ({"exposed_perimeter_fraction": 0}, "positive exposed"),
-])
+@pytest.mark.parametrize(
+    "change, message",
+    [
+        ({"wall_height_above_grade_m": 0.2}, "plinth"),
+        ({"wall_depth_below_slab_m": 0.1}, "buried wall"),
+        ({"deep_ground_boundary": "GroundWater"}, "groundwater"),
+        ({"exposed_perimeter_fraction": 0}, "positive exposed"),
+    ],
+)
 def test_unsupported_boundaries_are_explicit(synthetic_weather, change, message):
     building, _, _ = capture(synthetic_weather)
     building.foundation = building.foundation.updated(**change)
@@ -127,7 +146,9 @@ def test_unsupported_boundaries_are_explicit(synthetic_weather, change, message)
 
 def test_explicit_footing_material_is_not_silently_ignored(synthetic_weather):
     building, spec, _ = capture(synthetic_weather)
-    building.foundation = building.foundation.updated(footing_material=spec.envelope.ground.layers[0].material)
+    building.foundation = building.foundation.updated(
+        footing_material=spec.envelope.ground.layers[0].material
+    )
     building, spec, resolved = capture(synthetic_weather, building=building)
     with pytest.raises(ValueError, match="footing"):
         resolve_ground_inputs(building, spec, resolved, settings())
@@ -139,7 +160,9 @@ def test_unconditioned_basement_and_second_soil_boundary_are_rejected(synthetic_
         resolve_ground_inputs(building, spec, resolved, settings())
     building, spec, resolved = capture(synthetic_weather)
     with pytest.raises(ValueError, match="second monthly"):
-        resolve_ground_inputs(building, spec, resolved, settings(monthly_ground_temperatures_c=(8,) * 12))
+        resolve_ground_inputs(
+            building, spec, resolved, settings(monthly_ground_temperatures_c=(8,) * 12)
+        )
 
 
 def test_multiple_foundation_parts_are_rejected(synthetic_weather):
@@ -147,7 +170,8 @@ def test_multiple_foundation_parts_are_rejected(synthetic_weather):
 
     building, _, _ = capture(synthetic_weather)
     wing = BuildingPart(
-        identifier="wing", footprint=Footprint(exterior=((12, 0), (18, 0), (18, 5), (12, 5))),
+        identifier="wing",
+        footprint=Footprint(exterior=((12, 0), (18, 0), (18, 5), (12, 5))),
         storey_elevations_m=(0, 2.5),
     )
     building.geometry = building.geometry.updated(parts=(*building.geometry.parts, wing))

@@ -9,7 +9,12 @@ from epsm_core import Weather
 from epsm_core.specs import ContextBuilding, ContextSpec, Footprint
 
 from epsm_rc import PreparationCache, RCSettings, simulate_building
-from epsm_rc.shading import average_horizon_angle, context_edges, shade_irradiance
+from epsm_rc.shading import (
+    average_horizon_angle,
+    context_edges,
+    prepare_horizons,
+    shade_irradiance,
+)
 
 
 def neighbour(height=15, base=0, name="south"):
@@ -116,6 +121,44 @@ def test_courtyard_context_retains_inner_rings_and_touching_wall_is_finite():
     assert 35 < alpha < 45
     touching = average_horizon_angle((0, 10, 1), 0, 90, edges)
     assert touching == pytest.approx(90)
+
+
+def test_partial_contact_at_representative_point_is_rejected(reference_building):
+    # A 1 m neighbour flush with the middle of the 20 m south facade would
+    # otherwise give the whole facade a 90 degree horizon.
+    flush = ContextBuilding(
+        identifier="flush",
+        footprints=(Footprint(exterior=((9.5, -4), (10.5, -4), (10.5, 0), (9.5, 0))),),
+        height_m=6,
+    )
+    reference_building.context = ContextSpec(buildings=(flush,))
+    weather = Weather.from_epw(files("epsm_rc").joinpath("data/epw/goteborg.epw"))
+    with pytest.raises(ValueError, match="touch the representative point"):
+        simulate_building(reference_building, weather=weather, settings=settings())
+
+
+def test_contact_guard_ignores_collinear_and_lower_neighbours():
+    receivers = {"wall": {"point_m": [5.0, 0.0, 1.5], "tilt_deg": 90, "azimuth_deg": 180}}
+    terrace = ContextSpec(
+        buildings=(
+            ContextBuilding(
+                identifier="terrace",
+                footprints=(Footprint(exterior=((10, 0), (20, 0), (20, 12), (10, 12))),),
+                height_m=9,
+            ),
+        )
+    )
+    assert prepare_horizons(receivers, context_edges(terrace, (0, 0), 0), 10)["wall"] == 0
+    low = ContextSpec(
+        buildings=(
+            ContextBuilding(
+                identifier="low",
+                footprints=(Footprint(exterior=((4, -2), (6, -2), (6, 0), (4, 0))),),
+                height_m=1,
+            ),
+        )
+    )
+    assert prepare_horizons(receivers, context_edges(low, (0, 0), 0), 10)["wall"] == 0
 
 
 @pytest.mark.parametrize("policy", ["epsm_rc_5r1c_v1", "epsm_rc_5r1c_v2"])

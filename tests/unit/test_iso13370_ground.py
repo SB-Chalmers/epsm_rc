@@ -43,12 +43,9 @@ def test_slab_agrees_with_scottish_government_table(perimeter_area, floor_r, pub
 
 @pytest.mark.parametrize(
     "perimeter_area, depth, published_u",
-    [(0.5, 0.5, 0.61), (0.5, 1.0, 0.55), (0.5, 2.5, 0.43),
-     (1.0, 0.5, 0.89), (0.1, 2.5, 0.16)],
+    [(0.5, 0.5, 0.61), (0.5, 1.0, 0.55), (0.5, 2.5, 0.43), (1.0, 0.5, 0.89), (0.1, 2.5, 0.16)],
 )
-def test_basement_floor_agrees_with_scottish_government_table(
-    perimeter_area, depth, published_u
-):
+def test_basement_floor_agrees_with_scottish_government_table(perimeter_area, depth, published_u):
     # Same primary source, 6.C Table 5, uninsulated basement floors.
     # Retain the declared w=0.3 m assumption and printed-rounding tolerance.
     actual = coefficients(
@@ -89,15 +86,18 @@ def test_basement_wall_insulation_limits_and_whole_foundation_accounting():
     base = coefficients(basement_depth_m=2.5, basement_wall_resistance_m2k_w=0.5)
     # Insulated wall branch dw < df must limit df to dw in its correction.
     weak_wall = coefficients(
-        basement_depth_m=2.5, basement_wall_resistance_m2k_w=0,
+        basement_depth_m=2.5,
+        basement_wall_resistance_m2k_w=0,
         floor_resistance_m2k_w=5,
     )
     stronger_wall = coefficients(
-        basement_depth_m=2.5, basement_wall_resistance_m2k_w=50,
+        basement_depth_m=2.5,
+        basement_wall_resistance_m2k_w=50,
         floor_resistance_m2k_w=5,
     )
     still_weaker_floor = coefficients(
-        basement_depth_m=2.5, basement_wall_resistance_m2k_w=0,
+        basement_depth_m=2.5,
+        basement_wall_resistance_m2k_w=0,
         floor_resistance_m2k_w=10,
     )
     assert stronger_wall.wall_u_w_m2k < weak_wall.wall_u_w_m2k
@@ -119,9 +119,14 @@ def test_soil_heat_capacity_changes_periodic_response_without_changing_steady():
     assert high_capacity.steady_conductance_w_k == ordinary.steady_conductance_w_k
 
 
-@pytest.mark.parametrize("conductivity, capacity, published_depth", [
-    (1.5, 3e6, 2.2), (2.0, 2e6, 3.2), (3.5, 2e6, 4.2),
-])
+@pytest.mark.parametrize(
+    "conductivity, capacity, published_depth",
+    [
+        (1.5, 3e6, 2.2),
+        (2.0, 2e6, 3.2),
+        (3.5, 2e6, 4.2),
+    ],
+)
 def test_annual_penetration_agrees_with_published_iso_soil_table(
     conductivity, capacity, published_depth
 ):
@@ -134,9 +139,10 @@ def test_annual_penetration_agrees_with_published_iso_soil_table(
 
 
 def test_constant_temperatures_produce_steady_heat_flow_and_outdoor_boundary():
-    for model in (coefficients(), coefficients(
-        basement_depth_m=2.5, basement_wall_resistance_m2k_w=0.5
-    )):
+    for model in (
+        coefficients(),
+        coefficients(basement_depth_m=2.5, basement_wall_resistance_m2k_w=0.5),
+    ):
         flows = monthly_ground_heat_flows(model, [10] * 12, [20] * 12)
         temperatures = monthly_ground_temperatures(model, [10] * 12, [20] * 12)
         assert flows == pytest.approx([10 * model.steady_conductance_w_k] * 12)
@@ -149,8 +155,10 @@ def test_monthly_heat_flow_signs_and_independent_numerical_example():
     # outdoor mean 10, indoor mean 20, Hg100,Hpi120,Hpe40.
     # January Ti19/Te0 => 1000-120+400=1280W; Tg=19-12.8=6.2C.
     model = replace(
-        coefficients(), steady_conductance_w_k=100,
-        periodic_internal_w_k=120, periodic_external_w_k=40,
+        coefficients(),
+        steady_conductance_w_k=100,
+        periodic_internal_w_k=120,
+        periodic_external_w_k=40,
     )
     outdoor = [0] * 6 + [20] * 6
     indoor = [19] * 6 + [21] * 6
@@ -188,10 +196,16 @@ def test_junction_correction_once_has_instantaneous_monthly_temperature_differen
     )
 
 
-@pytest.mark.parametrize("field", [
-    "area_m2", "exposed_perimeter_m", "wall_thickness_m", "soil_conductivity_w_mk",
-    "soil_volumetric_heat_capacity_j_m3k",
-])
+@pytest.mark.parametrize(
+    "field",
+    [
+        "area_m2",
+        "exposed_perimeter_m",
+        "wall_thickness_m",
+        "soil_conductivity_w_mk",
+        "soil_volumetric_heat_capacity_j_m3k",
+    ],
+)
 @pytest.mark.parametrize("invalid", [0, -1, float("nan"), float("inf"), True])
 def test_invalid_positive_inputs_rejected(field, invalid):
     with pytest.raises(ValueError, match=field):

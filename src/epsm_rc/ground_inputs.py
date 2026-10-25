@@ -30,9 +30,13 @@ class ResolvedGroundInputs:
         return {
             name: getattr(self, name)
             for name in (
-                "area_m2", "exposed_perimeter_m", "wall_thickness_m",
-                "floor_resistance_m2k_w", "soil_conductivity_w_mk",
-                "soil_volumetric_heat_capacity_j_m3k", "basement_depth_m",
+                "area_m2",
+                "exposed_perimeter_m",
+                "wall_thickness_m",
+                "floor_resistance_m2k_w",
+                "soil_conductivity_w_mk",
+                "soil_volumetric_heat_capacity_j_m3k",
+                "basement_depth_m",
                 "basement_wall_resistance_m2k_w",
             )
         }
@@ -87,9 +91,12 @@ def resolve_ground_inputs(building, spec, resolved, settings, *, domain=None):
     assumptions are rejected rather than silently discarded. Required wall width
     and its source are independent of Core's footing-block width field.
     """
-    selected = domain.elements if domain is not None and hasattr(domain, "elements") else building.elements
+    selected = (
+        domain.elements if domain is not None and hasattr(domain, "elements") else building.elements
+    )
     ground = tuple(
-        element for element in selected
+        element
+        for element in selected
         if element.boundary == "Ground" and hasattr(element.construction, "components")
     )
     if not ground:
@@ -97,7 +104,9 @@ def resolve_ground_inputs(building, spec, resolved, settings, *, domain=None):
 
     foundation = spec.envelope.foundation
     if foundation.method != "kiva" or spec.envelope.ground_temperature is not None:
-        raise ValueError("ISO13370 ground policy cannot combine with prescribed ground temperatures")
+        raise ValueError(
+            "ISO13370 ground policy cannot combine with prescribed ground temperatures"
+        )
     if getattr(settings, "monthly_ground_temperatures_c", None) is not None:
         raise ValueError("ISO13370 ground policy cannot add a second monthly soil boundary")
     width = getattr(settings, "iso13370_wall_thickness_m", None)
@@ -115,18 +124,24 @@ def resolve_ground_inputs(building, spec, resolved, settings, *, domain=None):
     if foundation.footing_material is not None or foundation.footing_wall is not None:
         raise ValueError("ISO13370 explicit footing blocks/wall details are not yet supported")
     if foundation.wall_height_above_grade_m or foundation.wall_depth_below_slab_m:
-        raise ValueError("ISO13370 nonzero foundation plinth/extra buried wall depth is not supported")
+        raise ValueError(
+            "ISO13370 nonzero foundation plinth/extra buried wall depth is not supported"
+        )
     if foundation.deep_ground_boundary != "ZeroFlux":
         raise ValueError("ISO13370 flowing/deep groundwater treatment is not supported")
 
-    floors = tuple(element for element in ground if element.role.value in {"GROUND_FLOOR", "BASEMENT_FLOOR"})
+    floors = tuple(
+        element for element in ground if element.role.value in {"GROUND_FLOOR", "BASEMENT_FLOOR"}
+    )
     walls = tuple(element for element in ground if element.role.value == "BASEMENT_WALL")
     if not floors or len(floors) + len(walls) != len(ground):
         raise ValueError("ISO13370 requires explicit physical soil-contact floor/wall ownership")
     ids = {element.identifier for element in floors}
     faces = [
-        face for face in resolved.surfaces
-        if face["kind"] == "Floor" and face["boundary"] == "Ground"
+        face
+        for face in resolved.surfaces
+        if face["kind"] == "Floor"
+        and face["boundary"] == "Ground"
         and face["physical_element_id"] in ids
     ]
     if not faces:
@@ -169,8 +184,10 @@ def resolve_ground_inputs(building, spec, resolved, settings, *, domain=None):
             raise ValueError("ISO13370 currently requires a fully exposed, fully heated basement")
         wall_ids = {element.identifier for element in walls}
         wall_faces = [
-            face for face in resolved.surfaces
-            if face["kind"] == "Wall" and face["boundary"] == "Ground"
+            face
+            for face in resolved.surfaces
+            if face["kind"] == "Wall"
+            and face["boundary"] == "Ground"
             and face["physical_element_id"] in wall_ids
         ]
         if not wall_faces or any(
@@ -214,8 +231,14 @@ def resolve_ground_inputs(building, spec, resolved, settings, *, domain=None):
         ],
     }
     return ResolvedGroundInputs(
-        report["kind"], area, perimeter, float(width), floor_r,
+        report["kind"],
+        area,
+        perimeter,
+        float(width),
+        floor_r,
         foundation.soil_conductivity_w_mk,
         foundation.soil_density_kg_m3 * foundation.soil_specific_heat_j_kgk,
-        depth, wall_r, report,
+        depth,
+        wall_r,
+        report,
     )

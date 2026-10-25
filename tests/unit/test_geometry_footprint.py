@@ -29,6 +29,7 @@ class TestFootprintImporter:
     """Importer tests with mocked network and deterministic geometry."""
 
     def test_from_osm_url_parsing_and_floor_tag(self, monkeypatch):
+        pytest.importorskip("pyproj")
         # Mock response for https://www.openstreetmap.org/way/90851303
         way_id = 90851303
         mocked_json = {
@@ -70,6 +71,7 @@ class TestFootprintImporter:
         assert len(geom.vertices) == 4
 
     def test_from_geojson_feature_collection(self):
+        pytest.importorskip("pyproj")
         geojson = {
             "type": "FeatureCollection",
             "features": [
