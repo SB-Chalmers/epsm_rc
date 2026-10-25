@@ -94,7 +94,16 @@ class RCSettings:
     ground_policy : str
         ``reject`` rejects unsupported foundation methods such as Kiva.
         Select ``conductance_multiplier`` or ``prescribed_monthly_temperature``
-        to explicitly approximate an unsupported foundation.
+        to explicitly approximate an unsupported foundation. The opt-in
+        ``iso13370_periodic_approximation`` derives slab/heated-basement ground
+        conductance and monthly annual-periodic forcing from geometry, material
+        resistance and soil properties. Its monthly indoor reference is the
+        heating setpoint; it is not a detailed hourly ground solver.
+    iso13370_wall_thickness_m : float or None
+        Explicit full wall thickness at ground level, in metres, for ISO 13370.
+        Required by the ISO policy; footing-block width is not wall thickness.
+    iso13370_wall_thickness_source : str or None
+        Evidence or explicit assumption for that wall thickness.
     monthly_ground_temperatures_c : tuple or None
         Twelve finite Celsius boundary values for an explicitly selected
         monthly approximation. A source must also be supplied.
@@ -161,6 +170,8 @@ class RCSettings:
     wall_sky_view_factor: float = 0.5
     roof_sky_view_factor: float = 1.0
     ground_policy: str = "reject"
+    iso13370_wall_thickness_m: float | None = None
+    iso13370_wall_thickness_source: str | None = None
     monthly_ground_temperatures_c: tuple[float, ...] | None = None
     monthly_ground_temperature_source: str | None = None
     self_shadowing_policy: str = "reject"
@@ -234,8 +245,26 @@ class RCSettings:
             "reject",
             "conductance_multiplier",
             "prescribed_monthly_temperature",
+            "iso13370_periodic_approximation",
         }:
             raise ValueError("Unknown ground_policy")
+        if self.ground_policy == "iso13370_periodic_approximation":
+            width = self.iso13370_wall_thickness_m
+            if (
+                isinstance(width, bool)
+                or width is None
+                or not np.isfinite(width)
+                or width <= 0
+            ):
+                raise ValueError("ISO 13370 ground policy requires positive wall thickness")
+            if not isinstance(self.iso13370_wall_thickness_source, str) or not (
+                self.iso13370_wall_thickness_source.strip()
+            ):
+                raise ValueError("ISO 13370 wall thickness requires an explicit source or assumption")
+        elif self.iso13370_wall_thickness_m is not None or (
+            self.iso13370_wall_thickness_source is not None
+        ):
+            raise ValueError("Select ISO 13370 ground policy for its wall-thickness inputs")
         if self.ground_policy == "prescribed_monthly_temperature":
             values = tuple(self.monthly_ground_temperatures_c or ())
             if len(values) != 12 or any(not np.isfinite(value) for value in values):
@@ -403,7 +432,17 @@ def _gain_inputs(use, reference_area, year, settings):
     )
 
 
-def _ground_reduction(envelope, settings: RCSettings) -> tuple[tuple | None, float, dict]:
+def _ground_reduction(
+    envelope,
+    settings: RCSettings,
+    *,
+    building=None,
+    spec=None,
+    resolved=None,
+    domain=None,
+    outdoor_temperatures=None,
+    time_axis=None,
+) -> tuple[tuple | None, float, dict]:
     """Preserve prescribed monthly boundaries or require an explicit approximation."""
     requested = envelope.foundation.model_dump(mode="json")
     boundary = envelope.ground_temperature
@@ -424,10 +463,22 @@ def _ground_reduction(envelope, settings: RCSettings) -> tuple[tuple | None, flo
             boundary_source="caller-selected conductance multiplier approximation",
         )
         return None, settings.ground_coupling_factor, report
+    elif settings.ground_policy == "iso13370_periodic_approximation":
+        return _iso13370_reduction(
+            report,
+            building=building,
+            spec=spec,
+            resolved=resolved,
+            settings=settings,
+            domain=domain,
+            outdoor_temperatures=outdoor_temperatures,
+            time_axis=time_axis,
+        )
     else:
         raise ValueError(
             f"epsm_rc does not implement {requested['method']} foundations. Select an explicit "
-            "ground_policy='conductance_multiplier' or 'prescribed_monthly_temperature' "
+            "ground_policy='conductance_multiplier', 'prescribed_monthly_temperature' or "
+            "'iso13370_periodic_approximation' "
             "in RCSettings to acknowledge the approximation."
         )
     report.update(
@@ -437,6 +488,83 @@ def _ground_reduction(envelope, settings: RCSettings) -> tuple[tuple | None, flo
         boundary_source=source,
     )
     return months, 1.0, report
+
+
+def _iso13370_reduction(
+    report, *, building, spec, resolved, settings, domain, outdoor_temperatures, time_axis
+):
+    """Map an explicit physical foundation to monthly equivalent ground forcing.
+
+    The ISO coefficient refers to the internal/external environments, not a
+    measured outside-slab soil temperature. Never apply it to a separately
+    prescribed soil boundary. Existing prescribed boundaries take precedence in
+    ``_ground_reduction`` and retain their original raw assembly conductance.
+    """
+    from .ground import ground_coefficients, monthly_ground_temperatures
+    from .ground_inputs import resolve_ground_inputs
+
+    if building is None or spec is None or resolved is None:
+        raise ValueError("ISO 13370 requires resolved physical foundation inputs")
+    inputs = resolve_ground_inputs(building, spec, resolved, settings, domain=domain)
+    report.update(
+        effective_method="iso13370_periodic_approximation",
+        effective_multiplier=1.0,
+        boundary_source="ISO 13370 equivalent environment; not prescribed outside-slab soil",
+        monthly_temperatures_c=None,
+        junction_psi_w_mk=0.0,
+        thermal_bridge_method="Core equivalent material resistance before ground calculation",
+        forcing_limitations=[
+            "Monthly annual-periodic approximation; not a detailed hourly soil solver",
+            "Annual-periodic phase offsets omitted",
+            "Monthly indoor reference is the supplied heating-setpoint average",
+            "Within-month indoor changes and free-floating temperatures retain 5R1C coupling",
+            "No separate wall/floor junction line correction beyond Core's declared material uplift",
+        ],
+    )
+    if inputs is None:
+        report.update(ground_contact=False, steady_conductance_w_k=0.0)
+        return None, 1.0, report
+    coefficients = ground_coefficients(**inputs.coefficient_inputs())
+    report.update(
+        ground_contact=True,
+        physical_inputs=inputs.report,
+        coefficients=asdict(coefficients),
+        steady_conductance_w_k=coefficients.steady_conductance_w_k,
+    )
+    # Preflight validates geometry/materials without parsing weather or starting
+    # a thermal model. Execution supplies the already-captured annual buffers.
+    if outdoor_temperatures is None and time_axis is None:
+        return None, 1.0, report
+    if outdoor_temperatures is None or time_axis is None:
+        raise ValueError("ISO 13370 forcing needs both weather and its calendar")
+    temperatures = np.asarray(outdoor_temperatures, dtype=float)
+    months = pd.DatetimeIndex(time_axis).month.to_numpy()
+    if temperatures.shape != months.shape or not np.isfinite(temperatures).all():
+        raise ValueError("ISO 13370 weather must be finite and match the annual calendar")
+    use = domain.use if domain is not None else spec.use
+    indoor = np.asarray(use.heating_setpoint.hourly(spec.climate.calendar_year), dtype=float)
+    if indoor.shape != months.shape or not np.isfinite(indoor).all():
+        raise ValueError("ISO 13370 indoor reference must match the annual calendar")
+    weights = [int(np.count_nonzero(months == m)) for m in range(1, 13)]
+    if not all(weights):
+        raise ValueError("ISO 13370 forcing needs all twelve calendar months")
+    outdoor_monthly = tuple(float(temperatures[months == m].mean()) for m in range(1, 13))
+    indoor_monthly = tuple(float(indoor[months == m].mean()) for m in range(1, 13))
+    ground = tuple(
+        monthly_ground_temperatures(
+            coefficients,
+            outdoor_monthly,
+            indoor_monthly,
+            month_weights=weights,
+        )
+    )
+    report.update(
+        monthly_temperatures_c=ground,
+        monthly_outdoor_reference_c=outdoor_monthly,
+        monthly_indoor_reference_c=indoor_monthly,
+        month_weights_hours=weights,
+    )
+    return ground, 1.0, report
 
 
 def _self_shadowing_capabilities(geometry, settings: RCSettings) -> dict:
@@ -651,7 +779,13 @@ def preflight(building, *, weather=None, settings=None):
             check(
                 "rc_ground",
                 "settings.ground_policy",
-                lambda: _ground_reduction(spec.envelope, settings),
+                lambda: _ground_reduction(
+                    spec.envelope,
+                    settings,
+                    building=inputs.building,
+                    spec=spec,
+                    resolved=inputs.resolved,
+                ),
             )
             check(
                 "rc_gains",
@@ -1031,7 +1165,16 @@ def _prepare_domain(preparation, *, domain=None):
         settings,
     )
     airflow_capabilities = _airflow_capabilities(operating_airflow, settings)
-    ground, ground_multiplier, ground_reduction = _ground_reduction(spec.envelope, settings)
+    ground, ground_multiplier, ground_reduction = _ground_reduction(
+        spec.envelope,
+        settings,
+        building=building,
+        spec=spec,
+        resolved=preparation.resolved,
+        domain=domain,
+        outdoor_temperatures=preparation.data["temp_air"],
+        time_axis=preparation.axis,
+    )
     self_shadowing = _self_shadowing_capabilities(spec.geometry, settings)
     effective_configuration = settings.effective_configuration()
     effective_configuration["gain_reduction"] = gain_reduction
@@ -1142,6 +1285,16 @@ def _prepare_domain(preparation, *, domain=None):
         )
     areas = {key: sum(e.area_m2 for e in values) for key, values in grouped.items()}
 
+    iso_ground = ground_reduction["effective_method"] == "iso13370_periodic_approximation"
+    if iso_ground:
+        ground_u = (
+            ground_reduction["steady_conductance_w_k"] / areas["ground"]
+            if areas["ground"]
+            else 0.0
+        )
+    else:
+        ground_u = None
+
     def u_value(key):
         return (
             sum(e.area_m2 * e.construction.u_value for e in grouped[key]) / areas[key]
@@ -1173,7 +1326,7 @@ def _prepare_domain(preparation, *, domain=None):
             if areas["roof"] + attic.ceiling_area_m2
             else 0.0
         ),
-        u_floor=u_value("ground"),
+        u_floor=ground_u if iso_ground else u_value("ground"),
         u_windows=u_value("window"),
         wall_area_m2=areas["wall"],
         roof_area_m2=areas["roof"] + attic.ceiling_area_m2,
@@ -1213,7 +1366,8 @@ def _prepare_domain(preparation, *, domain=None):
     model.u_roof *= uplift
     if attic.ceiling_area_m2:
         model.u_roof += attic.equivalent_conductance_w_k / model.roof_area_m2
-    model.u_floor *= uplift
+    if not iso_ground:
+        model.u_floor *= uplift
     model._prepare_deterministic_hourly()
     # The finite attic node receives actual shell solar/sky forcing. A fictitious
     # exposed ceiling must not also receive the flat-roof sky term.

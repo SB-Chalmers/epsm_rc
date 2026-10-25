@@ -337,6 +337,24 @@ def simulate_conditioned_domains(preparation):
     diagnostics["domains"] = {
         domain.name: result.diagnostics for domain, result in zip(prepared, results)
     }
+    if settings.ground_policy == "iso13370_periodic_approximation" and any(
+        result.diagnostics["ground_reduction"]["effective_method"]
+        == "iso13370_periodic_approximation"
+        for result in results
+    ):
+        diagnostics["ground_reduction"] = {
+            "requested_policy": settings.ground_policy,
+            "effective_method": "iso13370_periodic_approximation",
+            "effective_multiplier": 1.0,
+            "steady_conductance_w_k": sum(
+                result.diagnostics["ground_reduction"].get("steady_conductance_w_k", 0.0)
+                for result in results
+            ),
+            "per_domain": {
+                domain.name: result.diagnostics["ground_reduction"]
+                for domain, result in zip(prepared, results)
+            },
+        }
     numeric_properties = [
         "internal_surface_area_m2",
         "effective_mass_area_m2",

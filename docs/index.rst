@@ -14,6 +14,7 @@ Core. The shared Building route requires Python 3.11 or newer and the coordinate
    :maxdepth: 2
 
    quickstart
+   ground
    api
    standalone
    migration
