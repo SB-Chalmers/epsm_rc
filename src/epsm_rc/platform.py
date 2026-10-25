@@ -250,17 +250,14 @@ class RCSettings:
             raise ValueError("Unknown ground_policy")
         if self.ground_policy == "iso13370_periodic_approximation":
             width = self.iso13370_wall_thickness_m
-            if (
-                isinstance(width, bool)
-                or width is None
-                or not np.isfinite(width)
-                or width <= 0
-            ):
+            if isinstance(width, bool) or width is None or not np.isfinite(width) or width <= 0:
                 raise ValueError("ISO 13370 ground policy requires positive wall thickness")
             if not isinstance(self.iso13370_wall_thickness_source, str) or not (
                 self.iso13370_wall_thickness_source.strip()
             ):
-                raise ValueError("ISO 13370 wall thickness requires an explicit source or assumption")
+                raise ValueError(
+                    "ISO 13370 wall thickness requires an explicit source or assumption"
+                )
         elif self.iso13370_wall_thickness_m is not None or (
             self.iso13370_wall_thickness_source is not None
         ):
@@ -1288,9 +1285,7 @@ def _prepare_domain(preparation, *, domain=None):
     iso_ground = ground_reduction["effective_method"] == "iso13370_periodic_approximation"
     if iso_ground:
         ground_u = (
-            ground_reduction["steady_conductance_w_k"] / areas["ground"]
-            if areas["ground"]
-            else 0.0
+            ground_reduction["steady_conductance_w_k"] / areas["ground"] if areas["ground"] else 0.0
         )
     else:
         ground_u = None

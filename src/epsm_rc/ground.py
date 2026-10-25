@@ -61,9 +61,7 @@ def _number(name: str, value: float, *, positive: bool = False) -> float:
 
 def _floor_u(conductivity: float, dimension: float, thickness: float) -> float:
     if thickness < dimension:
-        return 2 * conductivity / (pi * dimension + thickness) * log1p(
-            pi * dimension / thickness
-        )
+        return 2 * conductivity / (pi * dimension + thickness) * log1p(pi * dimension / thickness)
     return conductivity / (0.457 * dimension + thickness)
 
 
@@ -138,15 +136,22 @@ def ground_coefficients(
             raise ValueError("Basement wall resistance plus surface films must be positive")
         limited_floor = min(floor_thickness, wall_thickness)
         wall_u = (
-            2 * conductivity / (pi * depth)
+            2
+            * conductivity
+            / (pi * depth)
             * (1 + 0.5 * limited_floor / (limited_floor + depth))
             * log1p(depth / wall_thickness)
         )
         internal += _periodic_internal(depth * perimeter, conductivity, wall_thickness, delta)
         attenuation = exp(-depth / delta)
-        external = 0.37 * perimeter * conductivity * (
-            attenuation * log1p(delta / floor_thickness)
-            + 2 * (1 - attenuation) * log1p(delta / wall_thickness)
+        external = (
+            0.37
+            * perimeter
+            * conductivity
+            * (
+                attenuation * log1p(delta / floor_thickness)
+                + 2 * (1 - attenuation) * log1p(delta / wall_thickness)
+            )
         )
     elif basement_wall_resistance_m2k_w is not None:
         _number("basement_wall_resistance_m2k_w", basement_wall_resistance_m2k_w)
