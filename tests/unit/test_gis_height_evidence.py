@@ -16,6 +16,7 @@ def feature():
 
 
 def test_explicit_two_floors_overrides_source_three(feature):
+    pytest.importorskip("pyproj")
     geometry = FootprintImporter.from_geojson(feature, crs="EPSG:3006", num_floors=2)
     assert geometry.num_floors == 2
     assert geometry.floor_height == 4.5
@@ -25,6 +26,7 @@ def test_explicit_two_floors_overrides_source_three(feature):
 
 
 def test_source_levels_and_total_height_are_retained(feature):
+    pytest.importorskip("pyproj")
     geometry = FootprintImporter.from_geojson(feature, crs="EPSG:3006")
     assert geometry.num_floors == 3
     assert geometry.floor_height == 3.0
@@ -32,6 +34,7 @@ def test_source_levels_and_total_height_are_retained(feature):
 
 
 def test_explicit_floor_height_overrides_total_height(feature):
+    pytest.importorskip("pyproj")
     geometry = FootprintImporter.from_geojson(feature, crs="EPSG:3006", floor_height=2.8)
     assert geometry.total_height == pytest.approx(8.4)
     assert geometry.height_evidence["floor_height_source"] == "caller"
@@ -61,6 +64,7 @@ def test_invalid_evidence_is_rejected(feature, properties):
 
 
 def test_explicit_assumptions_allow_missing_source(feature):
+    pytest.importorskip("pyproj")
     feature["properties"] = {}
     geometry = FootprintImporter.from_geojson(
         feature,
@@ -107,6 +111,7 @@ def test_shapefile_uses_height_evidence(feature, tmp_path, batch):
 
 
 def test_osm_explicit_floors_preserve_source_height(monkeypatch):
+    pytest.importorskip("pyproj")
     requests = pytest.importorskip("requests")
 
     class Response:

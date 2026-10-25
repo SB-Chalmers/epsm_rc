@@ -1,3 +1,20 @@
+# Unreleased
+
+The opt-in `ground_policy="iso13370_periodic_approximation"` derives slab and
+fully heated basement ground conductance and monthly equivalent forcing from
+Core geometry, material resistance and soil properties (ISO 13370:2017 7.1/7.3,
+Annex H). It requires an explicit wall thickness and its source; defaults are
+unchanged. Native and Python solver paths agree for slab and coupled basement
+runs. See [ground methods](docs/ground.rst).
+
+Context shading now rejects a taller neighbour whose outline passes through a
+receiver's representative point. Previously such contact silently produced a
+90-degree horizon and removed all beam radiation from the whole receiver. Other
+context results are unchanged.
+
+Tests that need the `gis` extra or `epsm_core[geometry]` now skip when those
+extras are absent instead of failing.
+
 # Release 0.9.0 — public capability preflight
 
 Expose settings-aware preflight through the same authoring preparation used by simulation. Callers can inspect reduction requirements without starting the thermal solver. Numerical models and policy defaults retain their existing meaning.

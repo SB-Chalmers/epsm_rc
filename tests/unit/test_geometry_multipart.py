@@ -38,6 +38,7 @@ def test_direct_shapely_preserves_multipart(multipart_polygon):
 
 @pytest.mark.parametrize("batch", [False, True])
 def test_geojson_preserves_multipart(multipart_polygon, batch):
+    pytest.importorskip("pyproj")
     feature = {"type": "Feature", "properties": {}, "geometry": mapping(multipart_polygon)}
     if batch:
         features = {"type": "FeatureCollection", "features": [feature]}

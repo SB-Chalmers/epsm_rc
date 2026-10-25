@@ -27,6 +27,7 @@ def test_from_shapely_preserves_courtyard(courtyard_polygon):
 
 @pytest.mark.parametrize("source_kind", ["dict", "file"])
 def test_from_geojson_preserves_courtyard(courtyard_polygon, source_kind, tmp_path):
+    pytest.importorskip("pyproj")
     feature = {
         "type": "Feature",
         "properties": {},
@@ -48,6 +49,7 @@ def test_from_geojson_preserves_courtyard(courtyard_polygon, source_kind, tmp_pa
 
 
 def test_from_geojson_multi_preserves_courtyard(courtyard_polygon):
+    pytest.importorskip("pyproj")
     features = {
         "type": "FeatureCollection",
         "features": [{"type": "Feature", "properties": {}, "geometry": mapping(courtyard_polygon)}],

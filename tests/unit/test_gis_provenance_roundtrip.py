@@ -3,12 +3,14 @@
 import json
 from importlib.resources import files
 
+import pytest
 from epsm_core import Building, ProvenanceSpec, SourceRecord, Weather
 
 from epsm_rc import FootprintImporter
 
 
 def imported(**overrides):
+    pytest.importorskip("pyproj")
     return FootprintImporter.from_geojson(
         {
             "type": "Feature",

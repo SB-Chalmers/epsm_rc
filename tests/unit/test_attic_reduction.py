@@ -35,6 +35,8 @@ def test_invalid_attic_conductance_rejected(values):
 def test_public_cold_attic_uses_finite_buffer_and_retains_explicit_exchange(
     shape, synthetic_weather
 ):
+    if shape == "hip":
+        pytest.importorskip("py_straight_skeleton", reason="hip roofs need epsm_core[geometry]")
     from epsm_core import (
         Building,
         Footprint,
