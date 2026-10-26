@@ -139,6 +139,11 @@ Core/Data compatibility matrix and installed-package validation.
 
 `rust/src/bindings.rs` owns Python conversion and synchronization. The numerical
 kernels use named forcing, control and state structs in `rust/src/types.rs`.
+Model values cross the boundary only through `Building5R1C._native_parameters()`
+and `_apply_native_state()`, keyed by `Core5R1C` field names. `_core_rs` exports
+the expected keys (`NATIVE_*_PARAMETERS`) and rejects a missing or unexpected
+key by name. Domain kernels read `HourlyInputs` fields by name
+(`NATIVE_FORCING_COLUMNS`) instead of positional arrays.
 Shapes are checked before state changes. Deterministic batches release the GIL;
 prepared immutable byte buffers are borrowed, while mutable inputs are copied
 into owned snapshots. A NumPy read-only flag alone does not authorize borrowing.

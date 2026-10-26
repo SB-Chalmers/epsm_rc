@@ -940,6 +940,93 @@ class Building5R1C:
         self._hour_heat_flows = None
         self._update_ventilation_coefficient()
 
+    def _native_parameters(self) -> dict:
+        """Name every value the native kernels read, keyed by their Rust field names.
+
+        This is the single Python side of the native contract; ``_core_rs``
+        rejects a missing or unexpected key. Prepared models add their cached
+        coefficients, while standalone models supply sky-loss components.
+        """
+        parameters = {
+            "floor_area_m2": self.floor_area_m2,
+            "building_vol": self._building_vol,
+            "a_tot": self._a_tot,
+            "mass_area": self._mass_area,
+            "c_m": self._c_m,
+            "h_tr_op": self._h_tr_op,
+            "h_tr_op_walls_roof": self._h_tr_op_walls_roof,
+            "h_tr_ground": self._h_tr_ground,
+            "h_tr_tb": self._h_tr_tb,
+            "h_tr_w": self._h_tr_w,
+            "h_tr_ms": self._h_tr_ms,
+            "h_tr_is": self._h_tr_is,
+            "h_tr_em": self._h_tr_em,
+            "h_ms": self.h_ms,
+            "air_volumetric_heat_capacity_j_m3_k": self.air_volumetric_heat_capacity_j_m3_k,
+            "ach_infiltration": self.ach_infiltration,
+            "ach_ventilation": self.ach_ventilation,
+            "heat_recovery_efficiency": self.heat_recovery_efficiency,
+            "convective_fraction_internal": self.convective_fraction_internal,
+            "internal_gains_w_per_m2": self.internal_gains_w_per_m2,
+            "t_set_heating": self.t_set_heating,
+            "t_set_cooling": self.t_set_cooling,
+            "t_set_heating_setback": self.t_set_heating_setback,
+            "t_set_cooling_setback": self.t_set_cooling_setback,
+            "use_operative_temperature": self.use_operative_temperature,
+            "ventilation_behaviour": self.ventilation_behaviour,
+            "ach_window_open": self.ach_window_open,
+            "delta_theta_er": self.delta_theta_er,
+            "ground_temps_monthly": self.ground_temps_monthly,
+            "prepared_hourly": self._prepared_hourly,
+            "t_m": self.t_m,
+            "t_s": self.t_s,
+            "t_air": self.t_air,
+            "t_supply": self._t_supply,
+            "windows_open": self._windows_open,
+            "h_ve": self._h_ve,
+        }
+        if self._prepared_hourly:
+            parameters.update(
+                prepared_sky=self._prepared_sky,
+                prepared_mass_ratio=self._prepared_mass_ratio,
+                prepared_window_ratio=self._prepared_window_ratio,
+                prepared_airflow=self._prepared_airflow,
+                prepared_network=self._prepared_network,
+                prepared_cn=self._prepared_cn,
+            )
+        else:
+            parameters.update(
+                r_se_roof=self.r_se_roof,
+                u_roof=self.u_roof,
+                roof_area_m2=self.roof_area_m2,
+                h_r=self.h_r,
+                form_factor_roof=self.form_factor_roof,
+                r_se_wall=self.r_se_wall,
+                u_walls=self.u_walls,
+                wall_area_m2=self.wall_area_m2,
+                form_factor_wall=self.form_factor_wall,
+            )
+        return parameters
+
+    def _apply_native_state(self, state: dict) -> None:
+        """Write back thermal state and hourly controls advanced by a native kernel."""
+        self.t_m = state["t_m"]
+        self.t_s = state["t_s"]
+        self.t_air = state["t_air"]
+        self._t_supply = state["t_supply"]
+        self._windows_open = state["windows_open"]
+        self.t_set_heating = state["t_set_heating"]
+        self.t_set_cooling = state["t_set_cooling"]
+        self.ach_infiltration = state["ach_infiltration"]
+        self.ach_ventilation = state["ach_ventilation"]
+        self.convective_fraction_internal = state["convective_fraction_internal"]
+        self._h_ve = state["h_ve"]
+        if self._prepared_hourly:
+            self._prepared_airflow = state["prepared_airflow"]
+            self._prepared_network = state["prepared_network"]
+            self._prepared_cn = state["prepared_cn"]
+            self._hour_heat_flows = state["hour_heat_flows"]
+
     def __post_init__(self):
         """Calculate derived thermal properties."""
         self._validate_inputs()

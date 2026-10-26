@@ -98,6 +98,11 @@ class HourlyInputs:
     coefficients: tuple
     aggregate_split: bool
 
+    def __post_init__(self):
+        # The native kernels read these fields by name; fix their types once here.
+        self.coefficients = tuple(float(value) for value in self.coefficients)
+        self.aggregate_split = bool(self.aggregate_split)
+
     def at(self, hour):
         model = self.model
         temperature = float(self.temperatures[hour])
@@ -245,43 +250,18 @@ def _run_coupled_domains(prepared, conductance):
 
     from ._core_rs import run_coupled_domains_hourly
 
-    f0, f1 = prepared[0].forcing, prepared[1].forcing
+    limits = [
+        np.asarray(limit, dtype=np.float64)
+        for domain in prepared
+        for limit in (domain.heating_limits_w, domain.cooling_limits_w)
+    ]
     return run_coupled_domains_hourly(
         prepared[0].model,
         prepared[1].model,
-        f0.temperatures,
-        f0.gains,
-        f0.convective,
-        f0.heating_setpoints,
-        f0.cooling_setpoints,
-        f0.wind,
-        f0.infiltration,
-        f0.natural,
-        f0.ventilation,
-        f0.solar,
-        f0.opaque,
-        f0.month_hours,
-        tuple(float(c) for c in f0.coefficients),
-        bool(f0.aggregate_split),
-        np.asarray(prepared[0].heating_limits_w, dtype=np.float64),
-        np.asarray(prepared[0].cooling_limits_w, dtype=np.float64),
-        f1.temperatures,
-        f1.gains,
-        f1.convective,
-        f1.heating_setpoints,
-        f1.cooling_setpoints,
-        f1.wind,
-        f1.infiltration,
-        f1.natural,
-        f1.ventilation,
-        f1.solar,
-        f1.opaque,
-        f1.month_hours,
-        tuple(float(c) for c in f1.coefficients),
-        bool(f1.aggregate_split),
-        np.asarray(prepared[1].heating_limits_w, dtype=np.float64),
-        np.asarray(prepared[1].cooling_limits_w, dtype=np.float64),
-        float(conductance),
+        prepared[0].forcing,
+        prepared[1].forcing,
+        *limits,
+        conductance_w_k=float(conductance),
     )
 
 

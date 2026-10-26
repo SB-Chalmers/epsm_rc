@@ -1519,25 +1519,11 @@ def _run_domain(domain):
 
     from ._core_rs import run_single_domain_hourly
 
-    f = domain.forcing
     power, indoor = run_single_domain_hourly(
         domain.model,
-        f.temperatures,
-        f.gains,
-        f.convective,
-        f.heating_setpoints,
-        f.cooling_setpoints,
-        f.wind,
-        f.infiltration,
-        f.natural,
-        f.ventilation,
-        f.solar,
-        f.opaque,
-        f.month_hours,
-        tuple(float(c) for c in f.coefficients),
-        bool(f.aggregate_split),
-        np.ascontiguousarray(domain.heating_limits_w, dtype=np.float64),
-        np.ascontiguousarray(domain.cooling_limits_w, dtype=np.float64),
+        domain.forcing,
+        heating_limits_w=np.ascontiguousarray(domain.heating_limits_w, dtype=np.float64),
+        cooling_limits_w=np.ascontiguousarray(domain.cooling_limits_w, dtype=np.float64),
     )
     return domain.finish(power, indoor)
 
