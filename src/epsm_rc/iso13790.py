@@ -44,8 +44,8 @@ Network Parameters (Section 7.2.2.2, Section 12.2.2):
 
 Heat Flow Distribution (Annex C.2):
     - Eq. (C.1): Φ_ia = 0.5 * Φ_int
-    - Eq. (C.2): Φ_m = (A_m/A_t) * 0.5 * (Φ_int + Φ_sol)
-    - Eq. (C.3): Φ_st = (1 - A_m/A_t - H_tr,w/(9.1*A_t)) * 0.5 * (Φ_int + Φ_sol)
+    - Eq. (C.2): Φ_m = (A_m/A_t) * (0.5 * Φ_int + Φ_sol)
+    - Eq. (C.3): Φ_st = (1 - A_m/A_t - H_tr,w/(9.1*A_t)) * (0.5 * Φ_int + Φ_sol)
 
 Temperature Calculations (Annex C.3):
     - Eq. (C.4): θ_m,t - Crank-Nicolson mass temperature update
@@ -108,8 +108,8 @@ The following features provide strict ISO 13790 compliance:
 **Strict ISO Heat Flow Distribution (Annex C.2)**
     calc_heat_flows(strict_iso=True) uses exact ISO 13790 equations:
         Eq. (C.1): Φ_ia = 0.5 × Φ_int
-        Eq. (C.2): Φ_m = (A_m/A_t) × 0.5 × (Φ_int + Φ_sol)
-        Eq. (C.3): Φ_st = (1 - A_m/A_t - H_tr,w/(9.1×A_t)) × 0.5 × (Φ_int + Φ_sol)
+        Eq. (C.2): Φ_m = (A_m/A_t) × (0.5 × Φ_int + Φ_sol)
+        Eq. (C.3): Φ_st = (1 - A_m/A_t - H_tr,w/(9.1×A_t)) × (0.5 × Φ_int + Φ_sol)
     The default flexible mode allows convective_fraction_internal calibration.
 
 References
@@ -269,7 +269,7 @@ _MONTH_START_HOURS = (0, 744, 1416, 2160, 2880, 3624, 4344, 5088, 5832, 6552, 72
 def estimate_ground_temps_from_air(
     annual_mean_air_temp: float,
     amplitude: float = 5.47,
-    phase_shift_months: float = 1.5,
+    phase_shift_months: float = 0.98,
 ) -> list[float]:
     """Estimate monthly ground temperatures from annual mean air temperature.
 
@@ -291,7 +291,8 @@ def estimate_ground_temps_from_air(
     amplitude : float
         Temperature swing amplitude [°C] (default 5.47, calibrated)
     phase_shift_months : float
-        Phase lag from air temp peak [months] (default 1.5)
+        Calibrated phase offset [months] (default 0.98). The profile peaks at
+        month index ``7.5 - phase_shift_months`` (0 = January).
 
     Returns
     -------
@@ -316,10 +317,11 @@ def estimate_ground_temps_from_air(
     # Air temp minimum is ~Feb (month 1), maximum is ~Jul-Aug (month 7)
     # Ground temp lags air by phase_shift months
     # Use negative cosine so minimum is at phase_shift after Feb
-    # Phase calibrated to 0.98 months (shift from default peak)
+    if isinstance(phase_shift_months, bool) or not np.isfinite(phase_shift_months):
+        raise ValueError("phase_shift_months must be finite")
     temps = []
     for month in range(12):
-        angle = 2 * np.pi * (month - 7.5 + 0.98) / 12  # Calibrated phase
+        angle = 2 * np.pi * (month - 7.5 + phase_shift_months) / 12
         temp = base_temp + amplitude * np.cos(angle)
         temps.append(round(float(temp), 1))
 
@@ -893,6 +895,8 @@ class Building5R1C:
     t_s: float = field(default=20.0, init=False)  # Surface temperature [°C]
     t_air: float = field(default=20.0, init=False)  # Air temperature [°C]
     _windows_open: bool = field(default=False, init=False)  # Track if windows were opened last step
+    # Window decision fixed for the trials of one thermostat hour: (ach, open).
+    _window_hour: Optional[tuple] = field(default=None, init=False, repr=False, compare=False)
 
     # Derived properties (calculated in __post_init__)
     _c_m: float = field(default=0.0, init=False, repr=False)
@@ -1439,7 +1443,10 @@ class Building5R1C:
         Mechanical recovery remains applied only to mechanical flow. Infiltration
         and the additional window flow retain full outdoor conductance.
         """
-        ach_window = self._handle_window_opening(t_out)
+        if self._window_hour is None:
+            ach_window = self._handle_window_opening(t_out)
+        else:
+            ach_window, self._windows_open = self._window_hour
         self._update_ventilation_coefficient(
             self.ach_infiltration + self.ach_ventilation + ach_window,
         )
@@ -1919,10 +1926,10 @@ class Building5R1C:
         Eq. (C.1): Φ_ia = 0.5 × Φ_int
             → 50% of internal gains go directly to air node (convective)
 
-        Eq. (C.2): Φ_m = (A_m/A_t) × 0.5 × (Φ_int + Φ_sol)
+        Eq. (C.2): Φ_m = (A_m/A_t) × (0.5 × Φ_int + Φ_sol)
             → Fraction absorbed by thermal mass surfaces
 
-        Eq. (C.3): Φ_st = (1 - A_m/A_t - H_tr,w/(9.1×A_t)) × 0.5 × (Φ_int + Φ_sol)
+        Eq. (C.3): Φ_st = (1 - A_m/A_t - H_tr,w/(9.1×A_t)) × (0.5 × Φ_int + Φ_sol)
             → Remaining radiative fraction to surface node
 
         The coefficient h_ms (default 9.1) in Eq. (C.3) is also used in
@@ -1987,11 +1994,11 @@ class Building5R1C:
                 )
                 ratio_surface = max(0.0, 1.0 - ratio_mass - ratio_window)
 
-                # Eq. (C.2): Φ_m = (A_m/A_t) × 0.5 × (Φ_int + Φ_sol)
-                phi_m = ratio_mass * 0.5 * (internal_gains + phi_sol_total)
+                # Eq. (C.2): Φ_m = (A_m/A_t) × (0.5 × Φ_int + Φ_sol)
+                phi_m = ratio_mass * (0.5 * internal_gains + phi_sol_total)
 
-                # Eq. (C.3): Φ_st = (1 - A_m/A_t - H_tr,w/(9.1×A_t)) × 0.5 × (Φ_int + Φ_sol)
-                phi_st = ratio_surface * 0.5 * (internal_gains + phi_sol_total)
+                # Eq. (C.3): Φ_st = (1 - A_m/A_t - H_tr,w/(9.1×A_t)) × (0.5 × Φ_int + Φ_sol)
+                phi_st = ratio_surface * (0.5 * internal_gains + phi_sol_total)
             else:
                 phi_st = 0.0
                 phi_m = 0.0
@@ -2122,8 +2129,18 @@ class Building5R1C:
             t_e_opaque = t_out
 
         if self._h_ve <= 0:
-            # No ventilation - simplified calculation
-            return phi_m + self._h_tr_em * t_e_opaque
+            # Limit H_ve -> 0 of Eq. (C.5): H_tr,1 (Φ_ia/H_ve + θ_sup) -> Φ_ia and
+            # H_tr,3/H_tr,2 -> H_tr,ms/(H_tr,ms + H_tr,w). Air-node heat still
+            # reaches the surface node through H_tr,is.
+            coupled = self._h_tr_ms + self._h_tr_w
+            if coupled <= 0:
+                return phi_m + self._h_tr_em * t_e_opaque
+            air_heat = phi_ia if self._h_tr_is > 0 else 0.0
+            return (
+                phi_m
+                + self._h_tr_em * t_e_opaque
+                + self._h_tr_ms * (phi_st + self._h_tr_w * t_out + air_heat) / coupled
+            )
 
         phi_m_tot = (
             phi_m
@@ -2205,10 +2222,12 @@ class Building5R1C:
         t_supply = self.calc_supply_air_temperature(t_out)
 
         if self._h_ve <= 0:
-            # Simplified for no ventilation
-            h_sum = self._h_tr_ms + self._h_tr_w + self._h_tr_is
+            # Limit H_ve -> 0 of Eq. (C.10): the air node passes all of Φ_ia to the
+            # surface through H_tr,is, which therefore leaves the denominator.
+            h_sum = self._h_tr_ms + self._h_tr_w
+            air_heat = phi_ia if self._h_tr_is > 0 else 0.0
             if h_sum > 0:
-                return (self._h_tr_ms * t_m + phi_st + self._h_tr_w * t_out) / h_sum
+                return (self._h_tr_ms * t_m + phi_st + self._h_tr_w * t_out + air_heat) / h_sum
             return t_m
 
         numerator = (
@@ -2544,124 +2563,141 @@ class Building5R1C:
                 random.random if 0.0 < self.ventilation_behaviour < 1.0 else None,
             )
 
-        # Step 1: Calculate temperature with no heating/cooling
-        t_m_prev = self.t_m
+        # Eq. (C.13) interpolates between trials of one network, so the window
+        # state is decided once from the start-of-hour air temperature and held
+        # for the free, reference and final trials.
+        if self.ventilation_behaviour > 0:
+            ach_window = self._handle_window_opening(t_out)
+            self._window_hour = (ach_window, self._windows_open)
+        try:
+            # Step 1: Calculate temperature with no heating/cooling
+            t_m_prev = self.t_m
 
-        # Temporarily step with zero energy
-        advance(
-            t_out,
-            solar_gains,
-            internal_gains,
-            energy_demand=0.0,
-            dt_hours=dt_hours,
-            solar_gains_opaque=solar_gains_opaque,
-            hour_of_year=hour_of_year,
-            include_sky_radiation=include_sky_radiation,
-        )
-
-        free_state = self.t_air, self.t_s, self.t_m
-        # Get control temperature based on mode
-        if self.use_operative_temperature:
-            t_ctrl_0 = self.t_operative
-        else:
-            t_ctrl_0 = self.t_air
-
-        # Reset mass temperature
-        self.t_m = t_m_prev
-
-        # Check if heating or cooling needed (using active setpoints)
-        if t_ctrl_0 < t_set_heat:
-            # Heating needed
-            if self._prepared_hourly and self.ventilation_behaviour <= 0 and max_heating_power == 0:
-                self.t_air, self.t_s, self.t_m = free_state
-                return 0.0
-            t_ctrl_set = t_set_heat
-
-            # Step 2: Calculate with reference heating (10 W/m^2)
-            q_ref = 10.0 * self.floor_area_m2
+            # Temporarily step with zero energy
             advance(
                 t_out,
                 solar_gains,
                 internal_gains,
-                energy_demand=q_ref,
+                energy_demand=0.0,
                 dt_hours=dt_hours,
                 solar_gains_opaque=solar_gains_opaque,
                 hour_of_year=hour_of_year,
                 include_sky_radiation=include_sky_radiation,
             )
 
+            free_state = self.t_air, self.t_s, self.t_m
+            # Get control temperature based on mode
             if self.use_operative_temperature:
-                t_ctrl_10 = self.t_operative
+                t_ctrl_0 = self.t_operative
             else:
-                t_ctrl_10 = self.t_air
+                t_ctrl_0 = self.t_air
+
+            # Reset mass temperature
             self.t_m = t_m_prev
 
-            # Interpolate required heating (Thales theorem, Eq. C.13)
-            if abs(t_ctrl_10 - t_ctrl_0) > 1e-6:
-                q_demand = q_ref * (t_ctrl_set - t_ctrl_0) / (t_ctrl_10 - t_ctrl_0)
+            # Check if heating or cooling needed (using active setpoints)
+            if t_ctrl_0 < t_set_heat:
+                # Heating needed
+                if (
+                    self._prepared_hourly
+                    and self.ventilation_behaviour <= 0
+                    and max_heating_power == 0
+                ):
+                    self.t_air, self.t_s, self.t_m = free_state
+                    return 0.0
+                t_ctrl_set = t_set_heat
+
+                # Step 2: Calculate with reference heating (10 W/m^2)
+                q_ref = 10.0 * self.floor_area_m2
+                advance(
+                    t_out,
+                    solar_gains,
+                    internal_gains,
+                    energy_demand=q_ref,
+                    dt_hours=dt_hours,
+                    solar_gains_opaque=solar_gains_opaque,
+                    hour_of_year=hour_of_year,
+                    include_sky_radiation=include_sky_radiation,
+                )
+
+                if self.use_operative_temperature:
+                    t_ctrl_10 = self.t_operative
+                else:
+                    t_ctrl_10 = self.t_air
+                self.t_m = t_m_prev
+
+                # Interpolate required heating (Thales theorem, Eq. C.13)
+                if abs(t_ctrl_10 - t_ctrl_0) > 1e-6:
+                    q_demand = q_ref * (t_ctrl_set - t_ctrl_0) / (t_ctrl_10 - t_ctrl_0)
+                else:
+                    q_demand = 0.0
+
+                # Apply capacity limit
+                q_demand = min(q_demand, max_heating_power)
+                q_demand = max(q_demand, 0.0)
+
+            elif t_ctrl_0 > t_set_cool:
+                # Cooling needed
+                if (
+                    self._prepared_hourly
+                    and self.ventilation_behaviour <= 0
+                    and max_cooling_power == 0
+                ):
+                    self.t_air, self.t_s, self.t_m = free_state
+                    return 0.0
+                t_ctrl_set = t_set_cool
+
+                # Step 2: Calculate with reference cooling
+                q_ref = -10.0 * self.floor_area_m2
+                advance(
+                    t_out,
+                    solar_gains,
+                    internal_gains,
+                    energy_demand=q_ref,
+                    dt_hours=dt_hours,
+                    solar_gains_opaque=solar_gains_opaque,
+                    hour_of_year=hour_of_year,
+                    include_sky_radiation=include_sky_radiation,
+                )
+
+                if self.use_operative_temperature:
+                    t_ctrl_10 = self.t_operative
+                else:
+                    t_ctrl_10 = self.t_air
+                self.t_m = t_m_prev
+
+                # Interpolate required cooling
+                if abs(t_ctrl_10 - t_ctrl_0) > 1e-6:
+                    q_demand = q_ref * (t_ctrl_set - t_ctrl_0) / (t_ctrl_10 - t_ctrl_0)
+                else:
+                    q_demand = 0.0
+
+                # Apply capacity limit (cooling is negative)
+                q_demand = max(q_demand, -abs(max_cooling_power))
+                q_demand = min(q_demand, 0.0)
+
             else:
+                # No heating or cooling needed
                 q_demand = 0.0
 
-            # Apply capacity limit
-            q_demand = min(q_demand, max_heating_power)
-            q_demand = max(q_demand, 0.0)
-
-        elif t_ctrl_0 > t_set_cool:
-            # Cooling needed
-            if self._prepared_hourly and self.ventilation_behaviour <= 0 and max_cooling_power == 0:
+            if self._prepared_hourly and q_demand == 0.0:
                 self.t_air, self.t_s, self.t_m = free_state
-                return 0.0
-            t_ctrl_set = t_set_cool
-
-            # Step 2: Calculate with reference cooling
-            q_ref = -10.0 * self.floor_area_m2
+                return q_demand
+            # Step 3/4: Apply the calculated demand and update state
             advance(
                 t_out,
                 solar_gains,
                 internal_gains,
-                energy_demand=q_ref,
+                energy_demand=q_demand,
                 dt_hours=dt_hours,
                 solar_gains_opaque=solar_gains_opaque,
                 hour_of_year=hour_of_year,
                 include_sky_radiation=include_sky_radiation,
             )
 
-            if self.use_operative_temperature:
-                t_ctrl_10 = self.t_operative
-            else:
-                t_ctrl_10 = self.t_air
-            self.t_m = t_m_prev
-
-            # Interpolate required cooling
-            if abs(t_ctrl_10 - t_ctrl_0) > 1e-6:
-                q_demand = q_ref * (t_ctrl_set - t_ctrl_0) / (t_ctrl_10 - t_ctrl_0)
-            else:
-                q_demand = 0.0
-
-            # Apply capacity limit (cooling is negative)
-            q_demand = max(q_demand, -abs(max_cooling_power))
-            q_demand = min(q_demand, 0.0)
-
-        else:
-            # No heating or cooling needed
-            q_demand = 0.0
-
-        if self._prepared_hourly and q_demand == 0.0:
-            self.t_air, self.t_s, self.t_m = free_state
             return q_demand
-        # Step 3/4: Apply the calculated demand and update state
-        advance(
-            t_out,
-            solar_gains,
-            internal_gains,
-            energy_demand=q_demand,
-            dt_hours=dt_hours,
-            solar_gains_opaque=solar_gains_opaque,
-            hour_of_year=hour_of_year,
-            include_sky_radiation=include_sky_radiation,
-        )
-
-        return q_demand
+        finally:
+            self._window_hour = None
 
     @_refresh_standalone
     def simulate(
@@ -2933,7 +2969,7 @@ class Building5R1C:
                 frame_factor=self.frame_factor,
                 g_value_angle_coefficients=self.g_value_angle_coefficients,
             )
-            * self.shading_factor
+            * self.calc_detailed_shading_factor()
             * f_incidence
         )
 

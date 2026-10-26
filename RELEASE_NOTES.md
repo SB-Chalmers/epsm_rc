@@ -15,6 +15,25 @@ context results are unchanged.
 Tests that need the `gis` extra or `epsm_core[geometry]` now skip when those
 extras are absent instead of failing.
 
+Solver corrections. Results for ordinary inputs are bit-identical; only the
+affected cases change:
+
+- Zero ventilation conductance (no infiltration and no unrecovered supply, or
+  sensible recovery of exactly 1) dropped the air-node heat path to the surface
+  and mass nodes in both the Python and native solvers. Heating demand was
+  inflated by up to two orders of magnitude. The H_ve -> 0 limit of ISO 13790
+  Eq. (C.5) and (C.10) is now used, so zero airflow matches vanishing airflow.
+- Standalone window opening (`ventilation_behaviour > 0`) is decided once per
+  hour from the start-of-hour air temperature and held for every thermostat
+  trial, so Eq. (C.13) reaches its setpoint. A stochastic occupant now draws
+  once per thermostat hour instead of once per trial.
+- `simulate_with_epw` applies the horizon, overhang and fin factors, as the
+  other solar-gain methods already did.
+- `calc_heat_flows(strict_iso=True)` uses Eq. (C.2)/(C.3) as
+  `(0.5 Φ_int + Φ_sol)`; solar gains were previously halved.
+- `estimate_ground_temps_from_air` uses its `phase_shift_months` argument. Its
+  default is now the documented calibrated 0.98 months, which it already used.
+
 # Release 0.9.0 — public capability preflight
 
 Expose settings-aware preflight through the same authoring preparation used by simulation. Callers can inspect reduction requirements without starting the thermal solver. Numerical models and policy defaults retain their existing meaning.
