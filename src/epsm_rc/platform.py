@@ -44,7 +44,10 @@ from shapely.geometry import Polygon
 from epsm_rc._logging import bind_context, context_logger
 from epsm_rc._logging import operation as logged_operation
 
+from ._forcing import HourlyInputs, PreparedDomain, _immutable_columns, _immutable_series
 from ._identity import implementation_identity
+from ._results import DomainReduction
+from .domains import select_domains, simulate_conditioned_domains
 from .iso13790 import Building5R1C, Construction, ConstructionLayer
 from .optics import SimpleGlazingOptics
 from .preparation import PreparationCache
@@ -804,8 +807,6 @@ def preflight(building, *, weather=None, settings=None):
                 ),
             )
             if spec.geometry.basement_conditioned:
-                from .domains import select_domains
-
                 check(
                     "rc_domains",
                     "zone_uses",
@@ -892,60 +893,9 @@ def _prepare_building(building, weather, settings, preparation_cache):
     return preparation
 
 
-def _prepare_radiation(preparation, model, elements, attic, areas, optical_models):
-    """Prepare solar and sky forcing using the building's captured weather buffers."""
-    from epsm_core.geometry import facade_catalog
-
-    spec, settings = preparation.spec, preparation.settings
-    uplift = 1 + spec.envelope.thermal_bridge_uplift_fraction
-    year = spec.climate.calendar_year
-    data, axis = preparation.data, preparation.axis
-    prepared = preparation.prepared
-    preparation_key = {
-        "weather_sha256": preparation.weather.sha256,
-        "year": year,
-        "climate": spec.climate.model_dump(mode="json"),
-        "implementation": preparation.implementation,
-        "solar_time_reference": settings.solar_time_reference,
-    }
-    ghi = data["ghi"]
-    if not np.isfinite(ghi).all() or ((ghi < 0) | (ghi >= 9999)).any():
-        raise ValueError("EPW global horizontal radiation must be complete and nonnegative")
-    axis = preparation.axis
-    times = pd.DatetimeIndex(axis).tz_localize(
-        timezone(timedelta(hours=spec.climate.time_zone_hours))
-    )
-
-    sun_times = (
-        times + pd.Timedelta(minutes=30)
-        if settings.solar_time_reference == "interval_midpoint"
-        else times
-    )
-    if settings.window_optics_method == "simple_glazing_angular_v1":
-        for name in ("dni", "dhi"):
-            values = data[name]
-            if not np.isfinite(values).all() or ((values < 0) | (values >= 9999)).any():
-                raise ValueError(f"EPW {name} must be complete and nonnegative for angular optics")
-
-    def solar_geometry():
-        position = solarposition.get_solarposition(
-            sun_times,
-            spec.climate.latitude_deg,
-            spec.climate.longitude_deg,
-            spec.climate.elevation_m,
-        )
-        return (
-            position.apparent_zenith.to_numpy(),
-            position.azimuth.to_numpy(),
-            np.asarray(irradiance.get_extra_radiation(sun_times)),
-            np.asarray(atmosphere.get_relative_airmass(position.apparent_zenith)),
-        )
-
-    zenith, sun_azimuth, extra, air_mass = prepared(
-        "solar_geometry", preparation_key, solar_geometry, readonly=True
-    )
-    dni, dhi = data["dni"], data["dhi"]
-    facades = {f.facade_id: f for f in facade_catalog(spec.geometry)}
+def _context_horizons(preparation, elements, attic, facades):
+    """Prepare cached ISO 13790 G.5.4.2 horizon angles and their report."""
+    spec, settings, prepared = preparation.spec, preparation.settings, preparation.prepared
     horizons, context_shading = (
         {},
         {
@@ -1001,6 +951,64 @@ def _prepare_radiation(preparation, model, elements, attic, areas, optical_model
             ),
         )
         context_shading["horizon_angles_deg"] = dict(horizons)
+    return horizons, context_shading
+
+
+def _prepare_radiation(preparation, model, elements, attic, areas, optical_models):
+    """Prepare solar and sky forcing using the building's captured weather buffers."""
+    from epsm_core.geometry import facade_catalog
+
+    spec, settings = preparation.spec, preparation.settings
+    uplift = 1 + spec.envelope.thermal_bridge_uplift_fraction
+    year = spec.climate.calendar_year
+    data, axis = preparation.data, preparation.axis
+    prepared = preparation.prepared
+    preparation_key = {
+        "weather_sha256": preparation.weather.sha256,
+        "year": year,
+        "climate": spec.climate.model_dump(mode="json"),
+        "implementation": preparation.implementation,
+        "solar_time_reference": settings.solar_time_reference,
+    }
+    ghi = data["ghi"]
+    if not np.isfinite(ghi).all() or ((ghi < 0) | (ghi >= 9999)).any():
+        raise ValueError("EPW global horizontal radiation must be complete and nonnegative")
+    axis = preparation.axis
+    times = pd.DatetimeIndex(axis).tz_localize(
+        timezone(timedelta(hours=spec.climate.time_zone_hours))
+    )
+
+    sun_times = (
+        times + pd.Timedelta(minutes=30)
+        if settings.solar_time_reference == "interval_midpoint"
+        else times
+    )
+    if settings.window_optics_method == "simple_glazing_angular_v1":
+        for name in ("dni", "dhi"):
+            values = data[name]
+            if not np.isfinite(values).all() or ((values < 0) | (values >= 9999)).any():
+                raise ValueError(f"EPW {name} must be complete and nonnegative for angular optics")
+
+    def solar_geometry():
+        position = solarposition.get_solarposition(
+            sun_times,
+            spec.climate.latitude_deg,
+            spec.climate.longitude_deg,
+            spec.climate.elevation_m,
+        )
+        return (
+            position.apparent_zenith.to_numpy(),
+            position.azimuth.to_numpy(),
+            np.asarray(irradiance.get_extra_radiation(sun_times)),
+            np.asarray(atmosphere.get_relative_airmass(position.apparent_zenith)),
+        )
+
+    zenith, sun_azimuth, extra, air_mass = prepared(
+        "solar_geometry", preparation_key, solar_geometry, readonly=True
+    )
+    dni, dhi = data["dni"], data["dhi"]
+    facades = {f.facade_id: f for f in facade_catalog(spec.geometry)}
+    horizons, context_shading = _context_horizons(preparation, elements, attic, facades)
 
     def shaded(channels, identifier):
         if not horizons:
@@ -1139,53 +1147,53 @@ def _prepare_radiation(preparation, model, elements, attic, areas, optical_model
     return solar, opaque, radiation_hourly, times, context_shading
 
 
-def _prepare_domain(preparation, *, domain=None):
-    """Reduce one domain from the already checked building without repeating I/O."""
+@dataclass(frozen=True)
+class _DomainScope:
+    """Operating inputs and physical extent of one reduced domain."""
 
-    building, spec, weather, settings = (
-        preparation.building,
-        preparation.spec,
-        preparation.weather,
-        preparation.settings,
+    use: object
+    airflow: object
+    reference_area: float
+    area: float
+    volume: float
+    elements: tuple
+
+
+def _domain_scope(building, spec, domain):
+    """Select aggregate or per-domain use, airflow, extent and elements."""
+    if domain is None:
+        return _DomainScope(
+            spec.use,
+            spec.airflow,
+            spec.load_reference_area_m2 or spec.geometry.conditioned_floor_area_m2,
+            spec.geometry.conditioned_floor_area_m2,
+            spec.geometry.conditioned_volume_m3,
+            tuple(building.elements),
+        )
+    return _DomainScope(
+        domain.use,
+        domain.airflow,
+        domain.reference_area_m2,
+        domain.area_m2,
+        domain.volume_m3,
+        domain.elements,
     )
-    operating_use = domain.use if domain is not None else spec.use
-    operating_airflow = domain.airflow if domain is not None else spec.airflow
-    operating_reference = (
-        domain.reference_area_m2
-        if domain is not None
-        else spec.load_reference_area_m2 or spec.geometry.conditioned_floor_area_m2
-    )
-    gains, convective_gains, radiant_gains, gain_reduction = _gain_inputs(
-        operating_use,
-        operating_reference,
-        spec.climate.calendar_year,
-        settings,
-    )
-    airflow_capabilities = _airflow_capabilities(operating_airflow, settings)
-    ground, ground_multiplier, ground_reduction = _ground_reduction(
-        spec.envelope,
-        settings,
-        building=building,
-        spec=spec,
-        resolved=preparation.resolved,
-        domain=domain,
-        outdoor_temperatures=preparation.data["temp_air"],
-        time_axis=preparation.axis,
-    )
-    self_shadowing = _self_shadowing_capabilities(spec.geometry, settings)
+
+
+def _run_identity(preparation, settings, gain_reduction, domain):
+    """Return the effective reduction configuration and its run identity."""
     effective_configuration = settings.effective_configuration()
     effective_configuration["gain_reduction"] = gain_reduction
     if not gain_reduction["aggregate_split_applied"]:
         effective_configuration["inactive_coefficients"] = ["convective_internal_gains_fraction"]
         effective_configuration["methods"]["occupant_gains"] = "supplied_sensible_fraction"
         effective_configuration["methods"]["gain_partition"] = "shared_hourly_sensible_channels"
-    implementation = preparation.implementation
     run_id = hashlib.sha256(
         json.dumps(
             {
                 "physical_inputs_sha256": preparation.physical_hash,
                 "settings": effective_configuration,
-                "implementation": implementation,
+                "implementation": preparation.implementation,
                 **({"domain": domain.identity()} if domain is not None else {}),
             },
             sort_keys=True,
@@ -1193,22 +1201,11 @@ def _prepare_domain(preparation, *, domain=None):
             allow_nan=False,
         ).encode()
     ).hexdigest()
-    bind_context(run_id=run_id)
-    year = spec.climate.calendar_year
-    area = domain.area_m2 if domain is not None else spec.geometry.conditioned_floor_area_m2
-    volume = domain.volume_m3 if domain is not None else spec.geometry.conditioned_volume_m3
-    reference_area = operating_reference
-    elements = domain.elements if domain is not None else tuple(building.elements)
-    from .attic import reduce_attics
+    return effective_configuration, run_id
 
-    attic = reduce_attics(
-        building,
-        spec,
-        weather,
-        settings,
-        resolved=preparation.resolved,
-        enabled=domain is None or domain.name == "main",
-    )
+
+def _angular_optics(elements, settings):
+    """One equivalent-layer optics model per distinct outdoor glazing."""
     optical_models = {}
     if settings.window_optics_method == "simple_glazing_angular_v1":
         for element in elements:
@@ -1221,6 +1218,11 @@ def _prepare_domain(preparation, *, domain=None):
                 key = (glass.u_value, glass.shgc)
                 if key not in optical_models:
                     optical_models[key] = SimpleGlazingOptics(*key)
+    return optical_models
+
+
+def _envelope_groups(elements, attic, settings, domain):
+    """Group heat-transfer elements and collect depth-limited storage constructions."""
     grouped = {"wall": [], "roof": [], "ground": [], "window": []}
     constructions = []
     for element in elements:
@@ -1281,7 +1283,34 @@ def _prepare_domain(preparation, *, domain=None):
             )
         )
     areas = {key: sum(e.area_m2 for e in values) for key, values in grouped.items()}
+    return grouped, constructions, areas
 
+
+def _area_weighted_u(grouped, areas, key):
+    """Area-weighted installed U-value of one element group."""
+    return (
+        sum(e.area_m2 * e.construction.u_value for e in grouped[key]) / areas[key]
+        if areas[key]
+        else 0.0
+    )
+
+
+def _reduced_model(
+    spec,
+    settings,
+    scope,
+    grouped,
+    constructions,
+    areas,
+    attic,
+    ground,
+    ground_multiplier,
+    ground_reduction,
+    heat_set,
+    cool_set,
+):
+    """Build and prepare the 5R1C model, applying Core's bridge uplift once."""
+    area, volume, airflow = scope.area, scope.volume, scope.airflow
     iso_ground = ground_reduction["effective_method"] == "iso13370_periodic_approximation"
     if iso_ground:
         ground_u = (
@@ -1291,18 +1320,8 @@ def _prepare_domain(preparation, *, domain=None):
         ground_u = None
 
     def u_value(key):
-        return (
-            sum(e.area_m2 * e.construction.u_value for e in grouped[key]) / areas[key]
-            if areas[key]
-            else 0.0
-        )
+        return _area_weighted_u(grouped, areas, key)
 
-    use, airflow = operating_use, operating_airflow
-
-    def annual(schedule):
-        return np.asarray(schedule.hourly(year), dtype=float)
-
-    heat_set, cool_set = annual(use.heating_setpoint), annual(use.cooling_setpoint)
     capacity = sum(c.total_thermal_mass_j_k for c in constructions)
     if not constructions or not np.isfinite(capacity) or capacity <= 0:
         raise ValueError("RC reduction requires positive thermal mass from explicit constructions")
@@ -1383,18 +1402,45 @@ def _prepare_domain(preparation, *, domain=None):
             * settings.roof_sky_view_factor
             + sum(term["sky_loss_w"] * term["transmission_fraction"] for term in attic.shell_terms)
         )
-    data = preparation.data
-    solar, opaque, radiation_hourly, times, context_shading = _prepare_radiation(
-        preparation, model, elements, attic, areas, optical_models
+    return model
+
+
+def _month_hours(ground, times):
+    """Month-start hour per step, encoding the calendar month for ground forcing."""
+    if not ground:
+        return None
+    month_offsets = np.array(
+        (0, 744, 1416, 2160, 2880, 3624, 4344, 5088, 5832, 6552, 7296, 8016),
+        dtype=np.int64,
     )
-    axis = preparation.axis
+    return np.ascontiguousarray(
+        month_offsets[times.month.to_numpy(dtype=np.int64) - 1], dtype=np.int64
+    )
+
+
+def _domain_forcing(
+    preparation,
+    model,
+    scope,
+    gains,
+    convective_gains,
+    heat_set,
+    cool_set,
+    solar,
+    opaque,
+    month_hours,
+    aggregate_split,
+    annual,
+):
+    """Pack immutable hourly forcing and thermostat availability limits."""
+    data = preparation.data
+    airflow, reference_area, volume = scope.airflow, scope.reference_area, scope.volume
     infiltration = (
         airflow.infiltration_design_flow_m3_s(reference_area_m2=reference_area, volume_m3=volume)
         * 3600
         / volume
         * annual(airflow.infiltration_fraction)
     )
-    coefficients = airflow.infiltration_coefficients
     wind = data["wind_speed"]
     ventilation = (
         airflow.mechanical_vent_l_s_m2
@@ -1404,63 +1450,14 @@ def _prepare_domain(preparation, *, domain=None):
         * annual(airflow.mechanical_vent_fraction)
     )
     natural = airflow.natural_exchange_ach * annual(airflow.natural_exchange_fraction)
-    temperatures = data["temp_air"]
     heating_on, cooling_on = (
         annual(airflow.heating_availability),
         annual(airflow.cooling_availability),
     )
-    model.t_m = model.t_air = model.t_s = float(heat_set[0])
-    if ground:
-        month_offsets = np.array(
-            (0, 744, 1416, 2160, 2880, 3624, 4344, 5088, 5832, 6552, 7296, 8016),
-            dtype=np.int64,
-        )
-        month_hours = np.ascontiguousarray(
-            month_offsets[times.month.to_numpy(dtype=np.int64) - 1], dtype=np.int64
-        )
-    else:
-        month_hours = None
-
-    from functools import partial
-
-    from ._results import finish_domain
-
-    finish = partial(
-        finish_domain,
-        airflow=airflow,
-        airflow_capabilities=airflow_capabilities,
-        areas=areas,
-        attic=attic,
-        axis=axis,
-        convective_gains=convective_gains,
-        domain=domain,
-        effective_configuration=effective_configuration,
-        elements=elements,
-        gain_reduction=gain_reduction,
-        ground_multiplier=ground_multiplier,
-        ground_reduction=ground_reduction,
-        grouped=grouped,
-        implementation=implementation,
-        model=model,
-        optical_models=optical_models,
-        physical_hash=preparation.physical_hash,
-        radiant_gains=radiant_gains,
-        radiation_hourly=radiation_hourly,
-        reference_area=reference_area,
-        run_id=run_id,
-        self_shadowing=self_shadowing,
-        context_shading=context_shading,
-        settings=settings,
-        spec=spec,
-        use=use,
-    )
-
-    from .domains import HourlyInputs, PreparedDomain, _immutable_columns, _immutable_series
-
     forcing = HourlyInputs(
         model,
         *_immutable_columns(
-            temperatures,
+            data["temp_air"],
             gains,
             convective_gains,
             heat_set,
@@ -1473,27 +1470,135 @@ def _prepare_domain(preparation, *, domain=None):
             opaque,
         ),
         _immutable_series(month_hours, np.int64) if month_hours is not None else None,
-        coefficients,
-        gain_reduction["aggregate_split_applied"],
+        airflow.infiltration_coefficients,
+        aggregate_split,
     )
     heating_limits_w = np.where(heating_on != 0.0, np.inf, 0.0)
     cooling_limits_w = (
         np.where(cooling_on != 0.0, -np.inf, 0.0)
-        if use.cooling_enabled
+        if scope.use.cooling_enabled
         else np.zeros(len(cooling_on), dtype=np.float64)
     )
-    heating_limits_w = _immutable_series(heating_limits_w)
-    cooling_limits_w = _immutable_series(cooling_limits_w)
+    return forcing, _immutable_series(heating_limits_w), _immutable_series(cooling_limits_w)
+
+
+def _prepare_domain(preparation, *, domain=None):
+    """Reduce one domain from the already checked building without repeating I/O."""
+    building, spec, weather, settings = (
+        preparation.building,
+        preparation.spec,
+        preparation.weather,
+        preparation.settings,
+    )
+    scope = _domain_scope(building, spec, domain)
+    gains, convective_gains, radiant_gains, gain_reduction = _gain_inputs(
+        scope.use,
+        scope.reference_area,
+        spec.climate.calendar_year,
+        settings,
+    )
+    airflow_capabilities = _airflow_capabilities(scope.airflow, settings)
+    ground, ground_multiplier, ground_reduction = _ground_reduction(
+        spec.envelope,
+        settings,
+        building=building,
+        spec=spec,
+        resolved=preparation.resolved,
+        domain=domain,
+        outdoor_temperatures=preparation.data["temp_air"],
+        time_axis=preparation.axis,
+    )
+    self_shadowing = _self_shadowing_capabilities(spec.geometry, settings)
+    effective_configuration, run_id = _run_identity(preparation, settings, gain_reduction, domain)
+    bind_context(run_id=run_id)
+    year = spec.climate.calendar_year
+    from .attic import reduce_attics
+
+    attic = reduce_attics(
+        building,
+        spec,
+        weather,
+        settings,
+        resolved=preparation.resolved,
+        enabled=domain is None or domain.name == "main",
+    )
+    optical_models = _angular_optics(scope.elements, settings)
+    grouped, constructions, areas = _envelope_groups(scope.elements, attic, settings, domain)
+
+    def annual(schedule):
+        return np.asarray(schedule.hourly(year), dtype=float)
+
+    heat_set, cool_set = annual(scope.use.heating_setpoint), annual(scope.use.cooling_setpoint)
+    model = _reduced_model(
+        spec,
+        settings,
+        scope,
+        grouped,
+        constructions,
+        areas,
+        attic,
+        ground,
+        ground_multiplier,
+        ground_reduction,
+        heat_set,
+        cool_set,
+    )
+    solar, opaque, radiation_hourly, times, context_shading = _prepare_radiation(
+        preparation, model, scope.elements, attic, areas, optical_models
+    )
+    model.t_m = model.t_air = model.t_s = float(heat_set[0])
+    reduction = DomainReduction(
+        airflow=scope.airflow,
+        airflow_capabilities=airflow_capabilities,
+        areas=areas,
+        attic=attic,
+        axis=preparation.axis,
+        convective_gains=convective_gains,
+        context_shading=context_shading,
+        domain=domain,
+        effective_configuration=effective_configuration,
+        elements=scope.elements,
+        gain_reduction=gain_reduction,
+        ground_multiplier=ground_multiplier,
+        ground_reduction=ground_reduction,
+        grouped=grouped,
+        implementation=preparation.implementation,
+        model=model,
+        optical_models=optical_models,
+        physical_hash=preparation.physical_hash,
+        radiant_gains=radiant_gains,
+        radiation_hourly=radiation_hourly,
+        reference_area=scope.reference_area,
+        run_id=run_id,
+        self_shadowing=self_shadowing,
+        settings=settings,
+        spec=spec,
+        use=scope.use,
+    )
+    forcing, heating_limits_w, cooling_limits_w = _domain_forcing(
+        preparation,
+        model,
+        scope,
+        gains,
+        convective_gains,
+        heat_set,
+        cool_set,
+        solar,
+        opaque,
+        _month_hours(ground, times),
+        gain_reduction["aggregate_split_applied"],
+        annual,
+    )
     return PreparedDomain(
         domain.name if domain is not None else "aggregate",
         model,
         forcing.at,
-        finish,
+        reduction.finish,
         heating_limits_w,
         cooling_limits_w,
-        axis,
-        reference_area,
-        volume,
+        preparation.axis,
+        scope.reference_area,
+        scope.volume,
         forcing=forcing,
     )
 
@@ -1607,9 +1712,7 @@ def simulate_building(building, *, weather, directory=None, settings=None, prepa
     with hourly_schedule_scope():
         preparation = _prepare_building(building, weather, settings, preparation_cache)
         if preparation.spec.geometry.basement_conditioned:
-            from .domains import simulate_conditioned_domains
-
-            result = simulate_conditioned_domains(preparation)
+            result = simulate_conditioned_domains(preparation, _prepare_domain)
         else:
             result = _run_domain(_prepare_domain(preparation))
     return _write_result(result, directory)

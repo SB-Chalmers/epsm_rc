@@ -4,7 +4,7 @@
 # License: MIT; see the project-root LICENSE.
 """Result accounting has no file access; the caller owns optional output writing."""
 
-from dataclasses import asdict
+from dataclasses import asdict, dataclass, fields
 
 import numpy as np
 
@@ -193,3 +193,44 @@ def finish_domain(
     if not diagnostics["accepted"]:
         raise ValueError("RC calculation produced non-finite output")
     return SimulationResult(run_id, scalars, hourly, units, diagnostics, {}, axis)
+
+
+@dataclass(frozen=True)
+class DomainReduction:
+    """Everything one domain reduction produced that its results report.
+
+    Built once by the platform adapter; ``finish`` assembles the owned result
+    from the solved hourly power and indoor temperature.
+    """
+
+    airflow: object
+    airflow_capabilities: object
+    areas: object
+    attic: object
+    axis: object
+    convective_gains: object
+    context_shading: object
+    domain: object
+    effective_configuration: object
+    elements: object
+    gain_reduction: object
+    ground_multiplier: object
+    ground_reduction: object
+    grouped: object
+    implementation: object
+    model: object
+    optical_models: object
+    physical_hash: object
+    radiant_gains: object
+    radiation_hourly: object
+    reference_area: object
+    run_id: object
+    self_shadowing: object
+    settings: object
+    spec: object
+    use: object
+
+    def finish(self, power, indoor):
+        return finish_domain(
+            power, indoor, **{field.name: getattr(self, field.name) for field in fields(self)}
+        )
