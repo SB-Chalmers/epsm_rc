@@ -770,7 +770,7 @@ def HeatPump(
     warnings.warn(
         f"HeatPump() automatically selected {type(model).__name__}. "
         "Automatic model selection is deprecated; instantiate HeatPumpHPLib or "
-        "HeatPumpCarnot explicitly. Removal will be no earlier than 0.9.0.",
+        "HeatPumpCarnot explicitly. Removal will be no earlier than 0.11.0.",
         DeprecationWarning,
         stacklevel=2,
     )

@@ -3118,7 +3118,7 @@ def create_swedish_villa(
     if use_config is not None:
         warnings.warn(
             "use_config is deprecated and has no effect; pass explicit operating inputs. "
-            "It will remain accepted until at least 0.9.",
+            "It will remain accepted until at least 0.10.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -3214,7 +3214,7 @@ def create_swedish_apartment(
     if use_config is not None:
         warnings.warn(
             "use_config is deprecated and has no effect; pass explicit operating inputs. "
-            "It will remain accepted until at least 0.9.",
+            "It will remain accepted until at least 0.10.",
             DeprecationWarning,
             stacklevel=2,
         )

@@ -35,6 +35,16 @@ from epsm_rc import RCSettings, SolarGainsCalculator, simulate_building
 NUMERICAL_RTOL = 1e-3
 NUMERICAL_ATOL = 1e-8
 
+# Released references that predate a documented solver correction. Inputs,
+# calendars and reduced properties are still compared exactly; the results must
+# now differ from the reference. Remove an entry once its reference is updated.
+CORRECTED_SINCE_REFERENCE = {
+    "zero_airflow": (
+        "RC 0.10.0 uses the H_ve -> 0 limit of ISO 13790 Eq. (C.5)/(C.10); "
+        "earlier releases dropped air-node heat at zero ventilation"
+    ),
+}
+
 
 def compare_series(actual, expected, *, label):
     """Compare numerical values with tolerance and structural/calendar data exactly."""
@@ -147,6 +157,7 @@ def run(args, cache):
         "batch_context": args.batch,
         "policy": args.policy,
         "comparison_tolerance": {"rtol": NUMERICAL_RTOL, "atol": NUMERICAL_ATOL},
+        "corrected_since_reference": CORRECTED_SINCE_REFERENCE,
         "write_hourly_output": not args.no_output,
         "versions": {
             name: metadata.version(name)
@@ -196,15 +207,26 @@ def run(args, cache):
             expected = np.load(reference / (path.stem + ".npz"))
             actual = np.load(args.directory / (path.stem + ".npz"))
             assert set(actual.files) == set(expected.files)
-            for key in actual.files:
-                compare_series(actual[key], expected[key], label=f"{path.stem}: {key}")
             old = json.loads((reference / (path.stem + ".json")).read_text())
             assert summary["scalars"].keys() == old["scalars"].keys()
-            for key, value in summary["scalars"].items():
-                compare_series(np.asarray(value), np.asarray(old["scalars"][key]), label=key)
             for key in ("reduced_properties", "weather_sha256", "snapshot_sha256"):
                 assert summary[key] == old[key], f"{path.stem}: {key} changed"
-            summary["reference_match"] = True
+            correction = CORRECTED_SINCE_REFERENCE.get(path.stem)
+            if correction is None:
+                for key in actual.files:
+                    compare_series(actual[key], expected[key], label=f"{path.stem}: {key}")
+                for key, value in summary["scalars"].items():
+                    compare_series(np.asarray(value), np.asarray(old["scalars"][key]), label=key)
+                summary["reference_match"] = True
+            else:
+                for key in actual.files:
+                    if actual[key].dtype.kind != "f":
+                        compare_series(actual[key], expected[key], label=f"{path.stem}: {key}")
+                demand = "space_heating_demand_kwh"
+                assert not np.allclose(
+                    actual[demand], expected[demand], rtol=NUMERICAL_RTOL, atol=NUMERICAL_ATOL
+                ), f"{path.stem} matches its reference; remove it from CORRECTED_SINCE_REFERENCE"
+                summary["reference_match"] = f"corrected: {correction}"
         (args.directory / (path.stem + ".json")).write_text(json.dumps(summary, indent=2) + "\n")
         report["cases"][path.stem] = summary
         print(

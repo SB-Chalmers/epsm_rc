@@ -1,4 +1,7 @@
-# Unreleased
+# Release 0.10.0 — ISO 13370 ground and solver corrections
+
+Deprecated interfaces listed in the [migration guide](docs/migration.rst) remain
+available; their removal is now no earlier than 0.11.0 instead of 0.9.0.
 
 The opt-in `ground_policy="iso13370_periodic_approximation"` derives slab and
 fully heated basement ground conductance and monthly equivalent forcing from
