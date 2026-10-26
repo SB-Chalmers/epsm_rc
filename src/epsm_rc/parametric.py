@@ -58,7 +58,7 @@ class ParametricBuilding:
 
     # Thermal mass - now uses construction-based calculation
     # thermal_mass_class is deprecated, use thermal_capacitance_j_m2k instead
-    thermal_mass_class: Optional[str] = None  # Deprecated, ignored; accepted through at least 0.9.
+    thermal_mass_class: Optional[str] = None  # Deprecated, ignored; accepted through at least 0.10.
 
     # Explicit thermal capacitance [J/(m²·K)] per floor area
     # If set, overrides thermal_mass_class for 5R1C model
@@ -80,7 +80,7 @@ class ParametricBuilding:
             warnings.warn(
                 "thermal_mass_class is deprecated and has no effect; use "
                 "thermal_capacitance_j_m2k or material properties. It will remain "
-                "accepted until at least 0.9.",
+                "accepted until at least 0.10.",
                 DeprecationWarning,
                 stacklevel=2,
             )

@@ -883,7 +883,7 @@ class BuildingGeometry:
         Notes
         -----
         No surfaces are generated and no files are written. This compatibility error
-        remains until a documented removal no earlier than 0.9.0.
+        remains until a documented removal no earlier than 0.11.0.
         """
         raise ValueError(
             "Legacy EnergyPlus surface export is retired. Author an explicit Core Building "
