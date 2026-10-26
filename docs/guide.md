@@ -2,7 +2,7 @@
 
 Run commands from the repository root unless stated otherwise.
 
-Version **0.9.0**. RC reduces the same physical Building used by Core to an hourly
+Version **0.10.0**. RC reduces the same physical Building used by Core to an hourly
 ISO 13790 5R1C thermal network. Core owns physical inputs and weather inspection;
 RC owns reduction assumptions, the thermal calculation and its result meaning.
 The [compute-efficiency notes](performance.rst) explain prepared execution,
@@ -73,7 +73,7 @@ cancel superseded runs; feature pushes do not create a second workflow. A manual
 
 The package was previously `SweThermalModel` / `swethermalmodel`. The supported
 standalone solver remains available. Deprecated interfaces will be removed no
-earlier than **0.9.0**; see [migration details](migration.rst). In particular,
+earlier than **0.11.0**; see [migration details](migration.rst). In particular,
 choose `HeatPumpCarnot` or `HeatPumpHPLib` explicitly: the historical `HeatPump()`
 factory now warns with its selected model, rejects unknown keywords, and explicit
 hplib failures are reported rather than replaced by another calculation.

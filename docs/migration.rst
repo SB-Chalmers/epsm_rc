@@ -1,12 +1,12 @@
 Compatibility and migration
 ===========================
 
-RC 0.8.0 retains supported standalone and advanced public APIs. The physical
+RC retains supported standalone and advanced public APIs. The physical
 Building route is recommended for new building studies; it preserves input
 ownership and the common full/reduced engine boundary.
 
 The following interfaces remain during migration. Their removal will be no
-earlier than 0.9.0, with a release note describing the replacement:
+earlier than 0.11.0, with a release note describing the replacement:
 
 * ``create_swedish_apartment`` retains historical illustrative era assumptions.
   Supply Data constructions and explicit Core geometry for new building studies.
