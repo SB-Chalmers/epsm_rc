@@ -9,126 +9,17 @@ The layer resistance plus declared combined surface resistance connects air node
 
 import hashlib
 import json
-from collections.abc import Callable
-from dataclasses import dataclass
-from math import isfinite
 
 import numpy as np
 
+from ._forcing import (  # noqa: F401 - re-exported for existing imports
+    DomainSelection,
+    HourlyInputs,
+    PreparedDomain,
+    _immutable_columns,
+    _immutable_series,
+)
 from ._logging import bind_context
-
-
-def _immutable_series(values, dtype=np.float64):
-    """Give native workers immutable storage that can be borrowed without the GIL."""
-    array = np.ascontiguousarray(values, dtype=dtype)
-    if array.ndim != 1:
-        raise ValueError("Hourly inputs must be one-dimensional")
-    if isinstance(array.base, bytes):
-        return array
-    return np.frombuffer(array.tobytes(), dtype=dtype)
-
-
-def _immutable_columns(*values):
-    """Pack prepared floating columns into one immutable allocation."""
-    arrays = [np.ascontiguousarray(value, dtype=np.float64) for value in values]
-    if any(array.ndim != 1 for array in arrays):
-        raise ValueError("Hourly inputs must be one-dimensional")
-    storage = np.frombuffer(b"".join(arrays), dtype=np.float64)
-    columns, offset = [], 0
-    for array in arrays:
-        columns.append(storage[offset : offset + len(array)])
-        offset += len(array)
-    return tuple(columns)
-
-
-@dataclass(frozen=True)
-class DomainSelection:
-    name: str
-    area_m2: float
-    volume_m3: float
-    reference_area_m2: float
-    use: object
-    airflow: object
-    elements: tuple
-    capacity_weights: dict
-
-    def identity(self):
-        return {
-            "name": self.name,
-            "area_m2": self.area_m2,
-            "volume_m3": self.volume_m3,
-            "reference_area_m2": self.reference_area_m2,
-            "use": self.use.model_dump(mode="json"),
-            "airflow": self.airflow.model_dump(mode="json"),
-            "capacity_weights": self.capacity_weights,
-        }
-
-
-@dataclass
-class PreparedDomain:
-    name: str
-    model: object
-    input_at: Callable
-    finish: Callable
-    heating_limits_w: object
-    cooling_limits_w: object
-    time_axis: tuple
-    reference_area_m2: float
-    volume_m3: float
-    forcing: object = None
-
-
-@dataclass
-class HourlyInputs:
-    """Owned hourly forcing used by ordinary and coupled numerical execution."""
-
-    model: object
-    temperatures: np.ndarray
-    gains: np.ndarray
-    convective: np.ndarray
-    heating_setpoints: np.ndarray
-    cooling_setpoints: np.ndarray
-    wind: np.ndarray
-    infiltration: np.ndarray
-    natural: np.ndarray
-    ventilation: np.ndarray
-    solar: np.ndarray
-    opaque: np.ndarray
-    month_hours: np.ndarray | None
-    coefficients: tuple
-    aggregate_split: bool
-
-    def at(self, hour):
-        model = self.model
-        temperature = float(self.temperatures[hour])
-        gain = float(self.gains[hour])
-        if not self.aggregate_split:
-            model.convective_fraction_internal = (
-                float(self.convective[hour]) / gain if gain > 0 else 0.0
-            )
-        model.t_set_heating = float(self.heating_setpoints[hour])
-        model.t_set_cooling = float(self.cooling_setpoints[hour])
-        w = float(self.wind[hour])
-        correction = (
-            self.coefficients[0]
-            + self.coefficients[1] * abs(model.t_air - temperature)
-            + self.coefficients[2] * w
-            + self.coefficients[3] * w**2
-        )
-        model.ach_infiltration = float(self.infiltration[hour]) * correction + float(
-            self.natural[hour]
-        )
-        model.ach_ventilation = float(self.ventilation[hour])
-        if not isfinite(model.ach_infiltration) or model.ach_infiltration < 0:
-            raise ValueError("Hourly infiltration must be finite and nonnegative")
-        model._update_ventilation_coefficient()
-        return {
-            "t_out": temperature,
-            "solar_gains": float(self.solar[hour]),
-            "internal_gains": gain,
-            "solar_gains_opaque": float(self.opaque[hour]),
-            "hour_of_year": int(self.month_hours[hour]) if self.month_hours is not None else None,
-        }
 
 
 def select_domains(building, resolved, settings):
@@ -245,55 +136,32 @@ def _run_coupled_domains(prepared, conductance):
 
     from ._core_rs import run_coupled_domains_hourly
 
-    f0, f1 = prepared[0].forcing, prepared[1].forcing
+    limits = [
+        np.asarray(limit, dtype=np.float64)
+        for domain in prepared
+        for limit in (domain.heating_limits_w, domain.cooling_limits_w)
+    ]
     return run_coupled_domains_hourly(
         prepared[0].model,
         prepared[1].model,
-        f0.temperatures,
-        f0.gains,
-        f0.convective,
-        f0.heating_setpoints,
-        f0.cooling_setpoints,
-        f0.wind,
-        f0.infiltration,
-        f0.natural,
-        f0.ventilation,
-        f0.solar,
-        f0.opaque,
-        f0.month_hours,
-        tuple(float(c) for c in f0.coefficients),
-        bool(f0.aggregate_split),
-        np.asarray(prepared[0].heating_limits_w, dtype=np.float64),
-        np.asarray(prepared[0].cooling_limits_w, dtype=np.float64),
-        f1.temperatures,
-        f1.gains,
-        f1.convective,
-        f1.heating_setpoints,
-        f1.cooling_setpoints,
-        f1.wind,
-        f1.infiltration,
-        f1.natural,
-        f1.ventilation,
-        f1.solar,
-        f1.opaque,
-        f1.month_hours,
-        tuple(float(c) for c in f1.coefficients),
-        bool(f1.aggregate_split),
-        np.asarray(prepared[1].heating_limits_w, dtype=np.float64),
-        np.asarray(prepared[1].cooling_limits_w, dtype=np.float64),
-        float(conductance),
+        prepared[0].forcing,
+        prepared[1].forcing,
+        *limits,
+        conductance_w_k=float(conductance),
     )
 
 
-def simulate_conditioned_domains(preparation):
-    """Run conservative coupled controls from one captured building preparation."""
-    from epsm_core.results import SimulationResult
+def simulate_conditioned_domains(preparation, prepare_domain):
+    """Run conservative coupled controls from one captured building preparation.
 
-    from .platform import _prepare_domain
+    ``prepare_domain(preparation, domain=selection)`` reduces each selected domain;
+    the platform adapter supplies it, so this module never imports the adapter.
+    """
+    from epsm_core.results import SimulationResult
 
     building, settings = preparation.building, preparation.settings
     selections, conductance, reduction = select_domains(building, preparation.resolved, settings)
-    prepared = [_prepare_domain(preparation, domain=selection) for selection in selections]
+    prepared = [prepare_domain(preparation, domain=selection) for selection in selections]
     count = len(prepared[0].time_axis)
     powers, temperatures, exchanges, residuals = _run_coupled_domains(prepared, conductance)
     results = [

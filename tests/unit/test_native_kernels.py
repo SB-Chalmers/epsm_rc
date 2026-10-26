@@ -51,6 +51,23 @@ def hourly_inputs(building, inputs):
     )
 
 
+def run_single(building, inputs):
+    return _core_rs.run_single_domain_hourly(
+        building,
+        hourly_inputs(building, inputs),
+        heating_limits_w=inputs["heating_limits_w"],
+        cooling_limits_w=inputs["cooling_limits_w"],
+    )
+
+
+def run_coupled(buildings, inputs, conductance_w_k=50.0):
+    forcings = [hourly_inputs(building, item) for building, item in zip(buildings, inputs)]
+    limits = [item[key] for item in inputs for key in ("heating_limits_w", "cooling_limits_w")]
+    return _core_rs.run_coupled_domains_hourly(
+        *buildings, *forcings, *limits, conductance_w_k=conductance_w_k
+    )
+
+
 @pytest.mark.parametrize(
     "channel", [key for key, value in domain_inputs().items() if isinstance(value, np.ndarray)]
 )
@@ -60,7 +77,7 @@ def test_single_domain_rejects_mismatched_lengths_without_changing_state(channel
     building = model()
     before = building.t_air, building.t_s, building.t_m
     with pytest.raises(ValueError, match="length"):
-        _core_rs.run_single_domain_hourly(building, **inputs)
+        run_single(building, inputs)
     assert (building.t_air, building.t_s, building.t_m) == before
 
 
@@ -70,11 +87,8 @@ def test_coupled_domains_validate_both_input_lengths(domain, channel):
     inputs = [domain_inputs(), domain_inputs()]
     inputs[domain][channel] = inputs[domain][channel][:-1]
     buildings = [model(), model()]
-    arguments = {
-        f"{key}{index}": value for index, item in enumerate(inputs) for key, value in item.items()
-    }
     with pytest.raises(ValueError, match="length"):
-        _core_rs.run_coupled_domains_hourly(*buildings, **arguments, conductance_w_k=50.0)
+        run_coupled(buildings, inputs)
     assert all((item.t_air, item.t_s, item.t_m) == (18, 18, 18) for item in buildings)
 
 
@@ -341,7 +355,7 @@ def test_single_domain_matches_python_hourly_trial_runner(immutable):
             )
         )
         temperatures.append(reference.t_air)
-    actual = _core_rs.run_single_domain_hourly(native, **inputs)
+    actual = run_single(native, inputs)
     np.testing.assert_allclose(actual, [powers, temperatures], rtol=1e-10, atol=1e-8)
 
 
@@ -366,10 +380,7 @@ def test_coupled_domain_batch_matches_python_trial_runner(immutable):
                 cooling_limit_w=(inputs["cooling_limits_w"][hour],) * 2,
             )
         )
-    arguments = {f"{key}{index}": value for index in range(2) for key, value in inputs.items()}
-    powers, temperatures, exchanges, residuals = _core_rs.run_coupled_domains_hourly(
-        *native, **arguments, conductance_w_k=50.0
-    )
+    powers, temperatures, exchanges, residuals = run_coupled(native, [inputs, inputs])
     np.testing.assert_allclose(
         powers, np.array([item.power_w for item in solutions]).T, rtol=1e-10, atol=1e-8
     )
@@ -436,7 +447,7 @@ def test_native_worker_snapshots_writable_aliases_and_releases_gil(alias):
                 return b"not the storage owner"
 
         inputs["temperatures"] = original.view(MisleadingArray)
-    expected = _core_rs.run_single_domain_hourly(model(), **inputs)
+    expected = run_single(model(), inputs)
     ready, begin, changed = threading.Event(), threading.Event(), threading.Event()
 
     def mutate():
@@ -456,7 +467,7 @@ def test_native_worker_snapshots_writable_aliases_and_releases_gil(alias):
         # of that short interval so the test does not depend on a race.
         sys.setswitchinterval(1.0)
         begin.set()
-        actual = _core_rs.run_single_domain_hourly(building, **inputs)
+        actual = run_single(building, inputs)
         progressed_during_call = changed.is_set()
     finally:
         sys.setswitchinterval(interval)
@@ -465,3 +476,37 @@ def test_native_worker_snapshots_writable_aliases_and_releases_gil(alias):
     assert progressed_during_call
     for first, second in zip(actual, expected):
         np.testing.assert_array_equal(first, second)
+
+
+@pytest.mark.parametrize("prepared", [False, True], ids=["standalone", "prepared"])
+def test_native_parameter_contract_matches_both_sides(prepared):
+    building = Building5R1C()
+    if prepared:
+        building._prepare_deterministic_hourly()
+    mode = (
+        _core_rs.NATIVE_PREPARED_PARAMETERS if prepared else _core_rs.NATIVE_STANDALONE_PARAMETERS
+    )
+    assert set(building._native_parameters()) == {*_core_rs.NATIVE_BASE_PARAMETERS, *mode}
+
+
+def test_native_parameter_drift_names_the_mismatched_keys(monkeypatch):
+    building = model()
+    original = Building5R1C._native_parameters
+
+    def drifted(self):
+        parameters = original(self)
+        parameters["h_tr_renamed"] = parameters.pop("h_tr_ms")
+        return parameters
+
+    monkeypatch.setattr(Building5R1C, "_native_parameters", drifted)
+    with pytest.raises(ValueError, match=r'missing \["h_tr_ms"\], unexpected \["h_tr_renamed"\]'):
+        _core_rs.calc_heating_demand_5r1c(building, 0.0)
+
+
+def test_native_forcing_columns_are_hourly_input_fields():
+    from dataclasses import fields
+
+    hourly = [field.name for field in fields(HourlyInputs)]
+    columns = list(_core_rs.NATIVE_FORCING_COLUMNS)
+    assert hourly[1 : 1 + len(columns)] == columns
+    assert {"month_hours", "coefficients", "aggregate_split"} <= set(hourly)
