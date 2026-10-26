@@ -183,6 +183,7 @@ impl Core5R1C {
             state: ThermalState { t_m, t_s, t_air },
             t_supply,
             windows_open,
+            window_decision: None,
             h_ve,
             prepared_airflow,
             prepared_network,
