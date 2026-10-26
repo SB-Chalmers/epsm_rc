@@ -34,6 +34,12 @@ python benchmarks/run.py --directory outputs/benchmark-batch --warm --batch --re
 Each directory must be new. Floating hourly channels and annual totals use
 `rtol=0.001` (0.1%) and `atol=1e-8`, with matching shapes/dtypes and no NaNs.
 Calendars, reduced properties, snapshots and weather identities remain exact.
+Fixtures listed in `CORRECTED_SINCE_REFERENCE` in `run.py` predate a
+documented solver correction. Their inputs, calendars and reduced properties
+remain exact, but their results must differ from the released reference and
+are reported as `corrected` with the reason. `zero_airflow` is listed because
+RC 0.10.0 corrected zero-ventilation heat flow; earlier references overstate its
+heating demand. Remove an entry once the reference release includes the correction.
 Installed implementation identities are retained and intentionally
 differ between reference and candidate. First-call and repeated timings are
 reported separately. Preparation reuse is not a cached final simulation result.
