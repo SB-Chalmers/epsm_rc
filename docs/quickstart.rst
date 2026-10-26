@@ -1,7 +1,7 @@
 Calculate a physical Building
 =============================
 
-Install ``epsm_rc[platform]`` with Core ``>=0.7.1,<0.9`` and Data 0.6.x. Supply a complete
+Install ``epsm_rc[platform]`` with Core ``>=0.8.2,<0.9`` and Data 0.6.x. Supply a complete
 local hourly EPW explicitly. The named Building preset below is an illustrative
 set of assumptions; it is not evidence about a real building.
 
@@ -24,6 +24,24 @@ Each call captures its physical inputs and creates independent thermal state.
 The result retains hourly values, units, diagnostics and input identities. Supply
 ``directory=...`` only when an hourly artifact should be written; the documented
 ``hourly.npz`` in that directory is replaced.
+
+For a slab or fully heated basement with explicit foundation geometry and soil
+properties, an alternative to the fixed multiplier is available:
+
+.. code-block:: python
+
+   settings = RCSettings.from_policy(
+       "epsm_rc_5r1c_v2",
+       airflow_policy="sensible_only_unlimited_supply",
+       ground_policy="iso13370_periodic_approximation",
+       iso13370_wall_thickness_m=0.30,
+       iso13370_wall_thickness_source="Explicit illustrative wall-width assumption",
+   )
+
+The wall width above is an illustrative assumption, not a universal default.
+This policy uses ISO 13370 ground coefficients and monthly annual-periodic
+forcing; it remains an approximation when coupled to the hourly 5R1C network.
+See :doc:`ground` for supported foundations, boundary definitions and limits.
 
 Repeated independent runs
 -------------------------

@@ -3,6 +3,8 @@ name: Native wheels
 on:
   pull_request:
     branches: [dev, main]
+    # Prose-only changes cannot affect native builds or wheel contents.
+    paths-ignore: ['**.md', 'docs/**', 'LICENSE']
   push:
     tags: ['v*']
   workflow_dispatch:
@@ -21,20 +23,17 @@ jobs:
     timeout-minutes: 20
     strategy:
       fail-fast: false
+      # PRs build the oldest and newest Python on Linux and the newest on macOS
+      # arm64 and Windows. Development checks already test a Linux 3.13 wheel.
+      # Billed macOS minutes cost ten times Linux, so Intel macOS and the middle
+      # Python versions run only for manual and tagged builds, which produce
+      # every supported OS/Python combination.
       matrix:
-        os: [ubuntu-24.04, macos-15, macos-15-intel, windows-2022]
-        # PRs check every Python on Linux and the newest Python on each other OS.
-        # Manual and tagged builds produce every supported OS/Python combination.
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-24.04", "macos-15", "windows-2022"]') || fromJSON('["ubuntu-24.04", "macos-15", "macos-15-intel", "windows-2022"]') }}
         python: ${{ github.event_name == 'pull_request' && fromJSON('["3.14"]') || fromJSON('["3.10", "3.11", "3.12", "3.13", "3.14"]') }}
         include:
         - os: ubuntu-24.04
           python: '3.10'
-        - os: ubuntu-24.04
-          python: '3.11'
-        - os: ubuntu-24.04
-          python: '3.12'
-        - os: ubuntu-24.04
-          python: '3.13'
     defaults:
       run:
         shell: bash

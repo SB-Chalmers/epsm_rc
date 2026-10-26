@@ -8,9 +8,17 @@ builds a wheel. The Rust job runs `cargo fmt --all --check`,
 The executable commands are in [.github/workflows/ci.yml](../.github/workflows/ci.yml).
 These development checks do not certify the entire EPSM ecosystem.
 
+The Python job builds the release wheel once and tests that installed wheel, so
+the native extension is not compiled twice. Both jobs cache Cargo dependencies.
+Pull requests that change only Markdown, `docs/` or the licence skip both
+workflows; documentation builds belong to the release verification workflow.
+
 [Native wheels](../.github/workflows/native-wheels.yml) also builds and installs
-release wheels on pull requests. Its eight combinations cover CPython 3.10–3.14
-on Linux x86_64 and CPython 3.14 on macOS arm64, macOS x86_64 and Windows x86_64.
+release wheels on pull requests. Its four pull-request combinations cover the
+oldest and newest CPython (3.10 and 3.14) on Linux x86_64, plus CPython 3.14 on
+macOS arm64 and Windows x86_64; the development job already tests a Linux 3.13
+wheel. Intel macOS and the intermediate Python versions are left to manual and
+tagged builds because macOS runner minutes are billed at ten times the Linux rate.
 Linux builds use manylinux2014 containers and select the Python interpreter
 inside the container; installation tests use the matching host Python.
 Each combination checks package metadata, runs the offline example and exercises

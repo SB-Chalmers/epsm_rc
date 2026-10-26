@@ -141,8 +141,38 @@ def receiver_points(resolved, element_orientations, attic_terms):
     return receivers
 
 
+def _contacts_obstacle(receiver, edges, tolerance_m=1e-6):
+    """Whether a taller obstacle edge passes through the receiver's plan point."""
+    starts, ends, tops = edges
+    if not len(tops):
+        return False
+    receiver = np.asarray(receiver, dtype=float)
+    above = tops > receiver[2]
+    starts, ends = starts[above], ends[above]
+    delta = ends - starts
+    lengths = np.einsum("ij,ij->i", delta, delta)
+    along = np.einsum("ij,ij->i", receiver[:2] - starts, delta)
+    fraction = np.clip(np.divide(along, lengths, out=np.zeros_like(along), where=lengths > 0), 0, 1)
+    nearest = starts + fraction[:, None] * delta
+    return bool((np.hypot(*(nearest - receiver[:2]).T) <= tolerance_m).any())
+
+
 def prepare_horizons(receivers, edges, step_deg):
-    """Prepare geometry-only angles suitable for reuse across weather/retrofits."""
+    """Prepare geometry-only angles suitable for reuse across weather/retrofits.
+
+    A representative point lying on a taller context building's outline would
+    see a 90 degree horizon in every direction and so lose all direct radiation
+    on the whole receiver, however small the contact. Such contact is rejected.
+    """
+    touching = sorted(
+        key for key, value in receivers.items() if _contacts_obstacle(value["point_m"], edges)
+    )
+    if touching:
+        raise ValueError(
+            "Context buildings touch the representative point of receivers "
+            f"{touching}; one average horizon cannot represent a facade in partial "
+            "contact. Model the contact as a shared boundary or separate the footprints."
+        )
     return {
         key: average_horizon_angle(
             value["point_m"], value["azimuth_deg"], value["tilt_deg"], edges, step_deg
