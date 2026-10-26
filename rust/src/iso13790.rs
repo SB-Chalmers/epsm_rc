@@ -111,6 +111,8 @@ pub struct Core5R1C {
     pub state: ThermalState,
     pub t_supply: f64,
     pub windows_open: bool,
+    /// Window decision held for every thermostat trial of one hour.
+    pub window_decision: Option<bool>,
     pub h_ve: f64,
     pub prepared_airflow: Option<(f64, f64, f64)>,
     pub prepared_network: (f64, f64, f64),
@@ -238,16 +240,20 @@ impl Core5R1C {
             let h_sum = h3 + self.h_tr_em;
             c_dt + 0.5 * h_sum
         };
+        // Without ventilation, all air-node heat reaches the surface node.
+        let air_to_surface = if self.h_tr_is > 0.0 { 1.0 } else { 0.0 };
+        let coupled = self.h_tr_ms + self.h_tr_w;
         let d_phi_m_tot = if self.h_ve > 0.0 && h2 > 0.0 {
             (h3 * h1) / (h2 * self.h_ve)
+        } else if self.h_ve <= 0.0 && coupled > 0.0 {
+            self.h_tr_ms * air_to_surface / coupled
         } else {
             0.0
         };
         let k_m = if b > 0.0 { d_phi_m_tot / b } else { 0.0 };
         let k_s = if self.h_ve <= 0.0 {
-            let denom = self.h_tr_ms + self.h_tr_w + self.h_tr_is;
-            if denom > 0.0 {
-                (self.h_tr_ms * 0.5 * k_m) / denom
+            if coupled > 0.0 {
+                (self.h_tr_ms * 0.5 * k_m + air_to_surface) / coupled
             } else {
                 k_m * 0.5
             }
@@ -371,7 +377,15 @@ impl Core5R1C {
         };
 
         if self.h_ve <= 0.0 {
-            return phi_m + self.h_tr_em * t_e_opaque;
+            // Limit H_ve -> 0 of Eq. (C.5); mirrors iso13790.py calc_phi_m_tot.
+            let coupled = self.h_tr_ms + self.h_tr_w;
+            if coupled <= 0.0 {
+                return phi_m + self.h_tr_em * t_e_opaque;
+            }
+            let air_heat = if self.h_tr_is > 0.0 { phi_ia } else { 0.0 };
+            return phi_m
+                + self.h_tr_em * t_e_opaque
+                + self.h_tr_ms * (phi_st + self.h_tr_w * t_out + air_heat) / coupled;
         }
 
         let h1 = self.h_tr_1();
@@ -398,9 +412,11 @@ impl Core5R1C {
     pub fn calc_t_s(&self, t_m: f64, t_out: f64, phi_ia: f64, phi_st: f64) -> f64 {
         let t_supply = t_out;
         if self.h_ve <= 0.0 {
-            let h_sum = self.h_tr_ms + self.h_tr_w + self.h_tr_is;
+            // Limit H_ve -> 0 of Eq. (C.10); mirrors iso13790.py calc_t_s.
+            let h_sum = self.h_tr_ms + self.h_tr_w;
+            let air_heat = if self.h_tr_is > 0.0 { phi_ia } else { 0.0 };
             if h_sum > 0.0 {
-                return (self.h_tr_ms * t_m + phi_st + self.h_tr_w * t_out) / h_sum;
+                return (self.h_tr_ms * t_m + phi_st + self.h_tr_w * t_out + air_heat) / h_sum;
             }
             return t_m;
         }
@@ -449,22 +465,12 @@ impl Core5R1C {
             include_sky_radiation,
         } = inputs;
         if enable_window_opening && self.ventilation_behaviour > 0.0 {
-            self.windows_open = false;
-            let ach_window = if self.state.t_air > self.t_set_cooling && t_out < self.state.t_air {
-                let open = if self.ventilation_behaviour >= 1.0 {
-                    true
-                } else {
-                    rng_fn()? < self.ventilation_behaviour
-                };
-                if open {
-                    self.windows_open = true;
-                    self.ach_window_open
-                } else {
-                    0.0
-                }
-            } else {
-                0.0
+            let open = match self.window_decision {
+                Some(open) => open,
+                None => self.decide_window(t_out, &mut rng_fn)?,
             };
+            self.windows_open = open;
+            let ach_window = if open { self.ach_window_open } else { 0.0 };
             self.update_ventilation_coefficient(Some(
                 self.ach_infiltration + self.ach_ventilation + ach_window,
             ))?;
@@ -501,8 +507,43 @@ impl Core5R1C {
         self.step_with_rng(inputs, energy_demand, true, || Ok(1.0))
     }
 
+    /// Window opening from the current air temperature; mirrors `_handle_window_opening`.
+    #[inline(always)]
+    fn decide_window<F>(&self, t_out: f64, rng_fn: &mut F) -> Result<bool, &'static str>
+    where
+        F: FnMut() -> Result<f64, &'static str>,
+    {
+        if self.state.t_air <= self.t_set_cooling || t_out >= self.state.t_air {
+            return Ok(false);
+        }
+        if self.ventilation_behaviour >= 1.0 {
+            return Ok(true);
+        }
+        Ok(rng_fn()? < self.ventilation_behaviour)
+    }
+
     #[inline(always)]
     pub fn calc_heating_demand_with_rng<F>(
+        &mut self,
+        inputs: StepInputs,
+        controls: Thermostat,
+        mut rng_fn: F,
+    ) -> Result<f64, &'static str>
+    where
+        F: FnMut() -> Result<f64, &'static str>,
+    {
+        // Eq. (C.13) interpolates between trials of one network, so the window
+        // state is decided once from the start-of-hour air temperature.
+        if self.ventilation_behaviour > 0.0 {
+            self.window_decision = Some(self.decide_window(inputs.t_out, &mut rng_fn)?);
+        }
+        let demand = self.demand_trials(inputs, controls, &mut rng_fn);
+        self.window_decision = None;
+        demand
+    }
+
+    #[inline(always)]
+    fn demand_trials<F>(
         &mut self,
         inputs: StepInputs,
         controls: Thermostat,
@@ -740,6 +781,52 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn zero_ventilation_is_the_continuous_limit_of_small_airflow() {
+        let controls = Thermostat {
+            max_heating_power: f64::INFINITY,
+            max_cooling_power: 0.0,
+            t_set_heat: 20.0,
+            t_set_cool: 26.0,
+        };
+        for prepared in [false, true] {
+            let mut demand = [0.0; 2];
+            for (index, airflow) in [0.0, 1e-9].into_iter().enumerate() {
+                let mut core = model(prepared, airflow);
+                for _ in 0..2000 {
+                    demand[index] = core
+                        .calc_heating_demand_with_rng(inputs(1.0), controls, || Ok(1.0))
+                        .unwrap();
+                }
+                assert!((core.state.t_air - 20.0).abs() < 1e-9);
+            }
+            assert!((demand[0] - demand[1]).abs() < 1e-4 * demand[1]);
+        }
+    }
+
+    #[test]
+    fn window_decision_is_held_across_thermostat_trials() {
+        // A warm start opens the windows; the cold free trial must not close
+        // them again before the reference trial, or Eq. (C.13) misses its target.
+        let mut core = model(false, 0.2);
+        core.ventilation_behaviour = 1.0;
+        core.ach_window_open = 6.0;
+        core.state.t_air = 28.0;
+        let controls = Thermostat {
+            max_heating_power: f64::INFINITY,
+            max_cooling_power: 0.0,
+            t_set_heat: 20.0,
+            t_set_cool: 26.0,
+        };
+        let power = core
+            .calc_heating_demand_with_rng(inputs(1.0), controls, || Ok(1.0))
+            .unwrap();
+        assert!(power > 0.0);
+        assert!(core.windows_open);
+        assert!(core.window_decision.is_none());
+        assert!((core.state.t_air - 20.0).abs() < 1e-9);
     }
 
     #[test]

@@ -293,7 +293,7 @@ class TestStrictISOHeatFlows:
         assert abs(phi_ia - 500.0) < 0.1
 
     def test_strict_iso_phi_m_equation(self):
-        """Eq. C.2: Φ_m = (A_m/A_t) × 0.5 × (Φ_int + Φ_sol)."""
+        """Eq. C.2: Φ_m = (A_m/A_t) × (0.5 × Φ_int + Φ_sol); solar is not halved."""
         b = Building5R1C(
             floor_area_m2=100,
             building_class=BuildingClass.MEDIUM,
@@ -309,13 +309,13 @@ class TestStrictISOHeatFlows:
             include_sky_radiation=False,
         )
 
-        # Expected: (A_m/A_t) × 0.5 × (1000 + 500)
+        # Expected: (A_m/A_t) × (0.5 × 1000 + 500)
         ratio_mass = b._mass_area / b._a_tot
-        expected_phi_m = ratio_mass * 0.5 * (internal_gains + solar_gains)
+        expected_phi_m = ratio_mass * (0.5 * internal_gains + solar_gains)
         assert abs(phi_m - expected_phi_m) < 0.1
 
     def test_strict_iso_phi_st_equation(self):
-        """Eq. C.3: Φ_st = (1 - A_m/A_t - H_tr,w/(9.1×A_t)) × 0.5 × (Φ_int + Φ_sol)."""
+        """Eq. C.3: Φ_st = (1 - A_m/A_t - H_tr,w/(9.1×A_t)) × (0.5 × Φ_int + Φ_sol)."""
         b = Building5R1C(
             floor_area_m2=100,
             building_class=BuildingClass.MEDIUM,
@@ -336,7 +336,7 @@ class TestStrictISOHeatFlows:
         ratio_window = b._h_tr_w / (9.1 * b._a_tot)
         ratio_surface = max(0.0, 1.0 - ratio_mass - ratio_window)
 
-        expected_phi_st = ratio_surface * 0.5 * (internal_gains + solar_gains)
+        expected_phi_st = ratio_surface * (0.5 * internal_gains + solar_gains)
         assert abs(phi_st - expected_phi_st) < 0.1
 
     def test_strict_iso_sum_equals_total_gains(self):
