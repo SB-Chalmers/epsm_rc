@@ -47,6 +47,7 @@ from epsm_rc._logging import operation as logged_operation
 from ._forcing import HourlyInputs, PreparedDomain, _immutable_columns, _immutable_series
 from ._identity import implementation_identity
 from ._results import DomainReduction
+from ._validation import choice, finite, fraction
 from .domains import select_domains, simulate_conditioned_domains
 from .iso13790 import Building5R1C, Construction, ConstructionLayer
 from .optics import SimpleGlazingOptics
@@ -54,6 +55,27 @@ from .preparation import PreparationCache
 from .radiation import plane_irradiance
 
 logger = context_logger(__name__)
+
+# Valid selections for each explicit reduction policy field of RCSettings.
+POLICY_VERSIONS = frozenset({"epsm_rc_5r1c_v1", "epsm_rc_5r1c_v2"})
+AIRFLOW_POLICIES = frozenset({"reject", "sensible_only_unlimited_supply"})
+GROUND_POLICIES = frozenset(
+    {
+        "reject",
+        "conductance_multiplier",
+        "prescribed_monthly_temperature",
+        "iso13370_periodic_approximation",
+    }
+)
+SOLAR_TIME_REFERENCES = frozenset({"hour_start", "interval_midpoint"})
+WINDOW_OPTICS_METHODS = frozenset({"constant_shgc", "simple_glazing_angular_v1"})
+COLD_ATTIC_POLICIES = frozenset({"reject", "quasi_steady_buffer"})
+SELF_SHADOWING_POLICIES = frozenset({"reject", "ignore"})
+CONTEXT_SHADING_METHODS = frozenset({"reject", "iso13790_hourly_horizon"})
+PREFLIGHT_HINT = (
+    " Run epsm_rc.preflight(building, weather=weather, settings=settings) to list every"
+    " unmet requirement at once."
+)
 
 
 @dataclass(frozen=True)
@@ -186,16 +208,11 @@ class RCSettings:
     horizon_azimuth_step_deg: float = 10.0
 
     def __post_init__(self):
-        if not np.isfinite(self.effective_mass_depth_m) or self.effective_mass_depth_m <= 0:
-            raise ValueError("Effective mass depth must be finite and positive")
-        if not 0 <= self.ground_coupling_factor <= 1 or not 0 <= self.ground_reflectance <= 1:
-            raise ValueError("Ground coupling and reflectance must be fractions")
-        if self.airflow_policy not in {"reject", "sensible_only_unlimited_supply"}:
-            raise ValueError(
-                "Unknown airflow_policy; choose reject or sensible_only_unlimited_supply"
-            )
-        if self.policy_version not in {"epsm_rc_5r1c_v1", "epsm_rc_5r1c_v2"}:
-            raise ValueError("Unknown reduction policy version")
+        finite("effective_mass_depth_m", self.effective_mass_depth_m, positive=True)
+        fraction("ground_coupling_factor", self.ground_coupling_factor)
+        fraction("ground_reflectance", self.ground_reflectance)
+        choice("airflow_policy", self.airflow_policy, AIRFLOW_POLICIES)
+        choice("policy_version", self.policy_version, POLICY_VERSIONS)
         angular = self.policy_version == "epsm_rc_5r1c_v2"
         if self.solar_time_reference is None:
             object.__setattr__(
@@ -207,10 +224,8 @@ class RCSettings:
                 "window_optics_method",
                 "simple_glazing_angular_v1" if angular else "constant_shgc",
             )
-        if self.solar_time_reference not in {"hour_start", "interval_midpoint"}:
-            raise ValueError("Unknown solar_time_reference")
-        if self.window_optics_method not in {"constant_shgc", "simple_glazing_angular_v1"}:
-            raise ValueError("Unknown window_optics_method")
+        choice("solar_time_reference", self.solar_time_reference, SOLAR_TIME_REFERENCES)
+        choice("window_optics_method", self.window_optics_method, WINDOW_OPTICS_METHODS)
         positive = (
             "internal_surface_area_factor",
             "surface_air_coefficient_w_m2_k",
@@ -223,34 +238,28 @@ class RCSettings:
             "sky_radiation_coefficient_w_m2_k",
             "sky_air_temperature_difference_k",
         )
-        for name in (*positive, *nonnegative):
-            value = getattr(self, name)
-            if not np.isfinite(value) or value < 0 or (name in positive and value == 0):
-                constraint = "positive" if name in positive else "nonnegative"
-                raise ValueError(f"{name} must be finite and {constraint}")
+        for name in positive:
+            finite(name, getattr(self, name), positive=True)
+        for name in nonnegative:
+            finite(name, getattr(self, name), nonnegative=True)
         for name in (
             "convective_internal_gains_fraction",
             "wall_sky_view_factor",
             "roof_sky_view_factor",
         ):
-            if not 0 <= getattr(self, name) <= 1:
-                raise ValueError(f"{name} must be a finite fraction")
+            fraction(name, getattr(self, name))
         for name, size in (("mass_capacity_thresholds_j_m2_k", 2), ("mass_area_factors", 3)):
             values = tuple(getattr(self, name))
-            if len(values) != size or any(not np.isfinite(v) or v <= 0 for v in values):
+            if len(values) != size:
                 raise ValueError(f"{name} requires {size} positive finite values")
+            for value in values:
+                finite(name, value, positive=True)
             object.__setattr__(self, name, values)
         if self.mass_capacity_thresholds_j_m2_k[0] >= self.mass_capacity_thresholds_j_m2_k[1]:
             raise ValueError("Mass capacity thresholds must be strictly increasing")
         if max(self.mass_area_factors) > self.internal_surface_area_factor:
             raise ValueError("Effective mass area cannot exceed the internal surface area")
-        if self.ground_policy not in {
-            "reject",
-            "conductance_multiplier",
-            "prescribed_monthly_temperature",
-            "iso13370_periodic_approximation",
-        }:
-            raise ValueError("Unknown ground_policy")
+        choice("ground_policy", self.ground_policy, GROUND_POLICIES)
         if self.ground_policy == "iso13370_periodic_approximation":
             width = self.iso13370_wall_thickness_m
             if isinstance(width, bool) or width is None or not np.isfinite(width) or width <= 0:
@@ -282,26 +291,21 @@ class RCSettings:
             raise ValueError(
                 "Select ground_policy='prescribed_monthly_temperature' for monthly inputs"
             )
-        if self.cold_attic_policy not in {"reject", "quasi_steady_buffer"}:
-            raise ValueError("Unknown cold_attic_policy")
-        if (
-            not np.isfinite(self.interzone_floor_surface_resistance_m2_k_w)
-            or self.interzone_floor_surface_resistance_m2_k_w <= 0
-        ):
-            raise ValueError("Interzone floor surface resistance must be finite and positive")
-        if self.self_shadowing_policy not in {"reject", "ignore"}:
-            raise ValueError("Unknown self_shadowing_policy; choose reject or ignore")
-        if self.context_shading_method not in {"reject", "iso13790_hourly_horizon"}:
-            raise ValueError("Unknown context_shading_method")
-        if (
-            isinstance(self.horizon_azimuth_step_deg, bool)
-            or not np.isfinite(self.horizon_azimuth_step_deg)
-            or not 1 <= self.horizon_azimuth_step_deg <= 30
-        ):
-            raise ValueError("horizon_azimuth_step_deg must be finite and between 1 and 30")
+        choice("cold_attic_policy", self.cold_attic_policy, COLD_ATTIC_POLICIES)
+        finite(
+            "interzone_floor_surface_resistance_m2_k_w",
+            self.interzone_floor_surface_resistance_m2_k_w,
+            positive=True,
+        )
+        choice("self_shadowing_policy", self.self_shadowing_policy, SELF_SHADOWING_POLICIES)
+        choice("context_shading_method", self.context_shading_method, CONTEXT_SHADING_METHODS)
+        finite("horizon_azimuth_step_deg", self.horizon_azimuth_step_deg, minimum=1, maximum=30)
 
     def __repr__(self):
-        return f"RCSettings(policy={self.policy_version!r}, optics={self.window_optics_method!r})"
+        return (
+            f"RCSettings(policy={self.policy_version!r}, airflow={self.airflow_policy!r}, "
+            f"ground={self.ground_policy!r}, optics={self.window_optics_method!r})"
+        )
 
     __str__ = __repr__
 
@@ -364,9 +368,10 @@ def _airflow_capabilities(airflow, settings: RCSettings) -> dict:
     if settings.airflow_policy == "reject":
         raise ValueError(
             f"epsm_rc does not support airflow fields: {', '.join(omitted)}. "
-            "To acknowledge their omission, pass "
-            "settings=RCSettings(airflow_policy='sensible_only_unlimited_supply'). "
-            "For epsm.Building.simulate(engine='epsm_rc'), pass these RC settings explicitly."
+            "To acknowledge their omission, set airflow_policy='sensible_only_unlimited_supply', "
+            "for example RCSettings.from_policy('epsm_rc_5r1c_v2', "
+            "airflow_policy='sensible_only_unlimited_supply'). When simulating through the "
+            "epsm platform, pass these RC settings explicitly." + PREFLIGHT_HINT
         )
     return {"effective_model": settings.airflow_policy, "omitted_inputs": omitted}
 
@@ -479,7 +484,7 @@ def _ground_reduction(
             f"epsm_rc does not implement {requested['method']} foundations. Select an explicit "
             "ground_policy='conductance_multiplier', 'prescribed_monthly_temperature' or "
             "'iso13370_periodic_approximation' "
-            "in RCSettings to acknowledge the approximation."
+            "in RCSettings to acknowledge the approximation." + PREFLIGHT_HINT
         )
     report.update(
         effective_method="prescribed_monthly_temperature",
@@ -582,6 +587,7 @@ def _self_shadowing_capabilities(geometry, settings: RCSettings) -> dict:
         raise ValueError(
             f"epsm_rc does not model self-shadowing for {', '.join(affected)}. "
             "Select self_shadowing_policy='ignore' in RCSettings to acknowledge its omission."
+            + PREFLIGHT_HINT
         )
     return {
         "policy": settings.self_shadowing_policy,
@@ -720,6 +726,7 @@ def preflight(building, *, weather=None, settings=None):
     Examples
     --------
     >>> from epsm_core import Building
+    >>> from epsm_rc import preflight
     >>> preflight(Building())["ready"]
     False
     """

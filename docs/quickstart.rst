@@ -25,6 +25,18 @@ The result retains hourly values, units, diagnostics and input identities. Suppl
 ``directory=...`` only when an hourly artifact should be written; the documented
 ``hourly.npz`` in that directory is replaced.
 
+``simulate_building`` stops at the first unmet requirement. To see all of them at
+once, without starting the solver, and to list the outputs and units a run will
+produce, call:
+
+.. code-block:: python
+
+   from epsm_rc import output_capabilities, preflight
+
+   report = preflight(building, weather=weather, settings=settings)
+   print(report["ready"], report["diagnostics"])
+   print(output_capabilities(building, settings=settings))
+
 For a slab or fully heated basement with explicit foundation geometry and soil
 properties, an alternative to the fixed multiplier is available:
 

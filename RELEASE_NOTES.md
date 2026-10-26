@@ -1,3 +1,21 @@
+# Unreleased
+
+Clearer settings and call errors. An unknown policy names the value received and
+lists every valid option; numeric settings reject strings and booleans by field
+name instead of raising a NumPy type error. Requirement errors from
+`simulate_building` suggest `preflight()`, which lists all unmet requirements at
+once, and keep the selected policy version in their example. Bad arguments to
+wrapped public calls name the function. `RCSettings` shows its airflow and ground
+choices. The retired `generate_idf` and `generate_polygon_idf` report their
+migration whatever arguments they receive. `preflight` and `output_capabilities`
+are in the API reference and quickstart.
+
+Internal structure, with bit-identical results: the native kernels read model
+parameters and hourly forcing by name through one checked contract instead of
+private attribute names and positional arrays; domain preparation is split into
+named steps; and the platform and coupled-domain modules no longer import each
+other.
+
 # Release 0.10.0 — ISO 13370 ground and solver corrections
 
 Deprecated interfaces listed in the [migration guide](docs/migration.rst) remain

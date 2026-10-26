@@ -459,8 +459,11 @@ class ParametricBuilding:
         return "\n".join(lines)
 
 
-def generate_idf(building: ParametricBuilding, output_path: Path) -> Path:
-    """Retired IDF authoring: supply an explicit Core Building to the shared compiler."""
+def generate_idf(*args, **kwargs):
+    """Retired IDF authoring: supply an explicit Core Building to the shared compiler.
+
+    Any arguments are accepted so every call reports the migration path.
+    """
     raise ValueError(
         "Legacy IDF generation is retired. Author an explicit Core Building and use "
         "EnergyPlusCompiler or epsm_rc.prepare_engine_comparison with explicit weather "
@@ -468,12 +471,11 @@ def generate_idf(building: ParametricBuilding, output_path: Path) -> Path:
     )
 
 
-def generate_polygon_idf(
-    building: ParametricBuilding,
-    geometry: "BuildingGeometry",
-    output_path: Path,
-) -> Path:
-    """Retired polygon IDF authoring: Core owns geometry and EnergyPlus compilation."""
+def generate_polygon_idf(*args, **kwargs):
+    """Retired polygon IDF authoring: Core owns geometry and EnergyPlus compilation.
+
+    Any arguments are accepted so every call reports the migration path.
+    """
     raise ValueError(
         "Legacy polygon IDF generation is retired. Use an explicit Core Building "
         "and EnergyPlusCompiler or epsm_rc.prepare_engine_comparison."
