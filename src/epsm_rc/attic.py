@@ -58,6 +58,8 @@ def reduce_attics(
     building, spec, weather, settings, *, geometry_cache=None, enabled=True, resolved=None
 ):
     """Resolve explicit cold attics, rejecting omitted exchange or unsupported topology."""
+    from epsm_core.bridges import thermal_bridge_uplifts
+
     parts = [
         part
         for part in spec.geometry.parts
@@ -136,6 +138,7 @@ def reduce_attics(
             and face["construction_role"].removesuffix("_reverse") == "top"
         ]
         hc, hs, local_area = 0.0, 0.0, 0.0
+        top_uplift = thermal_bridge_uplifts(spec)["top"] if ceilings else 0.0
         for face in ceilings:
             owner = elements.get(face["physical_element_id"])
             if owner is None or owner.role.value != "TOP_FLOOR":
@@ -144,7 +147,7 @@ def reduce_attics(
             hc += (
                 face["net_area_m2"]
                 * owner.construction.u_value
-                * (1 + spec.envelope.thermal_bridge_uplift_fraction)
+                * (1 + top_uplift)
             )
             local_area += face["net_area_m2"]
         local_terms = []

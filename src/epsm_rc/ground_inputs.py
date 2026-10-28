@@ -176,8 +176,10 @@ def resolve_ground_inputs(building, spec, resolved, settings, *, domain=None):
     if not isclose(depth, expected_depth, abs_tol=1e-7):
         raise ValueError("ISO13370 resolved ground depth differs from declared basement depth")
 
-    uplift = spec.envelope.thermal_bridge_uplift_fraction
-    floor_r, floor_reports = _uniform_resistance(floors, uplift, "slab")
+    from epsm_core.bridges import thermal_bridge_uplifts
+
+    uplifts = thermal_bridge_uplifts(spec)
+    floor_r, floor_reports = _uniform_resistance(floors, uplifts["ground"], "slab")
     wall_r, wall_reports = None, []
     if depth:
         if not walls or not isclose(foundation.exposed_perimeter_fraction, 1.0, abs_tol=1e-12):
@@ -199,7 +201,7 @@ def resolve_ground_inputs(building, spec, resolved, settings, *, domain=None):
         wall_area = sum(element.area_m2 for element in walls)
         if not isclose(wall_area, geometric_perimeter * depth, rel_tol=1e-8, abs_tol=1e-5):
             raise ValueError("ISO13370 partly buried/nonuniform basement walls are not supported")
-        wall_r, wall_reports = _uniform_resistance(walls, uplift, "basement wall")
+        wall_r, wall_reports = _uniform_resistance(walls, uplifts["basement_wall"], "basement wall")
     elif walls:
         raise ValueError("ISO13370 slab-on-ground cannot include buried wall elements")
 

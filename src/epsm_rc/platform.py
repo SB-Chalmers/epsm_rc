@@ -963,10 +963,11 @@ def _context_horizons(preparation, elements, attic, facades):
 
 def _prepare_radiation(preparation, model, elements, attic, areas, optical_models):
     """Prepare solar and sky forcing using the building's captured weather buffers."""
+    from epsm_core.bridges import thermal_bridge_uplifts
     from epsm_core.geometry import facade_catalog
 
     spec, settings = preparation.spec, preparation.settings
-    uplift = 1 + spec.envelope.thermal_bridge_uplift_fraction
+    uplifts = thermal_bridge_uplifts(spec)
     year = spec.climate.calendar_year
     data, axis = preparation.data, preparation.axis
     prepared = preparation.prepared
@@ -1112,7 +1113,7 @@ def _prepare_radiation(preparation, model, elements, attic, areas, optical_model
                 * element.construction.u_value
                 * alpha
                 * outside_resistance
-                * uplift
+                * (1 + uplifts["top" if roof else "wall"])
             )
     for term in attic.shell_terms:
         orientation = (term["tilt_deg"], term["azimuth_deg"])
@@ -1317,6 +1318,8 @@ def _reduced_model(
     cool_set,
 ):
     """Build and prepare the 5R1C model, applying Core's bridge uplift once."""
+    from epsm_core.bridges import thermal_bridge_uplifts
+
     area, volume, airflow = scope.area, scope.volume, scope.airflow
     iso_ground = ground_reduction["effective_method"] == "iso13370_periodic_approximation"
     if iso_ground:
@@ -1382,13 +1385,13 @@ def _reduced_model(
     )
     # Apply Core's declared thermal-bridge uplift to the opaque heat transfer,
     # without changing installed materials or thermal storage.
-    uplift = 1 + spec.envelope.thermal_bridge_uplift_fraction
-    model.u_walls *= uplift
-    model.u_roof *= uplift
+    uplifts = thermal_bridge_uplifts(spec)
+    model.u_walls *= 1 + uplifts["wall"]
+    model.u_roof *= 1 + uplifts["top"]
     if attic.ceiling_area_m2:
         model.u_roof += attic.equivalent_conductance_w_k / model.roof_area_m2
     if not iso_ground:
-        model.u_floor *= uplift
+        model.u_floor *= 1 + uplifts["ground"]
     model._prepare_deterministic_hourly()
     # The finite attic node receives actual shell solar/sky forcing. A fictitious
     # exposed ceiling must not also receive the flat-roof sky term.
@@ -1402,7 +1405,7 @@ def _reduced_model(
             * settings.wall_sky_view_factor
             + settings.outside_roof_resistance_m2_k_w
             * u_value("roof")
-            * uplift
+            * (1 + uplifts["top"])
             * areas["roof"]
             * settings.sky_radiation_coefficient_w_m2_k
             * settings.sky_air_temperature_difference_k
