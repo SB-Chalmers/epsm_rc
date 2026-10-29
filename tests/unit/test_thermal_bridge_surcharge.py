@@ -29,8 +29,12 @@ def test_surcharge_adds_delta_u_times_envelope_area_to_opaque_conductance():
     spec = bridged.to_spec(Weather.from_epw(files("epsm_rc").joinpath("data/epw/goteborg.epw")))
     areas = {}
     for item in quantity_takeoff(spec):
-        envelope_face = item.role in BRIDGED_ROLES and not item.element_id.endswith(".internal_wall")
-        if item.area_m2 and (item.kind == "glazing" or (item.kind == "opaque_layer" and envelope_face)):
+        envelope_face = item.role in BRIDGED_ROLES and not item.element_id.endswith(
+            ".internal_wall"
+        )
+        if item.area_m2 and (
+            item.kind == "glazing" or (item.kind == "opaque_layer" and envelope_face)
+        ):
             areas[item.element_id, item.role] = item.area_m2
     added = b["opaque_transmission_conductance_w_k"] - a["opaque_transmission_conductance_w_k"]
     assert added == pytest.approx(0.1 * sum(areas.values()), rel=1e-6)
