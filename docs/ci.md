@@ -26,6 +26,15 @@ native and standalone APIs without Core or Data. Wheels are retained as workflow
 artifacts. Manual runs and `v*` tags build all twenty platform/Python combinations;
 this workflow does not publish packages.
 
+## Dependency selection during a version transition
+
+The development job installs no sibling EPSM packages, so the handbook's
+[transition rule](https://github.com/SB-Chalmers/epsm_development/blob/main/docs/platform-compatibility.md#development-checks-during-a-version-transition)
+for development checks does not apply to it: there is no supported pin to
+satisfy and nothing to select from a candidate record. Sibling revisions are
+selected only in Release verification, from the EPSM manifest or, through its
+explicit `candidate_manifest_revision` input, the candidate record.
+
 Run **Release verification** explicitly before tagging or publishing a release,
 and when a change needs the full engine, database, browser or installed-package
 checks. Select one exact dependency cohort and keep that selection through the
