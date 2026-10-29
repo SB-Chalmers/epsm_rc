@@ -34,7 +34,7 @@ Measured on an 8,760-hour annual simulation (Python 3.14.2 in `/Users/dagwastber
 - **Build Backend**: `maturin` (`requires = ["maturin>=1.7,<2.0"]`, `build-backend = "maturin"` in `pyproject.toml`).
 - **Version**: maturin reads the distribution version from `Cargo.toml`. Keep it
   synchronized with `src/epsm_rc/_version.py` and the root package entry in
-  `Cargo.lock`; all three currently specify `0.10.0`.
+  `Cargo.lock`; all three currently specify `0.11.0`.
 - **Layout**:
   - Python package source remains in `src/epsm_rc/` (`[tool.maturin] python-source = "src"`, `module-name = "epsm_rc._core_rs"`).
   - Rust crate lives at the repository root (`Cargo.toml`) with source files in `rust/` (`src/lib.rs`, `src/iso13790.rs`, `src/domain.rs`, `src/coupled.rs`).

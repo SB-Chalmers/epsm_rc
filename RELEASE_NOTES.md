@@ -1,4 +1,15 @@
-# Unreleased
+# Release 0.11.0 — thermal-bridge surcharge and clearer errors
+
+RC reads Core 0.9.0's per-role thermal-bridge uplifts
+(`epsm_core.bridges.thermal_bridge_uplifts`) for wall, roof and floor
+conductance, the attic ceiling and the ISO 13370 slab and basement-wall
+resistances, so TABULA's absolute surcharge (`thermal_bridge_delta_u_w_m2k`)
+adds ΔU × envelope area to the opaque transmission conductance, in agreement
+with EnergyPlus. Behaviour with an uplift fraction is unchanged. The `platform`
+extra requires Core 0.9.0 and Data 0.7.0.
+
+Deprecated interfaces listed in the [migration guide](docs/migration.rst) remain
+available; their removal is now no earlier than 0.12.0.
 
 Clearer settings and call errors. An unknown policy names the value received and
 lists every valid option; numeric settings reject strings and booleans by field

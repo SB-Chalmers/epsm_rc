@@ -144,11 +144,7 @@ def reduce_attics(
             if owner is None or owner.role.value != "TOP_FLOOR":
                 raise ValueError("Attic ceiling requires an explicit physical TOP_FLOOR owner")
             ceiling_ids.add(owner.identifier)
-            hc += (
-                face["net_area_m2"]
-                * owner.construction.u_value
-                * (1 + top_uplift)
-            )
+            hc += face["net_area_m2"] * owner.construction.u_value * (1 + top_uplift)
             local_area += face["net_area_m2"]
         local_terms = []
         for face in shell:
