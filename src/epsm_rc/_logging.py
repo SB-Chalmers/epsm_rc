@@ -81,7 +81,11 @@ def operation(event, *, level=logging.INFO, traceback=False):
             if parent.get("operation_id"):
                 context["parent_operation_id"] = parent["operation_id"]
             context["operation_id"] = uuid4().hex
-            bound = signature.bind(*args, **kwargs)
+            try:
+                bound = signature.bind(*args, **kwargs)
+            except TypeError as error:
+                # Name the public operation, as a direct call would.
+                raise TypeError(f"{function.__qualname__}(): {error}") from None
             for key in ("building_id", "run_id", "study_id", "evaluation_id"):
                 if key in bound.arguments and isinstance(bound.arguments[key], (str, int)):
                     context[key] = bound.arguments[key]

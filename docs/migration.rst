@@ -6,7 +6,7 @@ Building route is recommended for new building studies; it preserves input
 ownership and the common full/reduced engine boundary.
 
 The following interfaces remain during migration. Their removal will be no
-earlier than 0.11.0, with a release note describing the replacement:
+earlier than 0.12.0, with a release note describing the replacement:
 
 * ``create_swedish_apartment`` retains historical illustrative era assumptions.
   Supply Data constructions and explicit Core geometry for new building studies.

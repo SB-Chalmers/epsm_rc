@@ -50,56 +50,155 @@ fn immutable_backings<'py>(
         .collect()
 }
 
+/// Keys `Building5R1C._native_parameters()` always supplies, named as `Core5R1C` fields.
+pub const BASE_PARAMETERS: [&str; 36] = [
+    "floor_area_m2",
+    "building_vol",
+    "a_tot",
+    "mass_area",
+    "c_m",
+    "h_tr_op",
+    "h_tr_op_walls_roof",
+    "h_tr_ground",
+    "h_tr_tb",
+    "h_tr_w",
+    "h_tr_ms",
+    "h_tr_is",
+    "h_tr_em",
+    "h_ms",
+    "air_volumetric_heat_capacity_j_m3_k",
+    "ach_infiltration",
+    "ach_ventilation",
+    "heat_recovery_efficiency",
+    "convective_fraction_internal",
+    "internal_gains_w_per_m2",
+    "t_set_heating",
+    "t_set_cooling",
+    "t_set_heating_setback",
+    "t_set_cooling_setback",
+    "use_operative_temperature",
+    "ventilation_behaviour",
+    "ach_window_open",
+    "delta_theta_er",
+    "ground_temps_monthly",
+    "prepared_hourly",
+    "t_m",
+    "t_s",
+    "t_air",
+    "t_supply",
+    "windows_open",
+    "h_ve",
+];
+/// Cached coefficients supplied only by prepared hourly models.
+pub const PREPARED_PARAMETERS: [&str; 6] = [
+    "prepared_sky",
+    "prepared_mass_ratio",
+    "prepared_window_ratio",
+    "prepared_airflow",
+    "prepared_network",
+    "prepared_cn",
+];
+/// Sky-loss components supplied only by standalone models.
+pub const STANDALONE_PARAMETERS: [&str; 9] = [
+    "r_se_roof",
+    "u_roof",
+    "roof_area_m2",
+    "h_r",
+    "form_factor_roof",
+    "r_se_wall",
+    "u_walls",
+    "wall_area_m2",
+    "form_factor_wall",
+];
+/// `domains.HourlyInputs` columns, in `DomainArrays::new` order before the limits.
+pub const FORCING_COLUMNS: [&str; 11] = [
+    "temperatures",
+    "gains",
+    "convective",
+    "heating_setpoints",
+    "cooling_setpoints",
+    "wind",
+    "infiltration",
+    "natural",
+    "ventilation",
+    "solar",
+    "opaque",
+];
+
+/// The model's named native parameters, checked against the expected key set.
+///
+/// `from_py` reads every expected key, so an equal key count plus successful
+/// reads proves an exact match; the full diagnosis is built only on failure.
+struct Parameters<'py> {
+    dict: Bound<'py, PyDict>,
+    prepared: bool,
+}
+
+impl<'py> Parameters<'py> {
+    fn read(model: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let dict = model
+            .call_method0("_native_parameters")?
+            .cast_into::<PyDict>()?;
+        let prepared = match dict.get_item("prepared_hourly")? {
+            Some(value) => value.extract()?,
+            None => false,
+        };
+        let parameters = Self { dict, prepared };
+        if parameters.dict.len() != parameters.expected().count() {
+            return Err(parameters.mismatch());
+        }
+        Ok(parameters)
+    }
+
+    fn expected(&self) -> impl Iterator<Item = &'static str> {
+        let mode: &'static [&'static str] = if self.prepared {
+            &PREPARED_PARAMETERS
+        } else {
+            &STANDALONE_PARAMETERS
+        };
+        BASE_PARAMETERS.iter().chain(mode).copied()
+    }
+
+    fn mismatch(&self) -> PyErr {
+        let missing: Vec<&str> = self
+            .expected()
+            .filter(|key| !self.dict.contains(*key).unwrap_or(false))
+            .collect();
+        let unexpected: Vec<String> = self
+            .dict
+            .keys()
+            .iter()
+            .filter_map(|key| key.extract::<String>().ok())
+            .filter(|key| !self.expected().any(|name| name == key))
+            .collect();
+        PyValueError::new_err(format!(
+            "Native parameter contract mismatch: missing {missing:?}, unexpected {unexpected:?}"
+        ))
+    }
+
+    fn get(&self, key: &str) -> PyResult<Bound<'py, PyAny>> {
+        self.dict.get_item(key)?.ok_or_else(|| self.mismatch())
+    }
+}
+
 impl Core5R1C {
     pub fn from_py(model: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let floor_area_m2: f64 = model.getattr("floor_area_m2")?.extract()?;
-        let building_vol: f64 = model.getattr("_building_vol")?.extract()?;
-        let a_tot: f64 = model.getattr("_a_tot")?.extract()?;
-        let mass_area: f64 = model.getattr("_mass_area")?.extract()?;
-        let c_m: f64 = model.getattr("_c_m")?.extract()?;
-        let h_tr_op: f64 = model.getattr("_h_tr_op")?.extract()?;
-        let h_tr_op_walls_roof: f64 = model.getattr("_h_tr_op_walls_roof")?.extract()?;
-        let h_tr_ground: f64 = model.getattr("_h_tr_ground")?.extract()?;
-        let h_tr_tb: f64 = model.getattr("_h_tr_tb")?.extract()?;
-        let h_tr_w: f64 = model.getattr("_h_tr_w")?.extract()?;
-        let h_tr_ms: f64 = model.getattr("_h_tr_ms")?.extract()?;
-        let h_tr_is: f64 = model.getattr("_h_tr_is")?.extract()?;
-        let h_tr_em: f64 = model.getattr("_h_tr_em")?.extract()?;
-        let h_ms: f64 = model.getattr("h_ms")?.extract()?;
-        let air_volumetric_heat_capacity_j_m3_k: f64 = model
-            .getattr("air_volumetric_heat_capacity_j_m3_k")?
-            .extract()?;
-        let ach_infiltration: f64 = model.getattr("ach_infiltration")?.extract()?;
-        let ach_ventilation: f64 = model.getattr("ach_ventilation")?.extract()?;
-        let heat_recovery_efficiency: f64 = model.getattr("heat_recovery_efficiency")?.extract()?;
-        let convective_fraction_internal: f64 =
-            model.getattr("convective_fraction_internal")?.extract()?;
-        let internal_gains_w_per_m2: f64 = model.getattr("internal_gains_w_per_m2")?.extract()?;
-        let t_set_heating: f64 = model.getattr("t_set_heating")?.extract()?;
-        let t_set_cooling: f64 = model.getattr("t_set_cooling")?.extract()?;
-        let t_set_heating_setback: Option<f64> =
-            model.getattr("t_set_heating_setback")?.extract()?;
-        let t_set_cooling_setback: Option<f64> =
-            model.getattr("t_set_cooling_setback")?.extract()?;
-        let use_operative_temperature: bool =
-            model.getattr("use_operative_temperature")?.extract()?;
-        let ventilation_behaviour: f64 = model.getattr("ventilation_behaviour")?.extract()?;
-        let ach_window_open: f64 = model.getattr("ach_window_open")?.extract()?;
-        let delta_theta_er: f64 = model.getattr("delta_theta_er")?.extract()?;
-        let prepared_hourly: bool = model.getattr("_prepared_hourly")?.extract()?;
+        let p = Parameters::read(model)?;
+        let prepared_hourly: bool = p.get("prepared_hourly")?.extract()?;
+        let delta_theta_er: f64 = p.get("delta_theta_er")?.extract()?;
 
         let sky_radiation_loss_w: f64 = if prepared_hourly {
-            model.getattr("_prepared_sky")?.extract()?
+            p.get("prepared_sky")?.extract()?
         } else {
-            let r_se_roof: f64 = model.getattr("r_se_roof")?.extract()?;
-            let u_roof: f64 = model.getattr("u_roof")?.extract()?;
-            let roof_area_m2: f64 = model.getattr("roof_area_m2")?.extract()?;
-            let h_r: f64 = model.getattr("h_r")?.extract()?;
-            let form_factor_roof: f64 = model.getattr("form_factor_roof")?.extract()?;
-            let r_se_wall: f64 = model.getattr("r_se_wall")?.extract()?;
-            let u_walls: f64 = model.getattr("u_walls")?.extract()?;
-            let wall_area_m2: f64 = model.getattr("wall_area_m2")?.extract()?;
-            let form_factor_wall: f64 = model.getattr("form_factor_wall")?.extract()?;
+            let r_se_roof: f64 = p.get("r_se_roof")?.extract()?;
+            let u_roof: f64 = p.get("u_roof")?.extract()?;
+            let roof_area_m2: f64 = p.get("roof_area_m2")?.extract()?;
+            let h_r: f64 = p.get("h_r")?.extract()?;
+            let form_factor_roof: f64 = p.get("form_factor_roof")?.extract()?;
+            let r_se_wall: f64 = p.get("r_se_wall")?.extract()?;
+            let u_walls: f64 = p.get("u_walls")?.extract()?;
+            let wall_area_m2: f64 = p.get("wall_area_m2")?.extract()?;
+            let form_factor_wall: f64 = p.get("form_factor_wall")?.extract()?;
             let phi_r_roof =
                 r_se_roof * u_roof * roof_area_m2 * h_r * delta_theta_er * form_factor_roof;
             let phi_r_wall =
@@ -107,7 +206,7 @@ impl Core5R1C {
             phi_r_roof + phi_r_wall
         };
 
-        let ground_vec: Option<Vec<f64>> = model.getattr("ground_temps_monthly")?.extract()?;
+        let ground_vec: Option<Vec<f64>> = p.get("ground_temps_monthly")?.extract()?;
         let (ground_temps_monthly, ground_temp_annual_mean) = match ground_vec {
             Some(v) if v.len() == 12 => {
                 let mut arr = [0.0f64; 12];
@@ -128,51 +227,47 @@ impl Core5R1C {
             prepared_network,
             prepared_cn,
         ) = if prepared_hourly {
-            let pmr: f64 = model.getattr("_prepared_mass_ratio")?.extract()?;
-            let pwr: f64 = model.getattr("_prepared_window_ratio")?.extract()?;
-            let paf: Option<(f64, f64, f64)> = model.getattr("_prepared_airflow")?.extract()?;
-            let pnet: (f64, f64, f64) = model.getattr("_prepared_network")?.extract()?;
-            let pcn: (f64, f64) = model.getattr("_prepared_cn")?.extract()?;
-            (pmr, pwr, paf, pnet, pcn)
+            (
+                p.get("prepared_mass_ratio")?.extract()?,
+                p.get("prepared_window_ratio")?.extract()?,
+                p.get("prepared_airflow")?.extract()?,
+                p.get("prepared_network")?.extract()?,
+                p.get("prepared_cn")?.extract()?,
+            )
         } else {
             (0.0, 0.0, None, (0.0, 0.0, 0.0), (0.0, 0.0))
         };
 
-        let t_m: f64 = model.getattr("t_m")?.extract()?;
-        let t_s: f64 = model.getattr("t_s")?.extract()?;
-        let t_air: f64 = model.getattr("t_air")?.extract()?;
-        let t_supply: f64 = model.getattr("_t_supply")?.extract()?;
-        let windows_open: bool = model.getattr("_windows_open")?.extract()?;
-        let h_ve: f64 = model.getattr("_h_ve")?.extract()?;
-
         let mut core = Self {
-            floor_area_m2,
-            building_vol,
-            a_tot,
-            mass_area,
-            c_m,
-            h_tr_op,
-            h_tr_op_walls_roof,
-            h_tr_ground,
-            h_tr_tb,
-            h_tr_w,
-            h_tr_ms,
-            h_tr_is,
-            h_tr_em,
-            h_ms,
-            air_volumetric_heat_capacity_j_m3_k,
-            ach_infiltration,
-            ach_ventilation,
-            heat_recovery_efficiency,
-            convective_fraction_internal,
-            internal_gains_w_per_m2,
-            t_set_heating,
-            t_set_cooling,
-            t_set_heating_setback,
-            t_set_cooling_setback,
-            use_operative_temperature,
-            ventilation_behaviour,
-            ach_window_open,
+            floor_area_m2: p.get("floor_area_m2")?.extract()?,
+            building_vol: p.get("building_vol")?.extract()?,
+            a_tot: p.get("a_tot")?.extract()?,
+            mass_area: p.get("mass_area")?.extract()?,
+            c_m: p.get("c_m")?.extract()?,
+            h_tr_op: p.get("h_tr_op")?.extract()?,
+            h_tr_op_walls_roof: p.get("h_tr_op_walls_roof")?.extract()?,
+            h_tr_ground: p.get("h_tr_ground")?.extract()?,
+            h_tr_tb: p.get("h_tr_tb")?.extract()?,
+            h_tr_w: p.get("h_tr_w")?.extract()?,
+            h_tr_ms: p.get("h_tr_ms")?.extract()?,
+            h_tr_is: p.get("h_tr_is")?.extract()?,
+            h_tr_em: p.get("h_tr_em")?.extract()?,
+            h_ms: p.get("h_ms")?.extract()?,
+            air_volumetric_heat_capacity_j_m3_k: p
+                .get("air_volumetric_heat_capacity_j_m3_k")?
+                .extract()?,
+            ach_infiltration: p.get("ach_infiltration")?.extract()?,
+            ach_ventilation: p.get("ach_ventilation")?.extract()?,
+            heat_recovery_efficiency: p.get("heat_recovery_efficiency")?.extract()?,
+            convective_fraction_internal: p.get("convective_fraction_internal")?.extract()?,
+            internal_gains_w_per_m2: p.get("internal_gains_w_per_m2")?.extract()?,
+            t_set_heating: p.get("t_set_heating")?.extract()?,
+            t_set_cooling: p.get("t_set_cooling")?.extract()?,
+            t_set_heating_setback: p.get("t_set_heating_setback")?.extract()?,
+            t_set_cooling_setback: p.get("t_set_cooling_setback")?.extract()?,
+            use_operative_temperature: p.get("use_operative_temperature")?.extract()?,
+            ventilation_behaviour: p.get("ventilation_behaviour")?.extract()?,
+            ach_window_open: p.get("ach_window_open")?.extract()?,
             delta_theta_er,
             sky_radiation_loss_w,
             ground_temps_monthly,
@@ -180,11 +275,15 @@ impl Core5R1C {
             prepared_hourly,
             prepared_mass_ratio,
             prepared_window_ratio,
-            state: ThermalState { t_m, t_s, t_air },
-            t_supply,
-            windows_open,
+            state: ThermalState {
+                t_m: p.get("t_m")?.extract()?,
+                t_s: p.get("t_s")?.extract()?,
+                t_air: p.get("t_air")?.extract()?,
+            },
+            t_supply: p.get("t_supply")?.extract()?,
+            windows_open: p.get("windows_open")?.extract()?,
             window_decision: None,
-            h_ve,
+            h_ve: p.get("h_ve")?.extract()?,
             prepared_airflow,
             prepared_network,
             prepared_cn,
@@ -199,29 +298,132 @@ impl Core5R1C {
         Ok(core)
     }
 
+    /// Return advanced state through `Building5R1C._apply_native_state`.
     pub fn sync_to_py(&self, model: &Bound<'_, PyAny>) -> PyResult<()> {
-        model.setattr("t_m", self.state.t_m)?;
-        model.setattr("t_s", self.state.t_s)?;
-        model.setattr("t_air", self.state.t_air)?;
-        model.setattr("_t_supply", self.t_supply)?;
-        model.setattr("_windows_open", self.windows_open)?;
-        model.setattr("t_set_heating", self.t_set_heating)?;
-        model.setattr("t_set_cooling", self.t_set_cooling)?;
-        model.setattr("ach_infiltration", self.ach_infiltration)?;
-        model.setattr("ach_ventilation", self.ach_ventilation)?;
-        model.setattr(
+        let state = PyDict::new(model.py());
+        state.set_item("t_m", self.state.t_m)?;
+        state.set_item("t_s", self.state.t_s)?;
+        state.set_item("t_air", self.state.t_air)?;
+        state.set_item("t_supply", self.t_supply)?;
+        state.set_item("windows_open", self.windows_open)?;
+        state.set_item("t_set_heating", self.t_set_heating)?;
+        state.set_item("t_set_cooling", self.t_set_cooling)?;
+        state.set_item("ach_infiltration", self.ach_infiltration)?;
+        state.set_item("ach_ventilation", self.ach_ventilation)?;
+        state.set_item(
             "convective_fraction_internal",
             self.convective_fraction_internal,
         )?;
-        model.setattr("_h_ve", self.h_ve)?;
+        state.set_item("h_ve", self.h_ve)?;
         if self.prepared_hourly {
-            model.setattr("_prepared_airflow", self.prepared_airflow)?;
-            model.setattr("_prepared_network", self.prepared_network)?;
-            model.setattr("_prepared_cn", self.prepared_cn)?;
-            model.setattr("_hour_heat_flows", self.hour_heat_flows)?;
+            state.set_item("prepared_airflow", self.prepared_airflow)?;
+            state.set_item("prepared_network", self.prepared_network)?;
+            state.set_item("prepared_cn", self.prepared_cn)?;
+            state.set_item("hour_heat_flows", self.hour_heat_flows)?;
         }
+        model.call_method1("_apply_native_state", (state,))?;
         Ok(())
     }
+}
+
+/// Hourly forcing read by attribute name from a `domains.HourlyInputs`.
+struct PyForcing<'py> {
+    columns: Vec<PyReadonlyArray1<'py, f64>>,
+    month_hours: Option<PyReadonlyArray1<'py, i64>>,
+    coefficients: (f64, f64, f64, f64),
+    aggregate_split: bool,
+}
+
+impl<'py> PyForcing<'py> {
+    fn read(forcing: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let named =
+            |name: &str, error: PyErr| PyValueError::new_err(format!("forcing.{name}: {error}"));
+        let columns = FORCING_COLUMNS
+            .iter()
+            .map(|name| {
+                forcing
+                    .getattr(*name)
+                    .and_then(|value| value.extract().map_err(PyErr::from))
+                    .map_err(|error| named(name, error))
+            })
+            .collect::<PyResult<Vec<_>>>()?;
+        Ok(Self {
+            columns,
+            month_hours: forcing
+                .getattr("month_hours")
+                .and_then(|value| value.extract().map_err(PyErr::from))
+                .map_err(|error| named("month_hours", error))?,
+            coefficients: forcing
+                .getattr("coefficients")
+                .and_then(|value| value.extract())
+                .map_err(|error| named("coefficients", error))?,
+            aggregate_split: forcing
+                .getattr("aggregate_split")
+                .and_then(|value| value.extract())
+                .map_err(|error| named("aggregate_split", error))?,
+        })
+    }
+}
+
+/// Validate one domain's forcing and limits, borrowing immutable storage or
+/// snapshotting it, then run `kernel` while that storage is kept alive.
+fn with_domain_arrays<'py, R>(
+    forcing: &PyForcing<'py>,
+    heating_limits_w: &PyReadonlyArray1<'py, f64>,
+    cooling_limits_w: &PyReadonlyArray1<'py, f64>,
+    kernel: impl FnOnce(&DomainArrays<'_>) -> R,
+) -> PyResult<R> {
+    let month_hours = forcing
+        .month_hours
+        .as_ref()
+        .map(|array| array.as_slice())
+        .transpose()?;
+    let mut columns: [&[f64]; 13] = [&[]; 13];
+    for (column, array) in columns.iter_mut().zip(&forcing.columns) {
+        *column = array.as_slice()?;
+    }
+    columns[11] = heating_limits_w.as_slice()?;
+    columns[12] = cooling_limits_w.as_slice()?;
+    let borrowed = DomainArrays::new(
+        columns,
+        month_hours,
+        forcing.coefficients,
+        forcing.aggregate_split,
+    );
+    borrowed
+        .validate(borrowed.temperatures.len())
+        .map_err(PyValueError::new_err)?;
+    let keepalive = immutable_backings(
+        std::array::from_fn(|index| match index {
+            11 => heating_limits_w.as_untyped(),
+            12 => cooling_limits_w.as_untyped(),
+            _ => forcing.columns[index].as_untyped(),
+        }),
+        forcing.month_hours.as_ref().map(|array| array.as_untyped()),
+    );
+    let snapshot = if keepalive.is_some() {
+        None
+    } else {
+        Some(
+            DomainSnapshot::new(
+                columns,
+                month_hours,
+                forcing.coefficients,
+                forcing.aggregate_split,
+            )
+            .map_err(PyValueError::new_err)?,
+        )
+    };
+    let arrays = match &snapshot {
+        Some(snapshot) => snapshot.view(),
+        None => borrowed,
+    };
+    arrays
+        .validate(arrays.temperatures.len())
+        .map_err(PyValueError::new_err)?;
+    let result = kernel(&arrays);
+    drop(keepalive);
+    Ok(result)
 }
 
 #[pyfunction]
@@ -378,108 +580,19 @@ pub fn calc_heating_demand_5r1c<'py>(
 }
 
 #[pyfunction]
-#[pyo3(signature = (
-    model,
-    temperatures,
-    gains,
-    convective,
-    heating_setpoints,
-    cooling_setpoints,
-    wind,
-    infiltration,
-    natural,
-    ventilation,
-    solar,
-    opaque,
-    month_hours,
-    coefficients,
-    aggregate_split,
-    heating_limits_w,
-    cooling_limits_w
-))]
-#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (model, forcing, heating_limits_w, cooling_limits_w))]
 pub fn run_single_domain_hourly<'py>(
     py: Python<'py>,
     model: &Bound<'py, PyAny>,
-    temperatures: PyReadonlyArray1<'py, f64>,
-    gains: PyReadonlyArray1<'py, f64>,
-    convective: PyReadonlyArray1<'py, f64>,
-    heating_setpoints: PyReadonlyArray1<'py, f64>,
-    cooling_setpoints: PyReadonlyArray1<'py, f64>,
-    wind: PyReadonlyArray1<'py, f64>,
-    infiltration: PyReadonlyArray1<'py, f64>,
-    natural: PyReadonlyArray1<'py, f64>,
-    ventilation: PyReadonlyArray1<'py, f64>,
-    solar: PyReadonlyArray1<'py, f64>,
-    opaque: PyReadonlyArray1<'py, f64>,
-    month_hours: Option<PyReadonlyArray1<'py, i64>>,
-    coefficients: (f64, f64, f64, f64),
-    aggregate_split: bool,
+    forcing: &Bound<'py, PyAny>,
     heating_limits_w: PyReadonlyArray1<'py, f64>,
     cooling_limits_w: PyReadonlyArray1<'py, f64>,
 ) -> PyResult<(PySeries<'py>, PySeries<'py>)> {
     let mut core = Core5R1C::from_py(model)?;
-
-    let mh_slice = match &month_hours {
-        Some(arr) => Some(arr.as_slice()?),
-        None => None,
-    };
-
-    let columns = [
-        temperatures.as_slice()?,
-        gains.as_slice()?,
-        convective.as_slice()?,
-        heating_setpoints.as_slice()?,
-        cooling_setpoints.as_slice()?,
-        wind.as_slice()?,
-        infiltration.as_slice()?,
-        natural.as_slice()?,
-        ventilation.as_slice()?,
-        solar.as_slice()?,
-        opaque.as_slice()?,
-        heating_limits_w.as_slice()?,
-        cooling_limits_w.as_slice()?,
-    ];
-    let borrowed = DomainArrays::new(columns, mh_slice, coefficients, aggregate_split);
-    borrowed
-        .validate(borrowed.temperatures.len())
-        .map_err(PyValueError::new_err)?;
-    let keepalive = immutable_backings(
-        [
-            temperatures.as_untyped(),
-            gains.as_untyped(),
-            convective.as_untyped(),
-            heating_setpoints.as_untyped(),
-            cooling_setpoints.as_untyped(),
-            wind.as_untyped(),
-            infiltration.as_untyped(),
-            natural.as_untyped(),
-            ventilation.as_untyped(),
-            solar.as_untyped(),
-            opaque.as_untyped(),
-            heating_limits_w.as_untyped(),
-            cooling_limits_w.as_untyped(),
-        ],
-        month_hours.as_ref().map(|array| array.as_untyped()),
-    );
-    let snapshot = if keepalive.is_some() {
-        None
-    } else {
-        Some(
-            DomainSnapshot::new(columns, mh_slice, coefficients, aggregate_split)
-                .map_err(PyValueError::new_err)?,
-        )
-    };
-    let arrays = match &snapshot {
-        Some(snapshot) => snapshot.view(),
-        None => borrowed,
-    };
-
-    arrays
-        .validate(arrays.temperatures.len())
-        .map_err(PyValueError::new_err)?;
-    let outcome = py.detach(|| run_single_domain(&mut core, &arrays));
-    drop(keepalive);
+    let forcing = PyForcing::read(forcing)?;
+    let outcome = with_domain_arrays(&forcing, &heating_limits_w, &cooling_limits_w, |arrays| {
+        py.detach(|| run_single_domain(&mut core, arrays))
+    })?;
     core.sync_to_py(model)?;
     let output = outcome.map_err(PyValueError::new_err)?;
     Ok((
@@ -552,36 +665,10 @@ pub fn solve_controls_rs(
 #[pyo3(signature = (
     model0,
     model1,
-    temperatures0,
-    gains0,
-    convective0,
-    heating_setpoints0,
-    cooling_setpoints0,
-    wind0,
-    infiltration0,
-    natural0,
-    ventilation0,
-    solar0,
-    opaque0,
-    month_hours0,
-    coefficients0,
-    aggregate_split0,
+    forcing0,
+    forcing1,
     heating_limits_w0,
     cooling_limits_w0,
-    temperatures1,
-    gains1,
-    convective1,
-    heating_setpoints1,
-    cooling_setpoints1,
-    wind1,
-    infiltration1,
-    natural1,
-    ventilation1,
-    solar1,
-    opaque1,
-    month_hours1,
-    coefficients1,
-    aggregate_split1,
     heating_limits_w1,
     cooling_limits_w1,
     conductance_w_k
@@ -591,159 +678,26 @@ pub fn run_coupled_domains_hourly<'py>(
     py: Python<'py>,
     model0: &Bound<'py, PyAny>,
     model1: &Bound<'py, PyAny>,
-    temperatures0: PyReadonlyArray1<'py, f64>,
-    gains0: PyReadonlyArray1<'py, f64>,
-    convective0: PyReadonlyArray1<'py, f64>,
-    heating_setpoints0: PyReadonlyArray1<'py, f64>,
-    cooling_setpoints0: PyReadonlyArray1<'py, f64>,
-    wind0: PyReadonlyArray1<'py, f64>,
-    infiltration0: PyReadonlyArray1<'py, f64>,
-    natural0: PyReadonlyArray1<'py, f64>,
-    ventilation0: PyReadonlyArray1<'py, f64>,
-    solar0: PyReadonlyArray1<'py, f64>,
-    opaque0: PyReadonlyArray1<'py, f64>,
-    month_hours0: Option<PyReadonlyArray1<'py, i64>>,
-    coefficients0: (f64, f64, f64, f64),
-    aggregate_split0: bool,
+    forcing0: &Bound<'py, PyAny>,
+    forcing1: &Bound<'py, PyAny>,
     heating_limits_w0: PyReadonlyArray1<'py, f64>,
     cooling_limits_w0: PyReadonlyArray1<'py, f64>,
-    temperatures1: PyReadonlyArray1<'py, f64>,
-    gains1: PyReadonlyArray1<'py, f64>,
-    convective1: PyReadonlyArray1<'py, f64>,
-    heating_setpoints1: PyReadonlyArray1<'py, f64>,
-    cooling_setpoints1: PyReadonlyArray1<'py, f64>,
-    wind1: PyReadonlyArray1<'py, f64>,
-    infiltration1: PyReadonlyArray1<'py, f64>,
-    natural1: PyReadonlyArray1<'py, f64>,
-    ventilation1: PyReadonlyArray1<'py, f64>,
-    solar1: PyReadonlyArray1<'py, f64>,
-    opaque1: PyReadonlyArray1<'py, f64>,
-    month_hours1: Option<PyReadonlyArray1<'py, i64>>,
-    coefficients1: (f64, f64, f64, f64),
-    aggregate_split1: bool,
     heating_limits_w1: PyReadonlyArray1<'py, f64>,
     cooling_limits_w1: PyReadonlyArray1<'py, f64>,
     conductance_w_k: f64,
 ) -> PyResult<PyCoupledOutput<'py>> {
     let mut core0 = Core5R1C::from_py(model0)?;
     let mut core1 = Core5R1C::from_py(model1)?;
-
-    let mh0_slice = match &month_hours0 {
-        Some(arr) => Some(arr.as_slice()?),
-        None => None,
-    };
-    let mh1_slice = match &month_hours1 {
-        Some(arr) => Some(arr.as_slice()?),
-        None => None,
-    };
-
-    let columns0 = [
-        temperatures0.as_slice()?,
-        gains0.as_slice()?,
-        convective0.as_slice()?,
-        heating_setpoints0.as_slice()?,
-        cooling_setpoints0.as_slice()?,
-        wind0.as_slice()?,
-        infiltration0.as_slice()?,
-        natural0.as_slice()?,
-        ventilation0.as_slice()?,
-        solar0.as_slice()?,
-        opaque0.as_slice()?,
-        heating_limits_w0.as_slice()?,
-        cooling_limits_w0.as_slice()?,
-    ];
-    let borrowed0 = DomainArrays::new(columns0, mh0_slice, coefficients0, aggregate_split0);
-    borrowed0
-        .validate(borrowed0.temperatures.len())
-        .map_err(PyValueError::new_err)?;
-    let keepalive0 = immutable_backings(
-        [
-            temperatures0.as_untyped(),
-            gains0.as_untyped(),
-            convective0.as_untyped(),
-            heating_setpoints0.as_untyped(),
-            cooling_setpoints0.as_untyped(),
-            wind0.as_untyped(),
-            infiltration0.as_untyped(),
-            natural0.as_untyped(),
-            ventilation0.as_untyped(),
-            solar0.as_untyped(),
-            opaque0.as_untyped(),
-            heating_limits_w0.as_untyped(),
-            cooling_limits_w0.as_untyped(),
-        ],
-        month_hours0.as_ref().map(|array| array.as_untyped()),
-    );
-    let snapshot0 = if keepalive0.is_some() {
-        None
-    } else {
-        Some(
-            DomainSnapshot::new(columns0, mh0_slice, coefficients0, aggregate_split0)
-                .map_err(PyValueError::new_err)?,
-        )
-    };
-    let arrays0 = match &snapshot0 {
-        Some(snapshot) => snapshot.view(),
-        None => borrowed0,
-    };
-
-    let columns1 = [
-        temperatures1.as_slice()?,
-        gains1.as_slice()?,
-        convective1.as_slice()?,
-        heating_setpoints1.as_slice()?,
-        cooling_setpoints1.as_slice()?,
-        wind1.as_slice()?,
-        infiltration1.as_slice()?,
-        natural1.as_slice()?,
-        ventilation1.as_slice()?,
-        solar1.as_slice()?,
-        opaque1.as_slice()?,
-        heating_limits_w1.as_slice()?,
-        cooling_limits_w1.as_slice()?,
-    ];
-    let borrowed1 = DomainArrays::new(columns1, mh1_slice, coefficients1, aggregate_split1);
-    borrowed1
-        .validate(borrowed1.temperatures.len())
-        .map_err(PyValueError::new_err)?;
-    let keepalive1 = immutable_backings(
-        [
-            temperatures1.as_untyped(),
-            gains1.as_untyped(),
-            convective1.as_untyped(),
-            heating_setpoints1.as_untyped(),
-            cooling_setpoints1.as_untyped(),
-            wind1.as_untyped(),
-            infiltration1.as_untyped(),
-            natural1.as_untyped(),
-            ventilation1.as_untyped(),
-            solar1.as_untyped(),
-            opaque1.as_untyped(),
-            heating_limits_w1.as_untyped(),
-            cooling_limits_w1.as_untyped(),
-        ],
-        month_hours1.as_ref().map(|array| array.as_untyped()),
-    );
-    let snapshot1 = if keepalive1.is_some() {
-        None
-    } else {
-        Some(
-            DomainSnapshot::new(columns1, mh1_slice, coefficients1, aggregate_split1)
-                .map_err(PyValueError::new_err)?,
-        )
-    };
-    let arrays1 = match &snapshot1 {
-        Some(snapshot) => snapshot.view(),
-        None => borrowed1,
-    };
-
-    let count = arrays0.temperatures.len();
-    arrays0.validate(count).map_err(PyValueError::new_err)?;
-    arrays1.validate(count).map_err(PyValueError::new_err)?;
-    let outcome = py.detach(|| {
-        run_coupled_domains(&mut core0, &mut core1, &arrays0, &arrays1, conductance_w_k)
-    });
-    drop((keepalive0, keepalive1));
+    let forcing0 = PyForcing::read(forcing0)?;
+    let forcing1 = PyForcing::read(forcing1)?;
+    let outcome = with_domain_arrays(&forcing0, &heating_limits_w0, &cooling_limits_w0, |a0| {
+        with_domain_arrays(&forcing1, &heating_limits_w1, &cooling_limits_w1, |a1| {
+            let count = a0.temperatures.len();
+            a0.validate(count)?;
+            a1.validate(count)?;
+            py.detach(|| run_coupled_domains(&mut core0, &mut core1, a0, a1, conductance_w_k))
+        })
+    })??;
     core0.sync_to_py(model0)?;
     core1.sync_to_py(model1)?;
     let output = outcome.map_err(PyValueError::new_err)?;

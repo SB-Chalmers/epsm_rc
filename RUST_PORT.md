@@ -34,7 +34,7 @@ Measured on an 8,760-hour annual simulation (Python 3.14.2 in `/Users/dagwastber
 - **Build Backend**: `maturin` (`requires = ["maturin>=1.7,<2.0"]`, `build-backend = "maturin"` in `pyproject.toml`).
 - **Version**: maturin reads the distribution version from `Cargo.toml`. Keep it
   synchronized with `src/epsm_rc/_version.py` and the root package entry in
-  `Cargo.lock`; all three currently specify `0.10.0`.
+  `Cargo.lock`; all three currently specify `0.11.0`.
 - **Layout**:
   - Python package source remains in `src/epsm_rc/` (`[tool.maturin] python-source = "src"`, `module-name = "epsm_rc._core_rs"`).
   - Rust crate lives at the repository root (`Cargo.toml`) with source files in `rust/` (`src/lib.rs`, `src/iso13790.rs`, `src/domain.rs`, `src/coupled.rs`).
@@ -139,6 +139,11 @@ Core/Data compatibility matrix and installed-package validation.
 
 `rust/src/bindings.rs` owns Python conversion and synchronization. The numerical
 kernels use named forcing, control and state structs in `rust/src/types.rs`.
+Model values cross the boundary only through `Building5R1C._native_parameters()`
+and `_apply_native_state()`, keyed by `Core5R1C` field names. `_core_rs` exports
+the expected keys (`NATIVE_*_PARAMETERS`) and rejects a missing or unexpected
+key by name. Domain kernels read `HourlyInputs` fields by name
+(`NATIVE_FORCING_COLUMNS`) instead of positional arrays.
 Shapes are checked before state changes. Deterministic batches release the GIL;
 prepared immutable byte buffers are borrowed, while mutable inputs are copied
 into owned snapshots. A NumPy read-only flag alone does not authorize borrowing.
