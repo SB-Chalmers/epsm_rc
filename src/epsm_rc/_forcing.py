@@ -70,6 +70,7 @@ class PreparedDomain:
     reference_area_m2: float
     volume_m3: float
     forcing: object = None
+    iso52016: object = None
 
 
 @dataclass
@@ -91,6 +92,8 @@ class HourlyInputs:
     month_hours: np.ndarray | None
     coefficients: tuple
     aggregate_split: bool
+    recovery_bypass: bool = False
+    recovery_effectiveness: float = 0.0
 
     def __post_init__(self):
         # The native kernels read these fields by name; fix their types once here.
@@ -118,6 +121,14 @@ class HourlyInputs:
             self.natural[hour]
         )
         model.ach_ventilation = float(self.ventilation[hour])
+        if self.recovery_bypass:
+            # Recovery acts only when it reduces the load, judged from the previous
+            # hour's HVAC sign (the EnergyPlus ideal-loads rule, one hour lagged).
+            last = getattr(model, "_last_hvac_power", 0.0)
+            active = (last > 0 and temperature < model.t_air) or (
+                last < 0 and temperature > model.t_air
+            )
+            model.heat_recovery_efficiency = self.recovery_effectiveness if active else 0.0
         if not isfinite(model.ach_infiltration) or model.ach_infiltration < 0:
             raise ValueError("Hourly infiltration must be finite and nonnegative")
         model._update_ventilation_coefficient()
