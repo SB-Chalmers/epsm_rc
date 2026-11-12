@@ -96,7 +96,9 @@ pub fn run(
                 return Err("Hourly infiltration must be finite and nonnegative".into());
             }
             let eta = if air.recovery_bypass {
-                let active = (last > 0.0 && theta_e < t_air) || (last < 0.0 && theta_e > t_air);
+                let heating = last > 0.0 || t_air <= hours.set_heating[hour] + 1e-9;
+                let cooling = last < 0.0 || t_air >= hours.set_cooling[hour] - 1e-9;
+                let active = (heating && theta_e < t_air) || (cooling && theta_e > t_air);
                 if active {
                     air.recovery_effectiveness
                 } else {

@@ -332,6 +332,7 @@ struct PyForcing<'py> {
     month_hours: Option<PyReadonlyArray1<'py, i64>>,
     coefficients: (f64, f64, f64, f64),
     aggregate_split: bool,
+    recovery_bypass: Option<f64>,
 }
 
 impl<'py> PyForcing<'py> {
@@ -361,6 +362,15 @@ impl<'py> PyForcing<'py> {
                 .getattr("aggregate_split")
                 .and_then(|value| value.extract())
                 .map_err(|error| named("aggregate_split", error))?,
+            recovery_bypass: match forcing.getattr("recovery_bypass") {
+                Ok(flag) if flag.extract::<bool>().unwrap_or(false) => Some(
+                    forcing
+                        .getattr("recovery_effectiveness")
+                        .and_then(|value| value.extract())
+                        .map_err(|error| named("recovery_effectiveness", error))?,
+                ),
+                _ => None,
+            },
         })
     }
 }
@@ -414,10 +424,11 @@ fn with_domain_arrays<'py, R>(
             .map_err(PyValueError::new_err)?,
         )
     };
-    let arrays = match &snapshot {
+    let mut arrays = match &snapshot {
         Some(snapshot) => snapshot.view(),
         None => borrowed,
     };
+    arrays.recovery_bypass = forcing.recovery_bypass;
     arrays
         .validate(arrays.temperatures.len())
         .map_err(PyValueError::new_err)?;

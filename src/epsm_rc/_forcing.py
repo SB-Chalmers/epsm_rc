@@ -122,11 +122,16 @@ class HourlyInputs:
         )
         model.ach_ventilation = float(self.ventilation[hour])
         if self.recovery_bypass:
-            # Recovery acts only when it reduces the load, judged from the previous
-            # hour's HVAC sign (the EnergyPlus ideal-loads rule, one hour lagged).
+            # Recovery acts only when it reduces the load (the EnergyPlus ideal-loads
+            # rule): in heating mode with colder outdoor air, or cooling mode with
+            # warmer. The mode is judged one hour lagged, from the previous hour's
+            # HVAC power or its air temperature against the setpoints, so a zone
+            # that needs heat but has none available still counts as heating.
             last = getattr(model, "_last_hvac_power", 0.0)
-            active = (last > 0 and temperature < model.t_air) or (
-                last < 0 and temperature > model.t_air
+            heating = last > 0 or model.t_air <= float(self.heating_setpoints[hour]) + 1e-9
+            cooling = last < 0 or model.t_air >= float(self.cooling_setpoints[hour]) - 1e-9
+            active = (heating and temperature < model.t_air) or (
+                cooling and temperature > model.t_air
             )
             model.heat_recovery_efficiency = self.recovery_effectiveness if active else 0.0
         if not isfinite(model.ach_infiltration) or model.ach_infiltration < 0:

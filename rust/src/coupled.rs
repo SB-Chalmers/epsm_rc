@@ -17,8 +17,8 @@ pub fn run_coupled_domains(
         residuals: Vec::with_capacity(count),
     };
     for hour in 0..count {
-        let inputs0 = arrays0.apply_at(core0, hour)?;
-        let inputs1 = arrays1.apply_at(core1, hour)?;
+        let inputs0 = arrays0.apply_at(core0, hour, 0.0)?;
+        let inputs1 = arrays1.apply_at(core1, hour, 0.0)?;
         let solution = step_coupled_pair(
             core0,
             core1,

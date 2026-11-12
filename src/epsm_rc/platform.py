@@ -112,10 +112,11 @@ class RCSettings:
         ``operative`` (ISO 52016-1) or ``air``; used only by the ISO 52016-1 model.
     heat_recovery_control : str
         ``continuous`` (default) recovers sensible heat in every hour. The opt-in
-        ``load_dependent_bypass`` recovers only when it reduces the load: in hours
-        following heating with outdoor air colder than the zone, or following
-        cooling with outdoor air warmer. Other hours bypass the exchanger, so
-        summer ventilation cools freely. Runs use the Python recurrence.
+        ``load_dependent_bypass`` recovers only when it reduces the load: in
+        heating mode with outdoor air colder than the zone, or cooling mode with
+        outdoor air warmer. The mode comes from the previous hour's HVAC power or
+        air temperature against the setpoints. Other hours bypass the exchanger,
+        so summer ventilation cools freely.
     internal_surface_area_factor, mass_area_factors : float or tuple
         Ratios to conditioned floor area. Mass-area factors correspond to
         construction capacities below, between and above the two thresholds.
@@ -1750,10 +1751,8 @@ def _run_domain(domain):
         zone, hourly, ground_kinds, months, ground, _ = domain.iso52016
         power, air, _ = run_zone(domain, zone, hourly, ground_kinds, months, ground)
         return domain.finish(power, air)
-    if (
-        domain.forcing is None
-        or domain.forcing.recovery_bypass
-        or not _can_use_native(domain.model, needs_demand=True, prepared=True)
+    if domain.forcing is None or not _can_use_native(
+        domain.model, needs_demand=True, prepared=True
     ):
         power, indoor = np.zeros(len(domain.time_axis)), np.zeros(len(domain.time_axis))
         calculate, advance = domain.model._calculate_demand, domain.model._step

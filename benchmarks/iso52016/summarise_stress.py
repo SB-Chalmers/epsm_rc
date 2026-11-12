@@ -129,6 +129,21 @@ def main():
         "\\* over cases where E+ needs more than 1 kWh/m² of that load.",
         "",
     ]
+    lines += [
+        "Cooling is the EnergyPlus sensible coil energy. The latent share below is",
+        "excluded because both RC models are sensible only.",
+        "",
+        "| Climate | E+ sensible cooling kWh/m² | Latent share of E+ total |",
+        "|---|---|---|",
+    ]
+    for group in sorted({r["climate"] for r in conditioned}):
+        subset = [r for r in conditioned if r["climate"] == group]
+        sensible = sum(r[VARIANTS[0]]["cooling"]["reference_kwh"] for r in subset)
+        total = sum(r.get("energyplus_cooling_total_kwh", sensible) for r in subset)
+        area = sum(r["area_m2"] for r in subset)
+        share = 1 - sensible / total if total else 0.0
+        lines.append(f"| {group} | {sensible / area:.1f} | {share:.0%} |")
+    lines.append("")
     for quantity in ("cooling", "heating"):
         load_table("All", conditioned, quantity)
         for group in sorted({r["climate"] for r in conditioned}):

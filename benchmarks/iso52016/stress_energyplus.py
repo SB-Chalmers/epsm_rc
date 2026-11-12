@@ -8,6 +8,7 @@ Dimensions: climate (Swedish and EnergyPlus-bundled US EPWs), archetype
 (heavy multi-family, FTX office, light single-family), form (reference 3 storeys
 and 20 % glazing, or 6 storeys and 45 % glazing) and orientation. All RC
 variants use v2 solar defaults and the load-dependent heat-recovery bypass.
+Cooling is compared on the EnergyPlus sensible coil energy.
 
 Usage::
 
@@ -26,7 +27,7 @@ from importlib.resources import files
 from pathlib import Path
 
 import numpy as np
-from compare_energyplus import YEAR, _calendar, _metrics
+from compare_energyplus import YEAR, _calendar, _metrics, energyplus_series, energyplus_settings
 
 CLIMATES = {
     "goteborg": "rc:goteborg.epw",
@@ -132,25 +133,37 @@ def _temperature_metrics(model, reference):
 
 
 def run_case(task):
-    climate, (archetype, state), form, orientation, mode, directory, energyplus = task
+    climate, (archetype, state), form, orientation, mode, directory, energyplus, reuse = task
     from epsm import Weather
 
     case = f"{climate}-{archetype}-{form}-{orientation:03d}-{mode}"
     weather = Weather.from_epw(weather_path(climate, energyplus), calendar_year=YEAR)
     building = make_building(archetype, state, form, orientation, mode)
     area = building.load_reference_area_m2
-    eplus = building.simulate(
-        engine="energyplus",
-        weather=weather,
-        energyplus=energyplus,
-        directory=Path(directory) / "energyplus" / case,
-    ).energy
-    keys = [k for k in eplus.hourly if k.startswith("Zone Mean Air Temperature")]
-    reference = {
-        "cooling": np.asarray(eplus.hourly["cooling_demand_kwh"], float),
-        "heating": np.asarray(eplus.hourly["space_heating_demand_kwh"], float),
-        "air": np.mean([np.asarray(eplus.hourly[k], float) for k in keys], axis=0),
-    }
+    previous = Path(reuse) / "hourly" / f"{case}.npz" if reuse else None
+    reference = None
+    if previous is not None and previous.exists():
+        # EnergyPlus inputs depend only on the building and weather, not RC settings.
+        # Older arrays stored total cooling; reuse those only where cooling is off.
+        names = ("cooling", "cooling_total", "heating", "air")
+        try:
+            stored = np.load(previous)
+            if mode == "free":
+                reference = {n: stored[f"energyplus_{n}"] for n in ("cooling", "heating", "air")}
+                reference["cooling_total"] = reference["cooling"]
+            else:
+                reference = {n: stored[f"energyplus_{n}"] for n in names}
+        except (OSError, ValueError, KeyError):
+            reference = None
+    if reference is None:
+        eplus = building.simulate(
+            engine="energyplus",
+            weather=weather,
+            energyplus=energyplus,
+            directory=Path(directory) / "energyplus" / case,
+            settings=energyplus_settings(),
+        ).energy
+        reference = energyplus_series(eplus)
     row = {
         "case": case,
         "climate": climate,
@@ -159,6 +172,7 @@ def run_case(task):
         "orientation_deg": orientation,
         "mode": mode,
         "area_m2": area,
+        "energyplus_cooling_total_kwh": float(reference["cooling_total"].sum()),
     }
     hourly = {"energyplus": reference}
     for label, settings in rc_variants().items():
@@ -187,10 +201,13 @@ def main():
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--climates", nargs="*", default=None)
+    parser.add_argument(
+        "--reuse-energyplus", default=None, help="earlier output directory with E+ hourly arrays"
+    )
     args = parser.parse_args()
     (args.directory / "hourly").mkdir(parents=True, exist_ok=True)
     tasks = [
-        (c, a, f, o, m, str(args.directory), args.energyplus)
+        (c, a, f, o, m, str(args.directory), args.energyplus, args.reuse_energyplus)
         for c, a, f, o, m in itertools.product(CLIMATES, ARCHETYPES, FORMS, ORIENTATIONS, MODES)
         if not args.climates or c in args.climates
     ][: args.limit]

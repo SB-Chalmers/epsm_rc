@@ -6,7 +6,8 @@ The option grid follows the parameters exposed by EPSM Studio: building function
 and construction era (archetype), current fabric state (renovation state) and
 footprint orientation. Every case uses the illustrative-reference geometry,
 the bundled Gothenburg EPW, the catalogue archetype and an explicitly enabled
-26 °C cooling setpoint, so cooling need can be compared. These are software
+26 °C cooling setpoint, so cooling need can be compared. Cooling is compared on
+the sensible coil energy, the boundary of both RC models. These are software
 comparisons between models, not validation against measured buildings.
 
 Usage::
@@ -124,6 +125,41 @@ def _hourly(result, key):
     return np.asarray(result.hourly[key], float)
 
 
+SENSIBLE_COOLING = "Zone Ideal Loads Supply Air Sensible Cooling Energy"
+
+
+def energyplus_settings():
+    """Request the sensible part of the ideal-loads cooling coil energy."""
+    from epsm_core.settings import CompilerSettings, HourlyOutputRequest
+
+    return CompilerSettings(hourly_outputs=(HourlyOutputRequest(name=SENSIBLE_COOLING),))
+
+
+def energyplus_series(eplus):
+    """Hourly E+ series on the RC boundary.
+
+    ``cooling_demand_kwh`` is the total (sensible plus latent) coil energy. Both RC
+    models are sensible only, so ``cooling`` is the sensible coil energy and
+    ``cooling_total`` keeps the total. In humid climates latent is up to half.
+    """
+    sensible = [
+        _hourly(eplus, key)
+        for key in eplus.hourly
+        if key.upper().startswith(SENSIBLE_COOLING.upper())
+    ]
+    if not sensible:
+        raise KeyError("EnergyPlus result lacks the sensible cooling output")
+    zones = [
+        _hourly(eplus, key) for key in eplus.hourly if key.startswith("Zone Mean Air Temperature")
+    ]
+    return {
+        "cooling": np.sum(sensible, axis=0) / 3.6e6,
+        "cooling_total": _hourly(eplus, "cooling_demand_kwh"),
+        "heating": _hourly(eplus, "space_heating_demand_kwh"),
+        "air": np.mean(zones, axis=0),
+    }
+
+
 def _metrics(candidate, reference):
     """Annual, peak and hourly agreement of one hourly series with EnergyPlus."""
     total_c, total_r = candidate.sum(), reference.sum()
@@ -161,17 +197,9 @@ def run_case(task):
         weather=weather,
         energyplus=energyplus,
         directory=Path(directory) / "energyplus" / case,
+        settings=energyplus_settings(),
     ).energy
-    hourly = {
-        "energyplus": {
-            "cooling": _hourly(eplus, "cooling_demand_kwh"),
-            "heating": _hourly(eplus, "space_heating_demand_kwh"),
-        }
-    }
-    zone_temperatures = [
-        _hourly(eplus, key) for key in eplus.hourly if key.startswith("Zone Mean Air Temperature")
-    ]
-    hourly["energyplus"]["air"] = np.mean(zone_temperatures, axis=0)
+    hourly = {"energyplus": energyplus_series(eplus)}
     for label, settings in rc_variants().items():
         result = building.simulate(engine="epsm_rc", weather=weather, settings=settings).energy
         hourly[label] = {
@@ -188,6 +216,7 @@ def run_case(task):
         "orientation_deg": orientation,
         "energyplus_cooling_unmet_hours": float(eplus.scalars.get("cooling_unmet_zone_hours", 0)),
         "energyplus_heating_unmet_hours": float(eplus.scalars.get("heating_unmet_zone_hours", 0)),
+        "energyplus_cooling_total_kwh": float(reference["cooling_total"].sum()),
     }
     for label, series in hourly.items():
         if label == "energyplus":

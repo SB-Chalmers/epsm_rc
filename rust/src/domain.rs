@@ -69,6 +69,8 @@ pub struct DomainArrays<'a> {
     pub aggregate_split: bool,
     pub heating_limits_w: &'a [f64],
     pub cooling_limits_w: &'a [f64],
+    /// Sensible recovery effectiveness under load-dependent bypass, if selected.
+    pub recovery_bypass: Option<f64>,
 }
 
 impl<'a> DomainArrays<'a> {
@@ -97,6 +99,7 @@ impl<'a> DomainArrays<'a> {
             month_hours,
             coefficients,
             aggregate_split,
+            recovery_bypass: None,
         }
     }
 
@@ -135,7 +138,12 @@ impl<'a> DomainArrays<'a> {
     }
 
     #[inline]
-    pub fn apply_at(&self, core: &mut Core5R1C, hour: usize) -> KernelResult<StepInputs> {
+    pub fn apply_at(
+        &self,
+        core: &mut Core5R1C,
+        hour: usize,
+        last_power: f64,
+    ) -> KernelResult<StepInputs> {
         let temperature = self.temperatures[hour];
         let gain = self.gains[hour];
         if !self.aggregate_split {
@@ -154,6 +162,14 @@ impl<'a> DomainArrays<'a> {
             + self.coefficients.3 * w.powi(2);
         core.ach_infiltration = self.infiltration[hour] * correction + self.natural[hour];
         core.ach_ventilation = self.ventilation[hour];
+        if let Some(effectiveness) = self.recovery_bypass {
+            // Same rule as `HourlyInputs.at`: recover only when it reduces the load.
+            let t_air = core.state.t_air;
+            let heating = last_power > 0.0 || t_air <= core.t_set_heating + 1e-9;
+            let cooling = last_power < 0.0 || t_air >= core.t_set_cooling - 1e-9;
+            let active = (heating && temperature < t_air) || (cooling && temperature > t_air);
+            core.heat_recovery_efficiency = if active { effectiveness } else { 0.0 };
+        }
         if !core.ach_infiltration.is_finite() || core.ach_infiltration < 0.0 {
             return Err("Hourly infiltration must be finite and nonnegative");
         }
@@ -178,15 +194,17 @@ pub fn run_single_domain(
     let count = arrays.temperatures.len();
     let mut power = Vec::with_capacity(count);
     let mut indoor = Vec::with_capacity(count);
+    let mut last = 0.0;
     for hour in 0..count {
-        let inputs = arrays.apply_at(core, hour)?;
+        let inputs = arrays.apply_at(core, hour, last)?;
         let controls = Thermostat {
             max_heating_power: arrays.heating_limits_w[hour],
             max_cooling_power: arrays.cooling_limits_w[hour],
             t_set_heat: core.t_set_heating,
             t_set_cool: core.t_set_cooling,
         };
-        power.push(core.calc_heating_demand_with_rng(inputs, controls, || Ok(1.0))?);
+        last = core.calc_heating_demand_with_rng(inputs, controls, || Ok(1.0))?;
+        power.push(last);
         indoor.push(core.state.t_air);
     }
     Ok(DomainOutput { power, indoor })

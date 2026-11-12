@@ -84,6 +84,14 @@ def main():
             for g in groups
         }
     lines = [f"# Cooling and heating vs EnergyPlus ({len(rows)} cases)", ""]
+    if all("energyplus_cooling_total_kwh" in r for r in rows):
+        sensible = sum(r[VARIANTS[0]]["cooling"]["reference_kwh"] for r in rows)
+        total = sum(r["energyplus_cooling_total_kwh"] for r in rows)
+        lines += [
+            "Cooling is the EnergyPlus sensible coil energy, the boundary of both RC models.",
+            f"Latent cooling, {1 - sensible / total:.0%} of the E+ total, is excluded.",
+            "",
+        ]
     for quantity in ("cooling", "heating"):
         lines += [
             f"## {quantity.title()}",

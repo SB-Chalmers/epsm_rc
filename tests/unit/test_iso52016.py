@@ -228,3 +228,27 @@ def test_native_kernel_matches_python_recurrence(reference_building, monkeypatch
         np.testing.assert_allclose(
             results[True].hourly[name], results[False].hourly[name], rtol=0, atol=1e-9
         )
+
+
+def test_native_5r1c_bypass_matches_python_recurrence(reference_building, monkeypatch):
+    core = pytest.importorskip("epsm_core")
+    from epsm_rc import iso13790, simulate_building
+
+    pytest.importorskip("epsm_rc._core_rs")
+    weather = core.Weather.from_epw(files("epsm_rc").joinpath("data/epw/goteborg.epw"))
+    settings = RCSettings(
+        airflow_policy="sensible_only_unlimited_supply",
+        ground_policy="conductance_multiplier",
+        heat_recovery_control="load_dependent_bypass",
+    )
+    calls = []
+    original = iso13790._can_use_native
+    monkeypatch.setattr(
+        iso13790, "_can_use_native", lambda *a, **k: calls.append(original(*a, **k)) or calls[-1]
+    )
+    native = simulate_building(reference_building, weather=weather, settings=settings)
+    assert any(calls)  # the native 5R1C recurrence ran
+    monkeypatch.setattr(iso13790, "_can_use_native", lambda *a, **k: False)
+    python = simulate_building(reference_building, weather=weather, settings=settings)
+    for name in ("space_heating_demand_kwh", "cooling_demand_kwh", "indoor_temperature_c"):
+        np.testing.assert_allclose(native.hourly[name], python.hourly[name], rtol=0, atol=1e-9)
