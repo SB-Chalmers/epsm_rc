@@ -201,3 +201,30 @@ def test_recovery_bypass_only_removes_recovery(reference_building):
         # Bypassed hours lose recovery, so heating cannot fall; the heating
         # season keeps recovery, so the change stays small.
         assert old <= new <= 1.1 * old
+
+
+def test_native_kernel_matches_python_recurrence(reference_building, monkeypatch):
+    core = pytest.importorskip("epsm_core")
+    from epsm_rc import _iso52016_platform as adapter
+    from epsm_rc import simulate_building
+
+    if adapter._native_kernel() is None:
+        pytest.skip("native extension without the ISO 52016-1 kernel")
+    weather = core.Weather.from_epw(files("epsm_rc").joinpath("data/epw/goteborg.epw"))
+    settings = RCSettings(
+        thermal_model="iso52016_1_hourly",
+        airflow_policy="sensible_only_unlimited_supply",
+        ground_policy="conductance_multiplier",
+        heat_recovery_control="load_dependent_bypass",
+    )
+    original = adapter.run_zone
+    results = {}
+    for native in (False, True):
+        monkeypatch.setattr(
+            adapter, "run_zone", lambda *a, _n=native, **k: original(*a, native=_n, **k)
+        )
+        results[native] = simulate_building(reference_building, weather=weather, settings=settings)
+    for name in ("space_heating_demand_kwh", "cooling_demand_kwh", "indoor_temperature_c"):
+        np.testing.assert_allclose(
+            results[True].hourly[name], results[False].hourly[name], rtol=0, atol=1e-9
+        )

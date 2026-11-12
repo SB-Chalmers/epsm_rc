@@ -182,22 +182,26 @@ def reduce_elements(elements, attic, settings, ground_reduction, uplifts, elemen
                     notes.append("iso13370_virtual_layer_clamped")
                     virtual = MINIMUM_RESISTANCE_M2_K_W
                 boundary_kind = "ground_monthly"
-            elif method == "prescribed_monthly_temperature":
-                virtual = R_SE
-                boundary_kind = "ground_monthly"
             else:
-                if multiplier <= 0:
+                # Prescribed monthly boundary (b = 1) or outdoor air scaled by b.
+                # Core's ground bridge uplift scales this element's own path, as
+                # in 5R1C, so it reaches the same boundary temperature.
+                b = 1.0 if method == "prescribed_monthly_temperature" else multiplier
+                if b <= 0:
                     boundary_kind = "adiabatic"
                     virtual = None
                 else:
                     u = 1.0 / (R_SI[direction] + resistance + R_SE)
-                    virtual = max(
-                        1.0 / (multiplier * u) - R_SI[direction] - resistance,
-                        MINIMUM_RESISTANCE_M2_K_W,
+                    target = b * u * (1 + uplifts["ground"])
+                    virtual = 1.0 / target - R_SI[direction] - resistance
+                    if virtual < MINIMUM_RESISTANCE_M2_K_W:
+                        notes.append("ground_boundary_resistance_clamped")
+                        virtual = MINIMUM_RESISTANCE_M2_K_W
+                    boundary_kind = (
+                        "ground_monthly"
+                        if method == "prescribed_monthly_temperature"
+                        else "ground_outdoor"
                     )
-                    boundary_kind = "ground_outdoor"
-                bridge_ground = uplifts["ground"] * element.area_m2 * construction.u_value
-                bridge += bridge_ground * multiplier
             resistance_g = max(sum(r for r, _ in layers_g), MINIMUM_RESISTANCE_M2_K_W)
             capacity_g = sum(k for _, k in layers_g)
             mass_class = classify_mass(layers_g)
@@ -295,8 +299,22 @@ def build_zone(domain_inputs):
     return zone, hourly, ground_kinds, notes
 
 
-def run_zone(domain, zone, hourly, ground_kinds, months, monthly_ground, warmup_passes=1):
-    """Run the zone hour by hour from the shared 5R1C forcing (airflow, gains, setpoints)."""
+def _native_kernel():
+    try:
+        from ._core_rs import run_iso52016_hourly
+    except ImportError:
+        return None
+    return run_iso52016_hourly
+
+
+def run_zone(
+    domain, zone, hourly, ground_kinds, months, monthly_ground, warmup_passes=1, native=None
+):
+    """Run the zone hour by hour from the shared 5R1C forcing (airflow, gains, setpoints).
+
+    The Rust kernel is used when installed (``native=None``); ``native=False``
+    selects the Python recurrence, which defines the same arithmetic.
+    """
     forcing = domain.forcing
     model = forcing.model
     count = len(domain.time_axis)
@@ -315,6 +333,21 @@ def run_zone(domain, zone, hourly, ground_kinds, months, monthly_ground, warmup_
     else:
         ground = np.asarray(temperatures, float)
     heating_limits, cooling_limits = domain.heating_limits_w, domain.cooling_limits_w
+    kernel = _native_kernel() if native is not False else None
+    if native and kernel is None:
+        raise ImportError("The native ISO 52016-1 kernel is not installed")
+    if kernel is not None:
+        return _run_native(
+            kernel,
+            zone,
+            forcing,
+            model,
+            absorbed,
+            ground,
+            heating_limits,
+            cooling_limits,
+            warmup_passes,
+        )
 
     class Hours:
         def __len__(self):
@@ -343,3 +376,49 @@ def run_zone(domain, zone, hourly, ground_kinds, months, monthly_ground, warmup_
 
     power, air, operative, _ = simulate_zone(zone, Hours(), warmup_passes=warmup_passes)
     return power, air, operative
+
+
+def _run_native(
+    kernel, zone, forcing, model, absorbed, ground, heating_limits, cooling_limits, warmup
+):
+    """Pass contiguous network and hourly arrays to the Rust recurrence."""
+
+    def column(values):
+        return np.ascontiguousarray(values, dtype=np.float64).ravel()
+
+    built = zone._built
+    network = {
+        name: column(built[name])
+        for name in ("m", "mp", "m_air", "m_hvac", "c_dt", "control", "areas")
+    }
+    network["inner"] = column(built["inner"])
+    hourly = {
+        "theta_e": column(forcing.temperatures),
+        "theta_gr": column(ground),
+        "phi_int": column(forcing.gains),
+        "phi_sol": column(forcing.solar),
+        "absorbed": column(absorbed),
+        "set_heating": column(forcing.heating_setpoints),
+        "set_cooling": column(forcing.cooling_setpoints),
+        "heat_limit": column(heating_limits),
+        "cool_limit": column(cooling_limits),
+        "wind": column(forcing.wind),
+        "infiltration": column(forcing.infiltration),
+        "natural": column(forcing.natural),
+        "ventilation": column(forcing.ventilation),
+    }
+    recovery = (
+        forcing.recovery_effectiveness
+        if forcing.recovery_bypass
+        else float(model.heat_recovery_efficiency)
+    )
+    return kernel(
+        network,
+        hourly,
+        tuple(float(c) for c in forcing.coefficients),
+        float(model._building_vol),
+        float(model.air_volumetric_heat_capacity_j_m3_k),
+        float(recovery),
+        bool(forcing.recovery_bypass),
+        int(warmup),
+    )
