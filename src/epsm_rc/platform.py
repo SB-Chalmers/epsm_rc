@@ -84,6 +84,7 @@ from .options import (
     AirflowPolicy,
     ColdAtticPolicy,
     ContextShading,
+    ContextSkyDiffuse,
     ControlTemperature,
     GroundPolicy,
     HeatRecovery,
@@ -199,6 +200,13 @@ class RCSettings:
         using a representative point and average front-horizon angle per receiver.
         Only direct radiation is reduced. ``reject`` retains an explicit refusal
         of context buildings.
+    context_sky_diffuse : str
+        ``unobstructed`` (default) keeps equation G.3, where neighbours remove
+        direct radiation only. ``isotropic_horizon`` also removes the sky-diffuse
+        radiation hidden behind each receiver's average horizon angle, assuming an
+        isotropic sky and a uniform horizon: the remaining fraction is
+        ``1 - sin(alpha)`` for walls and windows and ``cos(alpha)**2`` for
+        horizontal roofs. This extends ISO 13790, which leaves diffuse unchanged.
     overhang_shading_method : str
         ``iso13790_hourly_overhang`` (default) applies Annex G.5.4.3 equations
         G.4 to G.6 to each window pane below a Core overhang: beam radiation is
@@ -271,6 +279,7 @@ class RCSettings:
     interzone_floor_surface_resistance_m2_k_w: float = 0.27
     context_shading_method: ContextShading = ContextShading.ISO13790_HOURLY_HORIZON
     horizon_azimuth_step_deg: float = 10.0
+    context_sky_diffuse: ContextSkyDiffuse = ContextSkyDiffuse.UNOBSTRUCTED
     overhang_shading_method: OverhangShading = OverhangShading.ISO13790_HOURLY_OVERHANG
     thermal_model: ThermalModel = ThermalModel.ISO52016_1
     control_temperature: ControlTemperature = ControlTemperature.AIR
@@ -286,6 +295,7 @@ class RCSettings:
             ("self_shadowing_policy", SelfShadowingPolicy),
             ("cold_attic_policy", ColdAtticPolicy),
             ("context_shading_method", ContextShading),
+            ("context_sky_diffuse", ContextSkyDiffuse),
             ("overhang_shading_method", OverhangShading),
             ("thermal_model", ThermalModel),
             ("control_temperature", ControlTemperature),
@@ -435,6 +445,7 @@ class RCSettings:
                 "mass_exterior_coupling": "series_inverse_conductance_with_opaque_fallback",
                 "self_shadowing": "geometry_capability_gate_with_explicit_omission",
                 "context_shading": self.context_shading_method,
+                "context_sky_diffuse": self.context_sky_diffuse,
                 "overhang_shading": self.overhang_shading_method,
             },
         }
@@ -493,6 +504,7 @@ class RCSettings:
                 "load_interpolation": "exact_linear_response",
                 "self_shadowing": "geometry_capability_gate_with_explicit_omission",
                 "context_shading": self.context_shading_method,
+                "context_sky_diffuse": self.context_sky_diffuse,
                 "overhang_shading": self.overhang_shading_method,
             },
         }
@@ -1126,7 +1138,12 @@ def _context_horizons(preparation, elements, attic, facades):
             "horizon_average": "uniform_azimuth_midpoints_over_facade_front_half_plane",
             "horizontal_surface_extension": "full_360_degree_average_horizon",
             "inclined_surface_extension": "front_azimuth_half_plane_average_horizon",
-            "diffuse_and_ground_reflection": "unchanged_ISO_horizon_approximation",
+            "diffuse_and_ground_reflection": (
+                "unchanged_ISO_horizon_approximation"
+                if settings.context_sky_diffuse == ContextSkyDiffuse.UNOBSTRUCTED
+                else "sky_diffuse_isotropic_behind_average_horizon_ground_unchanged"
+            ),
+            "sky_diffuse": settings.context_sky_diffuse,
             "self_shadowing_included": False,
             "horizon_angles_deg": {},
         },
@@ -1263,12 +1280,19 @@ def _prepare_radiation(
     horizons, context_shading = _context_horizons(preparation, elements, attic, facades)
     overhangs, overhang_shading = _overhang_shading(preparation)
 
-    def shaded(channels, identifier):
+    sky_diffuse = settings.context_sky_diffuse == ContextSkyDiffuse.ISOTROPIC_HORIZON
+
+    def shaded(channels, identifier, tilt_deg=90.0):
         if not horizons:
             return channels
         from .shading import shade_irradiance
 
-        return shade_irradiance(channels, 90 - zenith, horizons[identifier])
+        return shade_irradiance(
+            channels,
+            90 - zenith,
+            horizons[identifier],
+            tilt_deg=tilt_deg if sky_diffuse else None,
+        )
 
     solar, opaque = np.zeros(len(axis)), np.zeros(len(axis))
     orientation_irradiance = {}
@@ -1316,7 +1340,7 @@ def _prepare_radiation(
 
             channels = prepared("plane_irradiance", radiation_key, calculate_plane, readonly=True)
             orientation_irradiance[orientation] = channels
-        channels = shaded(channels, element.identifier)
+        channels = shaded(channels, element.identifier, orientation[0])
         if role == "WINDOW" and element.identifier in overhangs:
             from .overhang import shade_irradiance as shade_overhang
 
@@ -1393,7 +1417,7 @@ def _prepare_radiation(
                 ),
             )
             orientation_irradiance[orientation] = channels
-        channels = shaded(channels, term["surface_name"])
+        channels = shaded(channels, term["surface_name"], term["tilt_deg"])
         if element_irradiance is not None:
             element_irradiance[("attic", term["surface_name"])] = channels["poa_global"]
         opaque += (
