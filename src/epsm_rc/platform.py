@@ -84,9 +84,11 @@ from .options import (
     AirflowPolicy,
     ColdAtticPolicy,
     ContextShading,
+    ContextSkyDiffuse,
     ControlTemperature,
     GroundPolicy,
     HeatRecovery,
+    OverhangShading,
     SelfShadowingPolicy,
     SolarTime,
     ThermalModel,
@@ -197,7 +199,21 @@ class RCSettings:
         ``iso13790_hourly_horizon`` (default) applies Annex G.5.4.2 equation G.3
         using a representative point and average front-horizon angle per receiver.
         Only direct radiation is reduced. ``reject`` retains an explicit refusal
-        of context buildings. Facade shading details remain unsupported.
+        of context buildings.
+    context_sky_diffuse : str
+        ``unobstructed`` (default) keeps equation G.3, where neighbours remove
+        direct radiation only. ``isotropic_horizon`` also removes the sky-diffuse
+        radiation hidden behind each receiver's average horizon angle, assuming an
+        isotropic sky and a uniform horizon: the remaining fraction is
+        ``1 - sin(alpha)`` for walls and windows and ``cos(alpha)**2`` for
+        horizontal roofs. This extends ISO 13790, which leaves diffuse unchanged.
+    overhang_shading_method : str
+        ``iso13790_hourly_overhang`` (default) applies Annex G.5.4.3 equations
+        G.4 to G.6 to each window pane below a Core overhang: beam radiation is
+        reduced from the solar height and the overhang angle, sky-diffuse
+        radiation by the overhang angle, and ground-reflected radiation is
+        unchanged. ``reject`` refuses overhangs. Reveals, fins and balconies
+        remain unsupported.
     horizon_azimuth_step_deg : float
         Maximum midpoint-quadrature spacing for the average horizon angle,
         between 1 and 30 degrees; default 10. Numerical choice, not an ISO requirement.
@@ -263,6 +279,8 @@ class RCSettings:
     interzone_floor_surface_resistance_m2_k_w: float = 0.27
     context_shading_method: ContextShading = ContextShading.ISO13790_HOURLY_HORIZON
     horizon_azimuth_step_deg: float = 10.0
+    context_sky_diffuse: ContextSkyDiffuse = ContextSkyDiffuse.UNOBSTRUCTED
+    overhang_shading_method: OverhangShading = OverhangShading.ISO13790_HOURLY_OVERHANG
     thermal_model: ThermalModel = ThermalModel.ISO52016_1
     control_temperature: ControlTemperature = ControlTemperature.AIR
     heat_recovery: HeatRecovery = HeatRecovery.WHEN_BENEFICIAL
@@ -277,6 +295,8 @@ class RCSettings:
             ("self_shadowing_policy", SelfShadowingPolicy),
             ("cold_attic_policy", ColdAtticPolicy),
             ("context_shading_method", ContextShading),
+            ("context_sky_diffuse", ContextSkyDiffuse),
+            ("overhang_shading_method", OverhangShading),
             ("thermal_model", ThermalModel),
             ("control_temperature", ControlTemperature),
             ("heat_recovery", HeatRecovery),
@@ -425,6 +445,8 @@ class RCSettings:
                 "mass_exterior_coupling": "series_inverse_conductance_with_opaque_fallback",
                 "self_shadowing": "geometry_capability_gate_with_explicit_omission",
                 "context_shading": self.context_shading_method,
+                "context_sky_diffuse": self.context_sky_diffuse,
+                "overhang_shading": self.overhang_shading_method,
             },
         }
 
@@ -482,6 +504,8 @@ class RCSettings:
                 "load_interpolation": "exact_linear_response",
                 "self_shadowing": "geometry_capability_gate_with_explicit_omission",
                 "context_shading": self.context_shading_method,
+                "context_sky_diffuse": self.context_sky_diffuse,
+                "overhang_shading": self.overhang_shading_method,
             },
         }
 
@@ -812,21 +836,52 @@ def _validate_rc_spec(spec):
         raise ValueError("epsm_rc adapter does not yet support FVP or PV delivery")
 
 
-def _rc_readiness_engine(building, weather):
-    """Retain older Core releases' supported physical handoff for context inputs.
+FACADE_SHADING_RESTRICTION = "epsm_rc does not model explicit facade shading geometry"
+CONTEXT_SHADING_RESTRICTION = "epsm_rc does not model explicit context shading"
 
-    Older Core reports a blanket context restriction because RC did not yet
-    implement shading. RC now owns that capability. Remove only that exact
-    obsolete restriction, requiring all remaining missing/unsupported checks,
-    then use Core's generic physical resolution. New Core keeps its RC route.
-    """
+
+def _overhangs_only(facade):
+    """Whether a facade's shading details are overhangs and nothing RC cannot model."""
+    if facade is None or facade.balconies or facade.reveal_depth_m:
+        return False
+    if any(o.reveal_depth_m for o in facade.overrides):
+        return False
+    return bool(facade.overhang.depth_m) or any(
+        o.overhang is not None and o.overhang.depth_m for o in facade.overrides
+    )
+
+
+def _rc_owned_restrictions(building, settings):
+    """Core readiness messages for capabilities RC itself now implements."""
+    owned = set()
     if building.context.buildings:
+        owned.add(CONTEXT_SHADING_RESTRICTION)
+    if (
+        settings is not None
+        and settings.overhang_shading_method != OverhangShading.REJECT
+        and _overhangs_only(building.facade)
+    ):
+        owned.add(FACADE_SHADING_RESTRICTION)
+    return owned
+
+
+def _rc_readiness_engine(building, weather, settings=None):
+    """Hand Core only the readiness restrictions RC does not implement itself.
+
+    Core reports a blanket restriction for context buildings (older releases)
+    and for facade shading geometry because RC did not model them. RC now owns
+    context shading and, with ``overhang_shading_method`` enabled, overhangs
+    that are the facade's only shading detail. Remove only those exact
+    restrictions, require all remaining missing/unsupported checks, then use
+    Core's generic physical resolution. Otherwise keep Core's RC route.
+    """
+    owned = _rc_owned_restrictions(building, settings)
+    if owned:
         report = building.readiness(engine="epsm_rc", weather=weather)
-        obsolete = "epsm_rc does not model explicit context shading"
-        if obsolete in report.unsupported:
+        if owned & set(report.unsupported):
             replace(
                 report,
-                unsupported=tuple(issue for issue in report.unsupported if issue != obsolete),
+                unsupported=tuple(issue for issue in report.unsupported if issue not in owned),
             ).require()
             return None
     return "epsm_rc"
@@ -920,12 +975,10 @@ def preflight(building, *, weather=None, settings=None):
     report = building.readiness(engine="epsm_rc", weather=weather)
     for field in report.missing:
         issue("missing_input", field, f"Required input is missing: {field}")
+    owned = _rc_owned_restrictions(building, settings)
     for message in report.unsupported:
-        # RC owns the newer context capability while retaining older Core support.
-        if (
-            building.context.buildings
-            and message == "epsm_rc does not model explicit context shading"
-        ):
+        # RC owns context and overhang shading while Core still reports them.
+        if message in owned:
             continue
         issue("unsupported_input", "building", message)
     if weather is None:
@@ -945,7 +998,9 @@ def preflight(building, *, weather=None, settings=None):
             "physical_inputs",
             "building",
             lambda: resolve_snapshot_inputs(
-                building.snapshot(), weather, engine=_rc_readiness_engine(building, weather)
+                building.snapshot(),
+                weather,
+                engine=_rc_readiness_engine(building, weather, settings),
             ),
         )
         if inputs is not None:
@@ -1012,7 +1067,7 @@ def _prepare_building(building, weather, settings, preparation_cache):
     inputs = resolve_snapshot_inputs(
         snapshot,
         weather,
-        engine=_rc_readiness_engine(building, weather),
+        engine=_rc_readiness_engine(building, weather, settings),
         geometry_cache=preparation_cache.geometry_cache if preparation_cache is not None else None,
     )
     weather = weather if isinstance(weather, Weather) else Weather(inputs.spec.climate)
@@ -1083,7 +1138,12 @@ def _context_horizons(preparation, elements, attic, facades):
             "horizon_average": "uniform_azimuth_midpoints_over_facade_front_half_plane",
             "horizontal_surface_extension": "full_360_degree_average_horizon",
             "inclined_surface_extension": "front_azimuth_half_plane_average_horizon",
-            "diffuse_and_ground_reflection": "unchanged_ISO_horizon_approximation",
+            "diffuse_and_ground_reflection": (
+                "unchanged_ISO_horizon_approximation"
+                if settings.context_sky_diffuse == ContextSkyDiffuse.UNOBSTRUCTED
+                else "sky_diffuse_isotropic_behind_average_horizon_ground_unchanged"
+            ),
+            "sky_diffuse": settings.context_sky_diffuse,
             "self_shadowing_included": False,
             "horizon_angles_deg": {},
         },
@@ -1127,6 +1187,39 @@ def _context_horizons(preparation, elements, attic, facades):
         )
         context_shading["horizon_angles_deg"] = dict(horizons)
     return horizons, context_shading
+
+
+def _overhang_shading(preparation):
+    """Per-element ISO 13790 G.5.4.3 overhang panes and their report."""
+    spec, settings = preparation.spec, preparation.settings
+    panes = {}
+    if settings.overhang_shading_method != OverhangShading.REJECT:
+        from .overhang import overhang_panes
+
+        # Angles depend only on the resolved geometry and facade shading inputs.
+        key = {
+            "geometry": spec.geometry.model_dump(mode="json"),
+            "facade": spec.facade.model_dump(mode="json"),
+            "method": settings.overhang_shading_method,
+            "implementation": preparation.implementation,
+        }
+        panes = preparation.prepared(
+            "overhang_panes", key, lambda: overhang_panes(preparation.resolved)
+        )
+    report = {
+        "method": settings.overhang_shading_method,
+        "applied": bool(panes),
+        "standard": "ISO 13790:2008 Annex G.5.4.3, equations G.4 to G.6 (hourly method)",
+        "overhang_angle": "from_pane_mid_height_to_nearest_core_overhang_edge_above",
+        "element_factor": "area_weighted_mean_of_pane_factors",
+        "overhang_width": "infinite_as_in_standard_side_extension_not_resolved",
+        "ground_reflection": "unchanged",
+        "receivers": "windows_only",
+        "overhang_angles_deg": {
+            element: [round(alpha, 6) for _, alpha in rows] for element, rows in panes.items()
+        },
+    }
+    return panes, report
 
 
 def _prepare_radiation(
@@ -1185,13 +1278,21 @@ def _prepare_radiation(
     dni, dhi = data["dni"], data["dhi"]
     facades = {f.facade_id: f for f in facade_catalog(spec.geometry)}
     horizons, context_shading = _context_horizons(preparation, elements, attic, facades)
+    overhangs, overhang_shading = _overhang_shading(preparation)
 
-    def shaded(channels, identifier):
+    sky_diffuse = settings.context_sky_diffuse == ContextSkyDiffuse.ISOTROPIC_HORIZON
+
+    def shaded(channels, identifier, tilt_deg=90.0):
         if not horizons:
             return channels
         from .shading import shade_irradiance
 
-        return shade_irradiance(channels, 90 - zenith, horizons[identifier])
+        return shade_irradiance(
+            channels,
+            90 - zenith,
+            horizons[identifier],
+            tilt_deg=tilt_deg if sky_diffuse else None,
+        )
 
     solar, opaque = np.zeros(len(axis)), np.zeros(len(axis))
     orientation_irradiance = {}
@@ -1239,7 +1340,11 @@ def _prepare_radiation(
 
             channels = prepared("plane_irradiance", radiation_key, calculate_plane, readonly=True)
             orientation_irradiance[orientation] = channels
-        channels = shaded(channels, element.identifier)
+        channels = shaded(channels, element.identifier, orientation[0])
+        if role == "WINDOW" and element.identifier in overhangs:
+            from .overhang import shade_irradiance as shade_overhang
+
+            channels = shade_overhang(channels, 90 - zenith, overhangs[element.identifier])
         poa = channels["poa_global"]
         if element_irradiance is not None and role != "WINDOW":
             element_irradiance[element.identifier] = poa
@@ -1312,7 +1417,7 @@ def _prepare_radiation(
                 ),
             )
             orientation_irradiance[orientation] = channels
-        channels = shaded(channels, term["surface_name"])
+        channels = shaded(channels, term["surface_name"], term["tilt_deg"])
         if element_irradiance is not None:
             element_irradiance[("attic", term["surface_name"])] = channels["poa_global"]
         opaque += (
@@ -1324,7 +1429,7 @@ def _prepare_radiation(
         radiation_hourly["sky_radiation_loss_w"] = np.full(
             len(axis), model.calc_sky_radiation_loss()
         )
-    return solar, opaque, radiation_hourly, times, context_shading
+    return solar, opaque, radiation_hourly, times, context_shading, overhang_shading
 
 
 @dataclass(frozen=True)
@@ -1729,7 +1834,7 @@ def _prepare_domain(preparation, *, domain=None):
     )
     iso52016_model = settings.thermal_model == ThermalModel.ISO52016_1
     element_irradiance = {} if iso52016_model else None
-    solar, opaque, radiation_hourly, times, context_shading = _prepare_radiation(
+    solar, opaque, radiation_hourly, times, context_shading, overhang_shading = _prepare_radiation(
         preparation, model, scope.elements, attic, areas, optical_models, element_irradiance
     )
     model.t_m = model.t_air = model.t_s = float(heat_set[0])
@@ -1741,6 +1846,7 @@ def _prepare_domain(preparation, *, domain=None):
         axis=preparation.axis,
         convective_gains=convective_gains,
         context_shading=context_shading,
+        overhang_shading=overhang_shading,
         domain=domain,
         effective_configuration=effective_configuration,
         elements=scope.elements,

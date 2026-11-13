@@ -75,6 +75,7 @@ def finish_domain(
     axis,
     convective_gains,
     context_shading,
+    overhang_shading,
     domain,
     effective_configuration,
     elements,
@@ -183,6 +184,7 @@ def finish_domain(
         "ground_reduction": ground_reduction,
         "self_shadowing": self_shadowing,
         "context_shading": context_shading,
+        "overhang_shading": overhang_shading,
         "attic_reduction": attic.diagnostics,
         "approximations": [
             "One aggregated conditioned thermal domain",
@@ -244,6 +246,7 @@ class DomainReduction:
     axis: object
     convective_gains: object
     context_shading: object
+    overhang_shading: object
     domain: object
     effective_configuration: object
     elements: object

@@ -1,3 +1,28 @@
+# Release 0.12.1 — overhang shading and sky-diffuse context obstruction (13 November 2026)
+
+Overhangs above windows are supported. `overhang_shading_method` (enum
+`OverhangShading`, default `"iso13790_hourly_overhang"`) applies the hourly
+method of ISO 13790:2008 Annex G.5.4.3, equations G.4 to G.6, to each window
+pane below a Core overhang. Direct radiation is reduced from the solar height
+and the overhang angle, and sky-diffuse radiation by the overhang angle;
+ground-reflected radiation is unchanged. It works with both thermal models, and
+diagnostics report the angles under `overhang_shading`. Buildings without
+overhangs give bit-identical results. Previously RC rejected any overhang;
+`"reject"` keeps that. Reveals, fins and balconies remain unsupported. See
+[radiation](docs/radiation.md#overhang-shading). `epsm_rc.simulate_building` and
+`preflight` accept overhangs now; a platform call that asks Core's readiness first
+(`epsm.Building.simulate(engine="epsm_rc")`) stops there unless Core 0.10.1 or later lifts its
+facade-shading restriction for RC. In three Swedish climates the overhang changes
+heating and cooling in the same direction as EnergyPlus in every case
+(`benchmarks/iso52016/results/overhang_summary.md`).
+
+`context_sky_diffuse` (enum `ContextSkyDiffuse`) adds an opt-in
+`"isotropic_horizon"`: context buildings then also hide sky-diffuse radiation
+behind each receiver's average horizon angle (`1 − sin α` for walls and windows,
+`cos² α` for roofs), assuming an isotropic sky. ISO 13790 G.3 reduces direct
+radiation only, so the default `"unobstructed"` keeps that rule and gives
+bit-identical results. See [radiation](docs/radiation.md#context-building-shading).
+
 # Release 0.12.0 — ISO 52016-1 model and named defaults matching EnergyPlus
 
 **Default results change.** `RCSettings()` now selects the options that agreed

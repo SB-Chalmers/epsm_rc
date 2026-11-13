@@ -169,6 +169,20 @@ class ContextShading(_Choice):
     REJECT = "reject"
 
 
+class ContextSkyDiffuse(_Choice):
+    """Whether context buildings also hide diffuse sky radiation."""
+
+    UNOBSTRUCTED = "unobstructed"
+    ISOTROPIC_HORIZON = "isotropic_horizon"
+
+
+class OverhangShading(_Choice):
+    """Shading from horizontal overhangs above windows."""
+
+    ISO13790_HOURLY_OVERHANG = "iso13790_hourly_overhang"
+    REJECT = "reject"
+
+
 # Former named profiles, kept only so older scripts still run.
 LEGACY_PROFILES = {
     "epsm_rc_5r1c_v1": dict(
@@ -189,9 +203,11 @@ __all__ = [
     "AirflowPolicy",
     "ColdAtticPolicy",
     "ContextShading",
+    "ContextSkyDiffuse",
     "ControlTemperature",
     "GroundPolicy",
     "HeatRecovery",
+    "OverhangShading",
     "SelfShadowingPolicy",
     "SolarTime",
     "ThermalModel",

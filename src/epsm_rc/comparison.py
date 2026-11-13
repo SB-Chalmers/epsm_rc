@@ -145,7 +145,9 @@ def prepare_engine_comparison(
     captured = snapshot.to_building()
     weather = weather if isinstance(weather, Weather) else Weather.from_epw(weather)
     weather.validate()
-    captured.readiness(engine=_rc_readiness_engine(captured, weather), weather=weather).require()
+    captured.readiness(
+        engine=_rc_readiness_engine(captured, weather, settings), weather=weather
+    ).require()
     spec = captured.to_spec(weather)
     if spec.context.buildings and settings.context_shading_method == "reject":
         raise ValueError(
