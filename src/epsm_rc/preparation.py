@@ -1,9 +1,45 @@
 # File: preparation.py
 # Purpose: Caller-owned bounded reuse of RC preparation, never thermal states.
 # SPDX-License-Identifier: MIT
-# License: MIT; see the project-root LICENSE.
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
 # Date created: 2026-10-18
-"""Explicit sequential preparation reuse for independent RC simulations."""
+
+"""Explicit sequential preparation reuse for independent RC simulations.
+
+Notes
+-----
+The cache shares weather and radiation preparation (and, separately,
+geometry) between runs on the same weather; see ``PreparationCache`` for the
+keys and limits. Thermal state is never cached, so every run starts fresh.
+
+Examples
+--------
+Example::
+
+    from importlib.resources import files
+    from epsm_core import Building, Weather
+    from epsm_rc import RCSettings, simulate_building
+
+    weather = Weather.from_epw(files("epsm_rc") / "data/epw/goteborg.epw")
+    settings = RCSettings(
+        airflow_policy="sensible_only_unlimited_supply",
+        ground_policy="conductance_multiplier",
+    )
+    building = Building(preset="illustrative-reference")
+    from epsm_rc import PreparationCache
+
+    cache = PreparationCache(max_entries=8)
+    for storeys_variant in (building, building):
+        simulate_building(
+            storeys_variant, weather=weather, settings=settings, preparation_cache=cache
+        )
+"""
 
 from __future__ import annotations
 

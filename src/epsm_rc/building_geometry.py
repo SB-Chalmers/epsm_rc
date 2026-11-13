@@ -1,9 +1,15 @@
-# File: src/epsm_rc/building_geometry.py
+# File: building_geometry.py
 # Purpose: Compatibility inspection and authoring through Core geometry.
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 EPSM Development contributors
-# License: See LICENSE at the project root.
-# Date modified: 2026-10-20
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 # Changelog:
 #   2026-10-20 - Document explicit inputs, units, mutation and I/O boundaries.
 """Compatibility conveniences backed by Core geometry and window placement.
@@ -12,6 +18,22 @@ Heights and WWR are explicit inputs. This module supplies no constructions,
 glazing, HVAC or operation assumptions. Core loads only when authoring geometry;
 install the platform extra to use these entry points. EnergyPlus export belongs
 to Core's EnergyPlusCompiler rather than the retired legacy surface emitter.
+
+Notes
+-----
+``BuildingGeometry`` keeps vertices, storeys and window-to-wall ratios and
+converts them to Core with ``to_core_building``; physical inputs then come from
+Core like any other Building.
+
+Examples
+--------
+Example::
+
+    from epsm_rc.building_geometry import BuildingGeometry
+
+    geometry = BuildingGeometry.from_rectangle(20, 10, num_floors=3, floor_height=3.0)
+    geometry.set_wwr_uniform(0.25)
+    geometry.floor_area  # m², all storeys
 """
 
 from __future__ import annotations

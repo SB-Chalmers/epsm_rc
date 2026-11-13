@@ -1,8 +1,15 @@
-# File: benchmarks/run.py
+# File: run.py
 # Purpose: Installed-wheel numerical regressions and reproducible annual timings.
 # SPDX-License-Identifier: MIT
-# License: MIT; see the project-root LICENSE.
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
 # Date created: 2026-10-18
+
 """Compare explicit physical fixtures using separately installed RC wheels.
 
 Run from a source checkout with an installed package; no source directories are

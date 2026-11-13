@@ -1,8 +1,42 @@
 # File: _results.py
 # Purpose: Assemble owned RC numerical outputs and inspectable assumptions.
 # SPDX-License-Identifier: MIT
-# License: MIT; see the project-root LICENSE.
-"""Result accounting has no file access; the caller owns optional output writing."""
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
+"""Result accounting has no file access; the caller owns optional output writing.
+
+Notes
+-----
+``finish_domain`` turns hourly HVAC power and air temperature of one
+prepared domain into a ``SimulationResult``: demand and delivered energy in
+kWh, airflow and fan energy, diagnostics and the run identity. It performs no
+file access; ``simulate_building`` writes optional output afterwards.
+
+Examples
+--------
+Example::
+
+    from importlib.resources import files
+    from epsm_core import Building, Weather
+    from epsm_rc import RCSettings, simulate_building
+
+    weather = Weather.from_epw(files("epsm_rc") / "data/epw/goteborg.epw")
+    settings = RCSettings(
+        airflow_policy="sensible_only_unlimited_supply",
+        ground_policy="conductance_multiplier",
+    )
+    building = Building(preset="illustrative-reference")
+
+    result = simulate_building(building, weather=weather, settings=settings)
+    annual = result.scalars["space_heating_demand_kwh"]  # summed by finish_domain
+"""
 
 from dataclasses import asdict, dataclass, fields
 

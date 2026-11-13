@@ -1,3 +1,15 @@
+# File: test_sensible_recovery.py
+# Purpose: Sensible recovery applies once to mechanical flow, with natural flows unrecovered.
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 """Sensible recovery applies once to mechanical flow, with natural flows unrecovered."""
 
 from importlib.resources import files

@@ -1,3 +1,15 @@
+# File: test_radiation_engine_comparison.py
+# Purpose: Required real annual comparison of v1/v2 radiation from the same captured inputs.
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 """Required real annual comparison of v1/v2 radiation from the same captured inputs."""
 
 import json

@@ -1,9 +1,34 @@
+# File: coupled.py
+# Purpose: Conservative two-domain hourly control for main space and a heated basement.
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 """Conservative two-domain hourly control for main space and a heated basement.
 
+Notes
+-----
 Each domain keeps its own 5R1C storage and controls. The physical separating floor
 provides a symmetric air-node conductance. Linear response trials start from the
 same previous state; only the final coupled solution advances thermal storage.
+
+Examples
+--------
+Example::
+
+    from epsm_rc.coupled import solve_controls
+
+    step = solve_controls(
+        free_c=[18.0, 15.0], response_k_w=[1e-3, 2e-3], conductance_w_k=50.0,
+        heat_c=[20.0, 18.0], cool_c=[26.0, 26.0],
+    )
+    step.temperature_c  # both domains held at their heating setpoints
 """
 
 from dataclasses import dataclass

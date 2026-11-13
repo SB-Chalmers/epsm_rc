@@ -1,4 +1,15 @@
+# File: attic.py
+# Purpose: Cold attics resolved from Core's physical shell.
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 """Cold attics resolved from Core's physical shell.
 
 Core owns all areas, ownership, geometry and declared outdoor exchange. Two
@@ -17,6 +28,16 @@ Notes
 -----
 EnergyPlus models the attic the same way as ``unconditioned_zone``: a zone
 without HVAC whose roof, gables and ceiling are heat-balance surfaces.
+
+Examples
+--------
+Example::
+
+    building.unconditioned_exchange = (
+        UnconditionedExchangeSpec(zone_kind="attic", outdoor_air_ach=0.5, source="..."),
+    )
+    result = simulate_building(building, weather=weather, settings=RCSettings())
+    result.hourly["attic_air_temperature_c"]
 """
 
 from dataclasses import dataclass

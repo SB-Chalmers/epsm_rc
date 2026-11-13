@@ -1,8 +1,41 @@
+# File: _forcing.py
+# Purpose: Owned hourly forcing and prepared-domain records shared by RC execution paths.
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 """Owned hourly forcing and prepared-domain records shared by RC execution paths.
 
+Notes
+-----
 This leaf module has no package imports, so the single-domain adapter and the
 coupled-domain runner can both depend on it without importing each other.
+
+Examples
+--------
+Example::
+
+    from importlib.resources import files
+    from epsm_core import Building, Weather
+    from epsm_rc import RCSettings, simulate_building
+
+    weather = Weather.from_epw(files("epsm_rc") / "data/epw/goteborg.epw")
+    settings = RCSettings(
+        airflow_policy="sensible_only_unlimited_supply",
+        ground_policy="conductance_multiplier",
+    )
+    building = Building(preset="illustrative-reference")
+    from epsm_rc.platform import _prepare_building, _prepare_domain
+
+    domain = _prepare_domain(_prepare_building(building, weather, settings, None))
+    first_hour = domain.forcing.at(0)  # keyword inputs of one 5R1C step
+    assert domain.heating_limits_w[0] >= 0
 """
 
 from collections.abc import Callable

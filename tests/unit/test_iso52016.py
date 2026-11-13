@@ -1,3 +1,15 @@
+# File: test_iso52016.py
+# Purpose: ISO 52016-1 zone network: balances, limits and the shared-Building selection.
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-11-12
+
 """ISO 52016-1 zone network: balances, limits and the shared-Building selection."""
 
 from importlib.resources import files

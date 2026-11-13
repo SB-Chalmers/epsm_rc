@@ -1,5 +1,19 @@
+# File: ground.py
+# Purpose: Explicit ISO 13370 ground coefficients and a monthly boundary approximation.
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 """Explicit ISO 13370 ground coefficients and a monthly boundary approximation.
 
+Notes
+-----
 Steady slab and heated-basement coefficients follow ISO 13370:2017, 7.1/7.3.
 Periodic coefficients use the all-over-insulation formulae in Annex H (Annex F,
 F.4/F.7 in the 2007 edition). No edge insulation, moving groundwater, unheated
@@ -14,6 +28,20 @@ is an equivalent environment temperature, not a measured soil temperature.
 
 Sources: https://www.iso.org/standard/65716.html ; ISO 13370:2007 F.4/F.7;
 https://www.gov.uk/government/publications/home-energy-model-technical-documentation
+
+Examples
+--------
+Example::
+
+    from epsm_rc.ground import ground_coefficients, monthly_ground_temperatures
+
+    slab = ground_coefficients(
+        area_m2=100, exposed_perimeter_m=40, wall_thickness_m=0.3,
+        floor_resistance_m2k_w=3.0, soil_conductivity_w_mk=2.0,
+        soil_volumetric_heat_capacity_j_m3k=2.0e6,
+    )
+    outdoor = [-2, -2, 1, 6, 11, 15, 17, 16, 12, 8, 3, 0]
+    boundary = monthly_ground_temperatures(slab, outdoor, [20.0] * 12)
 """
 
 from __future__ import annotations

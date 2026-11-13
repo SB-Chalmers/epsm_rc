@@ -8,9 +8,9 @@
 # Computational Sustainable Design Group
 # Research Area of Sustainable Built Environments
 # Chalmers University of Technology, Gothenburg
-# Research attribution: Existing numerical solver credits are retained in iso13790.py.
 # Date created: 2026-10-14
-# Date modified: 2026-11-13
+
+# Research attribution: Existing numerical solver credits are retained in iso13790.py.
 # Changelog:
 #   2026-11-13 - Named option enums with EnergyPlus-matching defaults; ISO 52016-1
 #                model; heat recovery only when beneficial.
@@ -19,6 +19,8 @@
 #   2026-10-14 - Use the common solver with sensible recovery applied once.
 """Reduce a Core Building to independent hourly ISO 52016-1 or 5R1C evaluations.
 
+Notes
+-----
 The reduction prepares each conditioned thermal domain once. Material
 inventory remains in Core; only transport/storage equivalents enter this model.
 Solar radiation uses actual facade azimuths and Perez irradiance with the supplied
@@ -31,6 +33,24 @@ Self-shadowing for courtyards, concave footprints or multiple parts requires an
 explicit omission policy, reported in diagnostics and calculation identity.
 Weather is read explicitly; optional output writes hourly arrays. No catalogue loads occur
 on import. Sensible recovery uses the common standalone solver implementation.
+
+Examples
+--------
+Example::
+
+    from importlib.resources import files
+    from epsm_core import Building, Weather
+    from epsm_rc import RCSettings, simulate_building
+
+    weather = Weather.from_epw(files("epsm_rc") / "data/epw/goteborg.epw")
+    settings = RCSettings(
+        airflow_policy="sensible_only_unlimited_supply",
+        ground_policy="conductance_multiplier",
+    )
+    building = Building(preset="illustrative-reference")
+
+    result = simulate_building(building, weather=weather, settings=settings)
+    result.scalars["space_heating_demand_kwh"]
 """
 
 from __future__ import annotations

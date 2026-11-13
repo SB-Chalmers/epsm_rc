@@ -1,3 +1,15 @@
+# File: test_annual_engine_integration.py
+# Purpose: Release gate: real annual engines consume one explicit physical snapshot.
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 """Release gate: real annual engines consume one explicit physical snapshot."""
 
 import os

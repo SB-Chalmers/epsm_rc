@@ -18,6 +18,12 @@ conditioned domain. Only the thermal network differs: elements keep their own
 node chains instead of the single 5R1C mass node, and the zones of one
 building form one network.
 
+Notes
+-----
+Results add ``attic_air_temperature_c`` and, with a basement,
+``interzone_heat_to_main_w``/``interzone_heat_to_basement_w``. The Rust kernel
+(``run_iso52016_network``) runs the same recurrence when installed.
+
 Zones
 -----
 - ``main``: the conditioned aggregate above grade.

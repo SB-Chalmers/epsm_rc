@@ -1,11 +1,21 @@
 # File: optics.py
 # Purpose: Explicit simple-glazing angular optics for reduced thermal models.
-# SPDX-License-Identifier: MIT AND LicenseRef-EnergyPlus-24.2
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
 # Date created: 2026-10-18
+
 # Correlations adapted from EnergyPlus version 24.2 Material.cc and WindowManager.cc.
 # Upstream copyright and complete terms are retained in notices/EnergyPlus.txt.
 """Nominal angular heat gains from supplied U-value and normal-incidence SHGC.
 
+Notes
+-----
 The model follows EnergyPlus version 24.2's equivalent-layer and 28-cell angular
 correlations, including its summer-film interpolation. It retains the nominal
 inward-flowing fraction at every angle. This is an explicit reduced approximation:
@@ -16,6 +26,16 @@ integrate that same piecewise-linear model exactly over an isotropic hemisphere;
 this conserves optical energy rather than copying the source's coarse quadrature.
 Perez sky and ground diffuse use that hemispherical optical response. No measured
 angular performance, detailed sky radiance or frame geometry is inferred.
+
+Examples
+--------
+Example::
+
+    import numpy as np
+    from epsm_rc.optics import SimpleGlazingOptics
+
+    glazing = SimpleGlazingOptics(u_value_w_m2k=1.2, shgc=0.5)
+    transmitted, reflected, absorbed = glazing.beam_properties(np.array([0.0, 60.0]))
 
 References
 ----------

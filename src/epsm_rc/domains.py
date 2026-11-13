@@ -1,10 +1,31 @@
+# File: domains.py
+# Purpose: Prepare and combine coupled main/conditioned-basement 5R1C domains.
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 """Prepare and combine coupled main/conditioned-basement 5R1C domains.
 
+Notes
+-----
 Domain use, airflow, reference areas and schedules come from Core's public
 resolved snapshot. A physical internal floor is installed once: its existing
 room-side active capacity is shared equally between the two reduced domains.
 The layer resistance plus declared combined surface resistance connects air nodes.
+
+Examples
+--------
+See ``docs/roofs-and-basements.md`` for a complete building::
+
+    building.zone_uses = (ZoneUseSpec(zone_kind="basement", use=basement_use, source="..."),)
+    result = simulate_building(building, weather=weather, settings=settings)
+    result.hourly["basement_indoor_temperature_c"]
 """
 
 import hashlib

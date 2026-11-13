@@ -12,6 +12,8 @@
 
 """Named choices for ``RCSettings``.
 
+Notes
+-----
 Each choice is a string enum, so ``RCSettings(window_optics="angular")`` and
 ``RCSettings(window_optics=WindowOptics.ANGULAR)`` are equivalent, and
 ``list(WindowOptics)`` lists the options. Defaults are the options that agreed

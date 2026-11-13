@@ -12,6 +12,8 @@
 
 """ISO 52016-1 hourly multi-zone model with element node chains.
 
+Notes
+-----
 Each construction element is a chain of nodes: five for opaque elements and two
 for windows (Clause 6.5.7). Every thermal zone has one air node holding air and
 furniture capacity. Inside surfaces exchange long-wave radiation through an
