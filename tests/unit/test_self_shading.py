@@ -158,3 +158,27 @@ def test_own_geometry_reduces_solar_in_both_models(
     solar = [np.sum(r.hourly["window_solar_heat_gain_w"]) for r in (ignored, shaded)]
     assert solar[1] < solar[0]
     assert shaded.scalars["space_heating_demand_kwh"] >= ignored.scalars["space_heating_demand_kwh"]
+
+
+def test_native_kernels_match_numpy_reference():
+    from epsm_rc import self_shading
+
+    if self_shading._native() is None:
+        pytest.skip("native extension not built")
+    rng = np.random.default_rng(7)
+    points = rng.uniform(0, 20, (40, 3))
+    starts = rng.uniform(0, 20, (60, 3))
+    ends = starts + rng.uniform(-8, 8, (60, 3))
+    edges = (starts, ends)
+    native = horizon_profiles(points, edges, native=True)
+    reference = horizon_profiles(points, edges, native=False)
+    np.testing.assert_allclose(native, reference, rtol=0, atol=1e-9)
+    altitude = rng.uniform(-20, 70, 500)
+    azimuth = rng.uniform(0, 360, 500)
+    weights = rng.uniform(0.5, 2, len(points))
+    np.testing.assert_allclose(
+        sunlit_fraction(native, weights, altitude, azimuth, native=True),
+        sunlit_fraction(reference, weights, altitude, azimuth, native=False),
+        rtol=0,
+        atol=1e-12,
+    )

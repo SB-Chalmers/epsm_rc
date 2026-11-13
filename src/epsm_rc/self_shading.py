@@ -175,25 +175,8 @@ def sample_points(vertices, spacing_m=SAMPLE_SPACING_M, max_per_axis=MAX_SAMPLES
     return points[0] + np.outer(gu, u) + np.outer(gv, v) + NORMAL_OFFSET_M * normal
 
 
-def horizon_profiles(points, edges, step_deg=AZIMUTH_STEP_DEG):
-    """Highest obstacle elevation, in degrees, seen from each point per azimuth.
-
-    Parameters
-    ----------
-    points : numpy.ndarray
-        Receiving points, shape ``(n, 3)``.
-    edges : tuple of numpy.ndarray
-        Occluder ``(starts, ends)`` from :func:`occluder_edges`.
-    step_deg : float
-        Azimuth spacing; azimuths are ``0, step, ...`` clockwise from north.
-
-    Returns
-    -------
-    numpy.ndarray
-        Shape ``(n, 360 / step)``, nonnegative. Along a vertical half-plane the
-        elevation of a straight edge segment is monotonic, so the maximum over
-        edge crossings is the maximum over the obstacle faces.
-    """
+def _horizon_profiles_numpy(points, edges, step_deg=AZIMUTH_STEP_DEG):
+    """NumPy reference implementation of :func:`horizon_profiles`."""
     starts, ends = edges
     count = int(round(360.0 / step_deg))
     profiles = np.zeros((len(points), count))
@@ -227,17 +210,50 @@ def horizon_profiles(points, edges, step_deg=AZIMUTH_STEP_DEG):
     return profiles
 
 
-def _profile_at(profiles, azimuth_deg, step_deg=AZIMUTH_STEP_DEG):
-    """Periodic linear interpolation of profiles at hourly sun azimuths."""
-    count = profiles.shape[1]
-    position = np.mod(np.asarray(azimuth_deg, dtype=float), 360.0) / step_deg
-    low = np.floor(position).astype(int) % count
-    high = (low + 1) % count
-    weight = position - np.floor(position)
-    return profiles[:, low] * (1 - weight) + profiles[:, high] * weight
+def _native():
+    """The native kernels, or ``None`` when the extension is absent."""
+    try:
+        from . import _core_rs
+    except ImportError:
+        return None
+    if not hasattr(_core_rs, "self_shading_horizon_profiles"):
+        return None
+    return _core_rs
 
 
-def sunlit_fraction(profiles, weights, solar_altitude_deg, solar_azimuth_deg):
+def horizon_profiles(points, edges, step_deg=AZIMUTH_STEP_DEG, *, native=None):
+    """Highest obstacle elevation, in degrees, seen from each point per azimuth.
+
+    Parameters
+    ----------
+    points : numpy.ndarray
+        Receiving points, shape ``(n, 3)``.
+    edges : tuple of numpy.ndarray
+        Occluder ``(starts, ends)`` from :func:`occluder_edges`.
+    step_deg : float
+        Azimuth spacing; azimuths are ``0, step, ...`` clockwise from north.
+    native : bool or None
+        ``None`` uses the Rust kernel when installed, ``False`` forces NumPy,
+        ``True`` requires the kernel.
+
+    Returns
+    -------
+    numpy.ndarray
+        Shape ``(n, 360 / step)``, nonnegative.
+    """
+    kernel = _native() if native is not False else None
+    if native and kernel is None:
+        raise RuntimeError("The native self-shading kernel is not installed")
+    if kernel is None:
+        return _horizon_profiles_numpy(points, edges, step_deg)
+    count = int(round(360.0 / step_deg))
+    points = np.ascontiguousarray(points, dtype=float).reshape(-1, 3)
+    starts, ends = (np.ascontiguousarray(e, dtype=float).reshape(-1, 3) for e in edges)
+    flat = kernel.self_shading_horizon_profiles(points.ravel(), starts.ravel(), ends.ravel(), count)
+    return np.asarray(flat).reshape(len(points), count)
+
+
+def sunlit_fraction(profiles, weights, solar_altitude_deg, solar_azimuth_deg, *, native=None):
     """Area-weighted share of sample points with the sun above their profile.
 
     Parameters
@@ -248,14 +264,44 @@ def sunlit_fraction(profiles, weights, solar_altitude_deg, solar_azimuth_deg):
         Area weight of each point.
     solar_altitude_deg, solar_azimuth_deg : numpy.ndarray
         Hourly solar position.
+    native : bool or None
+        As for :func:`horizon_profiles`.
 
     Returns
     -------
     numpy.ndarray
-        Hourly sunlit fraction in ``[0, 1]``. Where the sun is behind the
-        receiver the plane irradiance carries no beam, so the value there does
-        not matter.
+        Hourly sunlit fraction in ``[0, 1]``; 1 at night.
     """
+    kernel = _native() if native is not False else None
+    if native and kernel is None:
+        raise RuntimeError("The native self-shading kernel is not installed")
+    if kernel is None:
+        return _sunlit_fraction_numpy(profiles, weights, solar_altitude_deg, solar_azimuth_deg)
+    profiles = np.ascontiguousarray(profiles, dtype=float)
+    return np.asarray(
+        kernel.self_shading_sunlit_fraction(
+            profiles.ravel(),
+            np.ascontiguousarray(weights, dtype=float),
+            np.ascontiguousarray(solar_altitude_deg, dtype=float),
+            np.ascontiguousarray(solar_azimuth_deg, dtype=float),
+            profiles.shape[1],
+            360.0 / profiles.shape[1],
+        )
+    )
+
+
+def _profile_at(profiles, azimuth_deg, step_deg=AZIMUTH_STEP_DEG):
+    """Periodic linear interpolation of profiles at hourly sun azimuths."""
+    count = profiles.shape[1]
+    position = np.mod(np.asarray(azimuth_deg, dtype=float), 360.0) / step_deg
+    low = np.floor(position).astype(int) % count
+    high = (low + 1) % count
+    weight = position - np.floor(position)
+    return profiles[:, low] * (1 - weight) + profiles[:, high] * weight
+
+
+def _sunlit_fraction_numpy(profiles, weights, solar_altitude_deg, solar_azimuth_deg):
+    """NumPy reference implementation of :func:`sunlit_fraction`."""
     weights = np.asarray(weights, dtype=float) / np.sum(weights)
     altitude = np.asarray(solar_altitude_deg, dtype=float)
     azimuth = np.asarray(solar_azimuth_deg, dtype=float)

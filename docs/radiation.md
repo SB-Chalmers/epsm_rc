@@ -248,7 +248,10 @@ EnergyPlus without reflection calculations. The method shares the solar
 preparation step, so the ISO 52016-1 and ISO 13790 5R1C models both use it, and
 it combines with context-building shading and overhangs.
 
-Profiles depend only on geometry and are cached by `PreparationCache`. A
+Profiles depend only on geometry and are cached by `PreparationCache`. The
+profile and hourly lookup loops run in the native extension when it is built
+(`rust/src/self_shading.rs`), with the NumPy implementation as the tested
+reference and fallback; a six-storey courtyard building adds about 0.3 s. A
 building that cannot shade itself (one convex part, no courtyard) skips the
 calculation, so its results are bit-identical under every policy. Against
 EnergyPlus `FullExterior` polygon clipping on L, U and courtyard buildings the
