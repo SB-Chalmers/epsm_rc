@@ -42,8 +42,6 @@ def test_each_run_prepares_one_snapshot_graph_and_weather(basement, monkeypatch)
     count(platform, "read_epw", "weather")
     before = building.snapshot().sha256
     settings = RCSettings(
-        # ISO 52016-1 does not yet support conditioned basements.
-        thermal_model="iso13790_5r1c" if basement else "iso52016_1",
         airflow_policy="sensible_only_unlimited_supply",
         ground_policy="conductance_multiplier",
     )

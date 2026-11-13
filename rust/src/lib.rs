@@ -15,7 +15,7 @@
 //! - `iso13790`: the ISO 13790 5R1C zone and thermostat.
 //! - `domain` and `coupled`: the platform hourly loops for one domain and for
 //!   a main zone coupled to a conditioned basement.
-//! - `iso52016`: the ISO 52016-1 multi-node recurrence.
+//! - `iso52016`: the ISO 52016-1 multi-zone, multi-node recurrence.
 //! - `bindings` and `bindings52016`: NumPy and model conversion at the boundary.
 //!
 //! Every kernel mirrors a Python implementation and is tested against it; the
@@ -39,7 +39,7 @@ fn _core_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(bindings::run_single_domain_hourly, m)?)?;
     m.add_function(wrap_pyfunction!(bindings::solve_controls_rs, m)?)?;
     m.add_function(wrap_pyfunction!(bindings::run_coupled_domains_hourly, m)?)?;
-    m.add_function(wrap_pyfunction!(bindings52016::run_iso52016_hourly, m)?)?;
+    m.add_function(wrap_pyfunction!(bindings52016::run_iso52016_network, m)?)?;
     m.add("NATIVE_BASE_PARAMETERS", bindings::BASE_PARAMETERS.to_vec())?;
     m.add(
         "NATIVE_PREPARED_PARAMETERS",

@@ -10,18 +10,27 @@
 # Chalmers University of Technology, Gothenburg
 # Date created: 2026-11-12
 
-"""ISO 52016-1 hourly zone model with element node chains.
+"""ISO 52016-1 hourly multi-zone model with element node chains.
 
 Each construction element is a chain of nodes: five for opaque elements and two
-for windows (Clause 6.5.7). The air node holds air and furniture capacity. Inside
-surfaces exchange long-wave radiation through an area-weighted mean radiant
-temperature, and exterior nodes receive absorbed solar and the sky term.
+for windows (Clause 6.5.7). Every thermal zone has one air node holding air and
+furniture capacity. Inside surfaces exchange long-wave radiation through an
+area-weighted mean radiant temperature of their own zone, and exterior nodes
+receive absorbed solar and the sky term.
+
+Several zones form one network (Clause 6.5.5.1 multi-zone method). An element
+between two zones, such as the floor over a conditioned basement or the
+ceiling under a cold attic, has its inner surface node in one zone and its
+outer surface node in the other. Unconditioned zones have no HVAC and float.
 
 Each hour is solved implicitly (backward Euler). The network is linear, so the
-free-floating state and the response to unit HVAC power give the exact
-thermostat power directly; this is the same linear interpolation as Clause 6.5.5.2.
-The matrix changes hourly only through the ventilation conductance on the air
-node. It is factorised once and updated with a rank-one (Sherman-Morrison) correction.
+free-floating state and the response to unit HVAC power in each zone give the
+exact thermostat powers directly; for one zone this is the linear
+interpolation of Clause 6.5.5.2. Coupled thermostats are solved by finding the
+consistent active set (free, at a setpoint, or at a capacity limit per zone).
+The matrix changes hourly only through the ventilation conductance on each air
+node. It is factorised once and updated with the Woodbury identity, which is
+Sherman-Morrison for a single zone.
 
 Conventional values follow Table 25 (surface coefficients) and Annex B (gain
 fractions, internal capacity). Interpretations of ambiguous text are listed in
@@ -34,6 +43,17 @@ Examples
 >>> zone = Zone52016((wall,), floor_area_m2=10.0, air_volume_m3=25.0)
 >>> zone.steady_conductance_w_k() > 0
 True
+
+Two zones joined by a floor; the lower zone is unconditioned:
+
+>>> floor = ZoneElement("floor", 50.0, "opaque", "zone", "downwards", 1.0, 1e5, "D",
+...                     zone=0, adjacent_zone=1, adjacent_direction="downwards")
+>>> roof = ZoneElement("roof", 50.0, "opaque", "exterior", "upwards", 4.0, 1e5, "D")
+>>> wall = ZoneElement("wall", 40.0, "opaque", "exterior", "horizontal", 2.0, 1e5, "D", zone=1)
+>>> network = Network52016((floor, roof, wall),
+...     (ThermalZone("room", 50.0, 125.0), ThermalZone("crawl", 50.0, 50.0, conditioned=False)))
+>>> network.zone_count
+2
 """
 
 from __future__ import annotations
@@ -62,7 +82,7 @@ SOIL_CONDUCTIVITY_W_M_K = 2.0
 SOIL_VOLUMETRIC_CAPACITY_J_M3_K = 2.0e6
 MASS_CLASSES = frozenset({"I", "E", "IE", "D", "M"})
 DIRECTIONS = frozenset(H_CI)
-BOUNDARIES = frozenset({"exterior", "ground", "adiabatic"})
+BOUNDARIES = frozenset({"exterior", "ground", "adiabatic", "zone"})
 TIMESTEP_S = 3600.0
 
 
@@ -105,7 +125,7 @@ def classify_mass(layers) -> str:
 
 @dataclass(frozen=True)
 class ZoneElement:
-    """One construction element facing the zone.
+    """One construction element facing a zone.
 
     Parameters
     ----------
@@ -115,17 +135,18 @@ class ZoneElement:
         Positive area.
     kind : {'opaque', 'window'}
         Opaque elements use five nodes; windows use two nodes without capacity.
-    boundary : {'exterior', 'ground', 'adiabatic'}
+    boundary : {'exterior', 'ground', 'adiabatic', 'zone'}
         Exterior faces outdoor air and sky; ground faces a monthly boundary through
-        ``boundary_resistance_m2_k_w``; adiabatic has no heat flow on the outer face.
+        ``boundary_resistance_m2_k_w``; adiabatic has no heat flow on the outer face;
+        zone puts the outer surface node in ``adjacent_zone``.
     direction : {'upwards', 'horizontal', 'downwards'}
-        Internal heat-flow direction selecting Table 25 ``h_ci``.
+        Heat-flow direction at the inner surface selecting Table 25 ``h_ci``.
     resistance_m2_k_w : float
         Thermal resistance between the two surface nodes, R_c.
     capacity_j_m2_k : float
         Areal heat capacity κ_m of the element (ignored for windows).
     mass_class : str
-        Clause 6.5.7.2 class I, E, IE, D or M.
+        Clause 6.5.7.2 class I, E, IE, D or M. The outer node is the first node.
     solar_absorptance : float
         Exterior solar absorptance of opaque elements.
     sky_view_factor : float
@@ -135,6 +156,12 @@ class ZoneElement:
     outdoor_resistance_m2_k_w : float
         Exterior: additional resistance in series with the exterior films, used
         only by caller-selected conductance approximations; default 0.
+    zone : int
+        Index of the zone that the inner surface node faces.
+    adjacent_zone : int or None
+        Zone boundary only: index of the zone that the outer surface node faces.
+    adjacent_direction : str or None
+        Zone boundary only: heat-flow direction at the outer surface.
     """
 
     name: str
@@ -149,6 +176,9 @@ class ZoneElement:
     sky_view_factor: float = 0.0
     boundary_resistance_m2_k_w: float | None = None
     outdoor_resistance_m2_k_w: float = 0.0
+    zone: int = 0
+    adjacent_zone: int | None = None
+    adjacent_direction: str | None = None
 
     def __post_init__(self):
         if not np.isfinite(self.area_m2) or self.area_m2 <= 0:
@@ -171,6 +201,13 @@ class ZoneElement:
             raise ValueError(f"{self.name}: ground elements need a positive boundary resistance")
         if self.kind == "window" and self.boundary != "exterior":
             raise ValueError(f"{self.name}: windows must face the exterior")
+        if self.boundary == "zone":
+            if self.adjacent_zone is None or self.adjacent_zone == self.zone:
+                raise ValueError(f"{self.name}: a zone boundary needs a different adjacent zone")
+            if self.adjacent_direction not in DIRECTIONS:
+                raise ValueError(f"{self.name}: unknown adjacent direction")
+        elif self.adjacent_zone is not None:
+            raise ValueError(f"{self.name}: only zone boundaries have an adjacent zone")
 
     @property
     def node_count(self) -> int:
@@ -189,7 +226,11 @@ class ZoneElement:
         return mass_distribution(self.mass_class, self.capacity_j_m2_k)
 
     def outer_conductance(self) -> float:
-        """Conductance per area from the outer node to its boundary temperature."""
+        """Conductance per area from the outer node to its boundary temperature.
+
+        Zone boundaries return 0: their outer node couples to a zone's air and
+        surfaces inside the network instead.
+        """
         if self.boundary == "exterior":
             return 1.0 / (1.0 / (H_CE + H_RE) + self.outdoor_resistance_m2_k_w)
         if self.boundary == "ground":
@@ -197,7 +238,7 @@ class ZoneElement:
         return 0.0
 
     def u_value(self) -> float:
-        """Steady transmittance including Table 25 films (and ground layers)."""
+        """Steady transmittance to outdoors or ground including Table 25 films."""
         outer = self.outer_conductance()
         if outer == 0:
             return 0.0
@@ -205,9 +246,412 @@ class ZoneElement:
         return 1.0 / (1.0 / h_si + self.resistance_m2_k_w + 1.0 / outer)
 
 
+@dataclass(frozen=True)
+class ThermalZone:
+    """Air volume and operating role of one zone in a :class:`Network52016`.
+
+    Parameters
+    ----------
+    name : str
+        Identifier for diagnostics and results.
+    floor_area_m2, air_volume_m3 : float
+        Used for internal capacity and air capacity.
+    conditioned : bool
+        Unconditioned zones receive no HVAC power and float freely.
+    thermal_bridge_w_k : float
+        Linear/point bridge conductance H_tb from outdoor air to this air node.
+    internal_capacity_j_m2_k : float
+        Furniture and internal capacity per floor area on the air node.
+    control : {'operative', 'air'}
+        Controlled temperature; the standard controls operative temperature.
+    """
+
+    name: str
+    floor_area_m2: float
+    air_volume_m3: float
+    conditioned: bool = True
+    thermal_bridge_w_k: float = 0.0
+    internal_capacity_j_m2_k: float = INTERNAL_CAPACITY_J_M2_K
+    control: str = "operative"
+
+    def __post_init__(self):
+        if self.control not in {"operative", "air"}:
+            raise ValueError("control must be 'operative' or 'air'")
+        for name in ("floor_area_m2", "air_volume_m3"):
+            if not np.isfinite(getattr(self, name)) or getattr(self, name) <= 0:
+                raise ValueError(f"{name} must be positive")
+        if not np.isfinite(self.thermal_bridge_w_k) or self.thermal_bridge_w_k < 0:
+            raise ValueError("thermal_bridge_w_k must be nonnegative")
+        if not np.isfinite(self.internal_capacity_j_m2_k) or self.internal_capacity_j_m2_k < 0:
+            raise ValueError("internal_capacity_j_m2_k must be nonnegative")
+
+
+# Order of the thermostat modes tried per zone. The first consistent combination
+# is used, so a zone heats or cools only when floating would leave its band.
+_MODES = ("free", "heat", "heat_limit", "cool", "cool_limit")
+
+
+def solve_thermostats(free, gain, set_heating, set_cooling, heat_limit, cool_limit, tol=1e-7):
+    """Return HVAC powers (W) that make coupled zone thermostats consistent.
+
+    The control temperatures are ``free + gain @ power``. Each zone is free
+    (zero power, temperature inside its band), at a setpoint (power within its
+    capacity) or at a capacity limit (temperature on the far side of the
+    setpoint). Zones whose limits are both zero stay free. Combinations are
+    tried in a fixed order and the first consistent one is returned; for one
+    zone this is the linear interpolation of ISO 52016-1 Clause 6.5.5.2.
+    """
+    free = np.asarray(free, float)
+    count = len(free)
+    options = []
+    for i in range(count):
+        modes = ["free"]
+        if heat_limit[i] > 0:
+            modes += ["heat"] + (["heat_limit"] if np.isfinite(heat_limit[i]) else [])
+        if cool_limit[i] < 0:
+            modes += ["cool"] + (["cool_limit"] if np.isfinite(cool_limit[i]) else [])
+        options.append(modes)
+    for combination in _combinations(options):
+        power = np.zeros(count)
+        target = [i for i, mode in enumerate(combination) if mode in {"heat", "cool"}]
+        for i, mode in enumerate(combination):
+            if mode == "heat_limit":
+                power[i] = heat_limit[i]
+            elif mode == "cool_limit":
+                power[i] = cool_limit[i]
+        if target:
+            rest = free + gain @ power
+            setpoint = np.array(
+                [set_heating[i] if combination[i] == "heat" else set_cooling[i] for i in target]
+            )
+            power[target] = np.linalg.solve(gain[np.ix_(target, target)], setpoint - rest[target])
+        temperature = free + gain @ power
+        if all(
+            _consistent(
+                combination[i],
+                temperature[i],
+                power[i],
+                set_heating[i],
+                set_cooling[i],
+                heat_limit[i],
+                cool_limit[i],
+                tol,
+            )
+            for i in range(count)
+        ):
+            # Within tolerance a held setpoint can overshoot a limit by rounding only.
+            power = np.minimum(np.maximum(power, cool_limit), heat_limit)
+            return power, temperature
+    raise ValueError("No consistent ISO 52016-1 thermostat state")
+
+
+def _combinations(options):
+    if not options:
+        yield ()
+        return
+    for first in options[0]:
+        for rest in _combinations(options[1:]):
+            yield (first, *rest)
+
+
+def _consistent(mode, temperature, power, heating, cooling, heat_limit, cool_limit, tol):
+    if mode == "free":
+        return not (heat_limit > 0 and temperature < heating) and not (
+            cool_limit < 0 and temperature > cooling
+        )
+    if mode == "heat":
+        return -tol <= power <= heat_limit * (1 + tol) + tol
+    if mode == "cool":
+        return cool_limit * (1 + tol) - tol <= power <= tol
+    if mode == "heat_limit":
+        return temperature <= heating + tol
+    return temperature >= cooling - tol
+
+
+class Network52016:
+    """Zones and elements assembled into one ISO 52016-1 node network.
+
+    Parameters
+    ----------
+    elements : sequence of ZoneElement
+        Each element's ``zone`` (and ``adjacent_zone``) index into ``zones``.
+    zones : sequence of ThermalZone
+    zone_bridges : sequence of (int, int, float)
+        Thermal-bridge conductances (W/K) between two zone air nodes.
+    air_volumetric_heat_capacity_j_m3_k : float
+    f_int_c, f_sol_c, f_hc_c : float
+        Convective fractions of internal gains, window solar and HVAC power.
+    delta_theta_er_k : float
+        Mean difference between outdoor air and apparent sky temperature.
+
+    Notes
+    -----
+    Nodes: one air node per zone (in zone order), then each element's chain,
+    outer node first. Forcing columns: outdoor air, sky constant, then per zone
+    ground boundary temperature, internal gains and window solar, then absorbed
+    solar per element (W/m²). See :meth:`forcing_vector`.
+    """
+
+    def __init__(
+        self,
+        elements,
+        zones,
+        *,
+        zone_bridges=(),
+        air_volumetric_heat_capacity_j_m3_k=1200.0,
+        f_int_c=F_INT_C,
+        f_sol_c=F_SOL_C,
+        f_hc_c=F_HC_C,
+        delta_theta_er_k=DELTA_THETA_ER_K,
+    ):
+        self.elements = tuple(elements)
+        self.zones = tuple(zones)
+        self.zone_bridges = tuple((int(i), int(j), float(h)) for i, j, h in zone_bridges)
+        self.air_volumetric_heat_capacity_j_m3_k = air_volumetric_heat_capacity_j_m3_k
+        self.f_int_c, self.f_sol_c, self.f_hc_c = f_int_c, f_sol_c, f_hc_c
+        self.delta_theta_er_k = delta_theta_er_k
+        if not self.zones:
+            raise ValueError("An ISO 52016-1 network needs at least one zone")
+        for name in ("f_int_c", "f_sol_c", "f_hc_c"):
+            if not 0 <= getattr(self, name) <= 1:
+                raise ValueError(f"{name} must be in [0, 1]")
+        z = len(self.zones)
+        for element in self.elements:
+            if not 0 <= element.zone < z or (
+                element.adjacent_zone is not None and not 0 <= element.adjacent_zone < z
+            ):
+                raise ValueError(f"{element.name}: zone index out of range")
+        for i, j, h in self.zone_bridges:
+            if not (0 <= i < z and 0 <= j < z and i != j) or not np.isfinite(h) or h < 0:
+                raise ValueError("Zone bridges need two distinct zones and nonnegative W/K")
+        for index in range(z):
+            if not any(e.zone == index or e.adjacent_zone == index for e in self.elements):
+                raise ValueError(f"Zone {self.zones[index].name!r} has no elements")
+        self._build()
+
+    @property
+    def zone_count(self) -> int:
+        return len(self.zones)
+
+    @property
+    def node_count(self) -> int:
+        return self._built["n"]
+
+    @property
+    def column_count(self) -> int:
+        return 2 + 3 * self.zone_count + len(self.elements)
+
+    # ------------------------------------------------------------------ assembly
+    def _build(self):
+        """Assemble the constant matrix A0 (W/K) and forcing maps; all equations in W."""
+        elements, zones = self.elements, self.zones
+        z = len(zones)
+        offsets, n = [], z
+        for element in elements:
+            offsets.append(n)
+            n += element.node_count
+        inner = np.array([o + e.node_count - 1 for o, e in zip(offsets, elements)], dtype=int)
+        outer = np.array(offsets, dtype=int)
+        # Surfaces facing each zone: (node, area, direction).
+        faces = [[] for _ in zones]
+        for element, i_node, o_node in zip(elements, inner, outer):
+            faces[element.zone].append((i_node, element.area_m2, element.direction))
+            if element.boundary == "zone":
+                faces[element.adjacent_zone].append(
+                    (o_node, element.area_m2, element.adjacent_direction)
+                )
+        capacity = np.zeros(n)
+        a = np.zeros((n, n))
+        p = np.zeros((n, self.column_count))
+        hvac = np.zeros((n, z))
+        control = np.zeros((z, n))
+        operative = np.zeros((z, n))
+        for index, zone in enumerate(zones):
+            capacity[index] = (
+                self.air_volumetric_heat_capacity_j_m3_k * zone.air_volume_m3
+                + zone.internal_capacity_j_m2_k * zone.floor_area_m2
+            )
+            a[index, index] += zone.thermal_bridge_w_k
+            p[index, 0] += zone.thermal_bridge_w_k
+            p[index, 3 + 3 * index] += self.f_int_c
+            p[index, 4 + 3 * index] += self.f_sol_c
+            if zone.conditioned:
+                hvac[index, index] = self.f_hc_c
+            nodes = np.array([node for node, _, _ in faces[index]], dtype=int)
+            areas = np.array([area for _, area, _ in faces[index]])
+            a_tot = areas.sum()
+            for node, area, direction in faces[index]:
+                # Convection to the zone air and radiation to its mean radiant temperature.
+                h_ci = H_CI[direction]
+                a[node, node] += area * (h_ci + H_RI)
+                a[index, index] += area * h_ci
+                a[node, index] -= area * h_ci
+                a[index, node] -= area * h_ci
+                a[node, nodes] -= H_RI * area * areas / a_tot
+                share = area / a_tot
+                p[node, 3 + 3 * index] += (1 - self.f_int_c) * share
+                p[node, 4 + 3 * index] += (1 - self.f_sol_c) * share
+                if zone.conditioned:
+                    hvac[node, index] += (1 - self.f_hc_c) * share
+            operative[index, index] = 0.5
+            operative[index, nodes] += 0.5 * areas / a_tot
+            if zone.control == "air":
+                control[index, index] = 1.0
+            else:
+                control[index] = operative[index]
+        for i, j, h in self.zone_bridges:
+            a[i, i] += h
+            a[j, j] += h
+            a[i, j] -= h
+            a[j, i] -= h
+        for index, (element, start) in enumerate(zip(elements, offsets)):
+            area = element.area_m2
+            capacity[start : start + element.node_count] += area * element.nodal_capacities()
+            for k, h in enumerate(element.internal_conductances()):
+                i, j = start + k, start + k + 1
+                a[i, i] += area * h
+                a[j, j] += area * h
+                a[i, j] -= area * h
+                a[j, i] -= area * h
+            h_out = element.outer_conductance()
+            a[start, start] += area * h_out
+            if element.boundary == "exterior":
+                p[start, 0] += area * h_out
+                p[start, 1] -= area * element.sky_view_factor * H_RE * self.delta_theta_er_k
+                if element.kind == "opaque":
+                    p[start, 2 + 3 * z + index] = area * element.solar_absorptance
+            elif element.boundary == "ground":
+                p[start, 2 + 3 * element.zone] += area * h_out
+        c_dt = capacity / TIMESTEP_S
+        a0 = a + np.diag(c_dt)
+        m = np.linalg.inv(a0)
+        air = np.arange(z)
+        self._built = {
+            "n": n,
+            "z": z,
+            "a": a,
+            "a0": a0,
+            "m": m,
+            "p": p,
+            "mp": m @ p,
+            "m_air": m[:, air].copy(),
+            "hvac": hvac,
+            "m_hvac": m @ hvac,
+            "c_dt": c_dt,
+            "control": control,
+            "operative": operative,
+            "inner": inner,
+            "outer": outer,
+            "faces": faces,
+        }
+
+    def steady_conductance_w_k(self) -> float:
+        """Steady transmission conductance to outdoor air and ground (no ventilation)."""
+        return float(
+            sum(e.area_m2 * e.u_value() for e in self.elements)
+            + sum(zone.thermal_bridge_w_k for zone in self.zones)
+        )
+
+    # ------------------------------------------------------------------ stepping
+    def forcing_vector(self, theta_e, theta_gr, phi_int, phi_sol, absorbed_w_m2):
+        """Pack one hour of forcing; ``theta_gr``, ``phi_int``, ``phi_sol`` are per zone."""
+        per_zone = np.column_stack(
+            [
+                np.broadcast_to(np.asarray(v, float), (self.zone_count,))
+                for v in (theta_gr, phi_int, phi_sol)
+            ]
+        ).ravel()
+        return np.concatenate(([theta_e, 1.0], per_zone, absorbed_w_m2))
+
+    def step(self, state, forcing, h_ve, set_heating, set_cooling, heat_limit, cool_limit):
+        """Advance one hour; returns (new state, HVAC power, air, operative), per zone in W/°C.
+
+        ``h_ve`` holds each zone's ventilation conductance (W/K) to outdoor air at
+        ``forcing[0]``. Cooling limits are nonpositive; heating is positive power.
+        """
+        built = self._built
+        h_ve = np.asarray(h_ve, float)
+        theta_e = forcing[0]
+        m_air = built["m_air"]
+        y = built["m"] @ (built["c_dt"] * state) + built["mp"] @ forcing + m_air @ (h_ve * theta_e)
+        z = built["z"]
+        # Woodbury: (A0 + U D Uᵀ)⁻¹ = M − M U (I + D Uᵀ M U)⁻¹ D Uᵀ M, U = air selectors.
+        s = np.eye(z) + h_ve[:, None] * m_air[:z]
+        free = y - m_air @ np.linalg.solve(s, h_ve * y[:z])
+        hvac = built["m_hvac"]
+        response = hvac - m_air @ np.linalg.solve(s, h_ve[:, None] * hvac[:z])
+        control = built["control"]
+        power, _ = solve_thermostats(
+            control @ free,
+            control @ response,
+            np.asarray(set_heating, float),
+            np.asarray(set_cooling, float),
+            np.asarray(heat_limit, float),
+            np.asarray(cool_limit, float),
+        )
+        new = free + response @ power if power.any() else free
+        return new, power, new[:z].copy(), built["operative"] @ new
+
+    def initial_state(self, temperature: float) -> np.ndarray:
+        return np.full(self.node_count, float(temperature))
+
+    def interface_heat_w(self, state, element_index):
+        """Heat (W) conducted through an element's middle link towards its inner face."""
+        element = self.elements[element_index]
+        start = self._built["outer"][element_index]
+        middle = element.node_count // 2
+        h = element.internal_conductances()[middle - 1] * element.area_m2
+        return float(h * (state[start + middle - 1] - state[start + middle]))
+
+    def summary(self) -> dict:
+        """Detached description of the assembled network."""
+        return {
+            "method": "iso52016_1",
+            "node_count": self.node_count,
+            "element_count": len(self.elements),
+            "zones": [
+                {
+                    "name": zone.name,
+                    "conditioned": zone.conditioned,
+                    "control": zone.control,
+                    "air_node_capacity_j_k": float(self._built["c_dt"][index] * TIMESTEP_S),
+                    "floor_area_m2": zone.floor_area_m2,
+                    "air_volume_m3": zone.air_volume_m3,
+                }
+                for index, zone in enumerate(self.zones)
+            ],
+            "convective_fractions": {
+                "internal": self.f_int_c,
+                "solar": self.f_sol_c,
+                "hvac": self.f_hc_c,
+            },
+            "steady_transmission_w_k": self.steady_conductance_w_k(),
+            "elements": [
+                {
+                    "name": e.name,
+                    "zone": self.zones[e.zone].name,
+                    "adjacent_zone": (
+                        None if e.adjacent_zone is None else self.zones[e.adjacent_zone].name
+                    ),
+                    "area_m2": e.area_m2,
+                    "kind": e.kind,
+                    "boundary": e.boundary,
+                    "direction": e.direction,
+                    "resistance_m2_k_w": e.resistance_m2_k_w,
+                    "capacity_j_m2_k": e.capacity_j_m2_k,
+                    "mass_class": e.mass_class,
+                    "u_value_w_m2_k": e.u_value(),
+                }
+                for e in self.elements
+            ],
+        }
+
+
 @dataclass
 class Zone52016:
     """Single conditioned zone assembled from elements (ISO 52016-1 Clause 6.5).
+
+    A one-zone :class:`Network52016` with scalar forcing and results.
 
     Parameters
     ----------
@@ -238,208 +682,105 @@ class Zone52016:
     f_hc_c: float = F_HC_C
     control: str = "operative"
     delta_theta_er_k: float = DELTA_THETA_ER_K
-    _built: dict = field(default=None, init=False, repr=False)
+    network: Network52016 = field(default=None, init=False, repr=False)
 
     def __post_init__(self):
         self.elements = tuple(self.elements)
         if not self.elements:
             raise ValueError("An ISO 52016-1 zone needs at least one element")
-        if self.control not in {"operative", "air"}:
-            raise ValueError("control must be 'operative' or 'air'")
-        for name in ("f_int_c", "f_sol_c", "f_hc_c"):
-            value = getattr(self, name)
-            if not 0 <= value <= 1:
-                raise ValueError(f"{name} must be in [0, 1]")
-        for name in ("floor_area_m2", "air_volume_m3"):
-            if not np.isfinite(getattr(self, name)) or getattr(self, name) <= 0:
-                raise ValueError(f"{name} must be positive")
-        if not np.isfinite(self.thermal_bridge_w_k) or self.thermal_bridge_w_k < 0:
-            raise ValueError("thermal_bridge_w_k must be nonnegative")
-        self._build()
-
-    # ------------------------------------------------------------------ assembly
-    def _build(self):
-        """Assemble the constant matrix A0 (W/K) and forcing maps; all equations in W."""
-        elements = self.elements
-        offsets, n = [], 1
-        for element in elements:
-            offsets.append(n)
-            n += element.node_count
-        inner = np.array([o + e.node_count - 1 for o, e in zip(offsets, elements)])
-        outer = np.array(offsets)
-        areas = np.array([e.area_m2 for e in elements])
-        a_tot = areas.sum()
-        capacity = np.zeros(n)
-        capacity[0] = (
-            self.air_volumetric_heat_capacity_j_m3_k * self.air_volume_m3
-            + self.internal_capacity_j_m2_k * self.floor_area_m2
+        if any(e.boundary == "zone" or e.zone != 0 for e in self.elements):
+            raise ValueError("A single zone cannot hold zone-boundary elements; use Network52016")
+        self.network = Network52016(
+            self.elements,
+            (
+                ThermalZone(
+                    "zone",
+                    self.floor_area_m2,
+                    self.air_volume_m3,
+                    thermal_bridge_w_k=self.thermal_bridge_w_k,
+                    internal_capacity_j_m2_k=self.internal_capacity_j_m2_k,
+                    control=self.control,
+                ),
+            ),
+            air_volumetric_heat_capacity_j_m3_k=self.air_volumetric_heat_capacity_j_m3_k,
+            f_int_c=self.f_int_c,
+            f_sol_c=self.f_sol_c,
+            f_hc_c=self.f_hc_c,
+            delta_theta_er_k=self.delta_theta_er_k,
         )
-        a = np.zeros((n, n))
-        # Forcing columns: outdoor air, ground boundary, internal gains, window
-        # solar, HVAC, sky constant (per unit 1) and absorbed solar per element.
-        columns = ["theta_e", "theta_gr", "phi_int", "phi_sol", "sky"]
-        p = np.zeros((n, len(columns) + len(elements)))
-        a[0, 0] += self.thermal_bridge_w_k
-        p[0, 0] += self.thermal_bridge_w_k
-        p[0, 2] += self.f_int_c
-        p[0, 3] += self.f_sol_c
-        hvac = np.zeros(n)
-        hvac[0] = self.f_hc_c
-        for index, (element, start) in enumerate(zip(elements, offsets)):
-            area = element.area_m2
-            capacity[start : start + element.node_count] += area * element.nodal_capacities()
-            for k, h in enumerate(element.internal_conductances()):
-                i, j = start + k, start + k + 1
-                a[i, i] += area * h
-                a[j, j] += area * h
-                a[i, j] -= area * h
-                a[j, i] -= area * h
-            # Outer face.
-            h_out = element.outer_conductance()
-            a[start, start] += area * h_out
-            if element.boundary == "exterior":
-                p[start, 0] += area * h_out
-                p[start, 4] -= area * element.sky_view_factor * H_RE * self.delta_theta_er_k
-                if element.kind == "opaque":
-                    p[start, len(columns) + index] = area * element.solar_absorptance
-            elif element.boundary == "ground":
-                p[start, 1] += area * h_out
-            # Inner face: convection to air and radiation to the mean radiant temperature.
-            s = start + element.node_count - 1
-            h_ci = H_CI[element.direction]
-            a[s, s] += area * h_ci
-            a[0, 0] += area * h_ci
-            a[s, 0] -= area * h_ci
-            a[0, s] -= area * h_ci
-            a[s, s] += area * H_RI
-            a[s, inner] -= H_RI * area * areas / a_tot
-            share = area / a_tot
-            p[s, 2] += (1 - self.f_int_c) * share
-            p[s, 3] += (1 - self.f_sol_c) * share
-            hvac[s] += (1 - self.f_hc_c) * share
-        c_dt = capacity / TIMESTEP_S
-        a0 = a + np.diag(c_dt)
-        m = np.linalg.inv(a0)
-        control = np.zeros(n)
-        if self.control == "air":
-            control[0] = 1.0
-        else:
-            control[0] = 0.5
-            control[inner] += 0.5 * areas / a_tot
-        self._built = {
-            "n": n,
-            "a": a,
-            "a0": a0,
-            "m": m,
-            "mp": m @ p,
-            "m_air": m[:, 0].copy(),
-            "m_hvac": m @ hvac,
-            "c_dt": c_dt,
-            "control": control,
-            "inner": inner,
-            "outer": outer,
-            "areas": areas,
-            "n_columns": len(columns),
-        }
+
+    @property
+    def _built(self):
+        return self.network._built
 
     @property
     def node_count(self) -> int:
-        return self._built["n"]
+        return self.network.node_count
 
     def steady_conductance_w_k(self) -> float:
-        """Steady transmission conductance to outdoor air and ground (no ventilation)."""
-        return float(sum(e.area_m2 * e.u_value() for e in self.elements) + self.thermal_bridge_w_k)
+        return self.network.steady_conductance_w_k()
 
-    # ------------------------------------------------------------------ stepping
     def forcing_vector(self, theta_e, theta_gr, phi_int, phi_sol, absorbed_w_m2):
-        """Pack one hour of forcing in the column order used by ``_build``."""
-        return np.concatenate(([theta_e, theta_gr, phi_int, phi_sol, 1.0], absorbed_w_m2))
+        """Pack one hour of forcing in the network column order."""
+        return self.network.forcing_vector(theta_e, theta_gr, phi_int, phi_sol, absorbed_w_m2)
 
     def step(self, state, forcing, h_ve, set_heating, set_cooling, heat_limit, cool_limit):
-        """Advance one hour; returns (new state, HVAC power W, air, operative).
-
-        ``h_ve`` is the hour's ventilation conductance (W/K) to outdoor air at
-        ``theta_e``. ``cool_limit`` is nonpositive. Heating is positive power.
-        """
-        built = self._built
-        theta_e = forcing[0]
-        y = built["m"] @ (built["c_dt"] * state) + built["mp"] @ forcing
-        y += built["m_air"] * (h_ve * theta_e)
-        m_air = built["m_air"]
-        denominator = 1.0 + h_ve * m_air[0]
-        free = y - m_air * (h_ve * y[0] / denominator)
-        hvac = built["m_hvac"]
-        response = hvac - m_air * (h_ve * hvac[0] / denominator)
-        control = built["control"]
-        free_control = control @ free
-        gain = control @ response
-        power = 0.0
-        if free_control < set_heating and heat_limit > 0:
-            power = min((set_heating - free_control) / gain, heat_limit)
-        elif free_control > set_cooling and cool_limit < 0:
-            power = max((set_cooling - free_control) / gain, cool_limit)
-        new = free + power * response if power else free
-        operative = 0.5 * new[0] + 0.5 * float(
-            built["areas"] @ new[built["inner"]] / built["areas"].sum()
+        """Advance one hour; returns (new state, HVAC power W, air, operative)."""
+        new, power, air, operative = self.network.step(
+            state, forcing, [h_ve], [set_heating], [set_cooling], [heat_limit], [cool_limit]
         )
-        return new, power, float(new[0]), operative
+        return new, float(power[0]), float(air[0]), float(operative[0])
 
     def initial_state(self, temperature: float) -> np.ndarray:
-        return np.full(self.node_count, float(temperature))
+        return self.network.initial_state(temperature)
 
     def surface_temperatures(self, state) -> np.ndarray:
         return np.asarray(state)[self._built["inner"]]
 
     def summary(self) -> dict:
-        """Detached description of the assembled network."""
-        return {
-            "method": "iso52016_1",
-            "node_count": self.node_count,
-            "element_count": len(self.elements),
-            "control": self.control,
-            "convective_fractions": {
-                "internal": self.f_int_c,
-                "solar": self.f_sol_c,
-                "hvac": self.f_hc_c,
-            },
-            "air_node_capacity_j_k": float(self._built["c_dt"][0] * TIMESTEP_S),
-            "steady_transmission_w_k": self.steady_conductance_w_k(),
-            "elements": [
-                {
-                    "name": e.name,
-                    "area_m2": e.area_m2,
-                    "kind": e.kind,
-                    "boundary": e.boundary,
-                    "direction": e.direction,
-                    "resistance_m2_k_w": e.resistance_m2_k_w,
-                    "capacity_j_m2_k": e.capacity_j_m2_k,
-                    "mass_class": e.mass_class,
-                    "u_value_w_m2_k": e.u_value(),
-                }
-                for e in self.elements
-            ],
-        }
+        summary = self.network.summary()
+        summary["control"] = self.control
+        return summary
+
+
+def simulate_network(network: Network52016, hours, *, warmup_passes: int = 1):
+    """Run hourly inputs through a network, optionally repeating the year to warm up.
+
+    ``hours`` is a callable ``hours(index, air_temperatures, last_powers)`` returning
+    ``(forcing, h_ve, set_heating, set_cooling, heat_limit, cool_limit)`` with
+    per-zone arrays, and supports ``len``. ``air_temperatures`` is None before the
+    first hour. The state starts at the first zone's first heating setpoint.
+    Returns per-zone power, air and operative arrays (hours × zones) and the state.
+    """
+    count, z = len(hours), network.zone_count
+    state, last = None, np.zeros(z)
+    for _ in range(warmup_passes + 1):
+        power, air, operative = (np.zeros((count, z)) for _ in range(3))
+        for hour in range(count):
+            inputs = hours(hour, None if state is None else state[:z].copy(), last)
+            if state is None:
+                state = network.initial_state(np.asarray(inputs[2], float)[0])
+            state, power[hour], air[hour], operative[hour] = network.step(state, *inputs)
+            last = power[hour]
+    return power, air, operative, state
 
 
 def simulate_zone(zone: Zone52016, hours, *, warmup_passes: int = 1):
-    """Run a sequence of hourly inputs, optionally repeating the year to warm up.
+    """Single-zone form of :func:`simulate_network` with scalar inputs and outputs.
 
-    ``hours`` is a callable ``hours(index, air_temperature, last_power)`` returning
-    ``(forcing, h_ve, set_heating, set_cooling, heat_limit, cool_limit)``
-    and a count attribute ``len``. Returns power, air, operative and the final state.
+    ``hours(index, air_temperature, last_power)`` returns
+    ``(forcing, h_ve, set_heating, set_cooling, heat_limit, cool_limit)``.
     """
-    count = len(hours)
-    state, last = None, 0.0
-    for _ in range(warmup_passes + 1):
-        power = np.zeros(count)
-        air = np.zeros(count)
-        operative = np.zeros(count)
-        for hour in range(count):
-            if state is None:
-                inputs = hours(hour, None, last)
-                state = zone.initial_state(inputs[2])
-            else:
-                inputs = hours(hour, float(state[0]), last)
-            state, power[hour], air[hour], operative[hour] = zone.step(state, *inputs)
-            last = power[hour]
-    return power, air, operative, state
+
+    class _Wrapped:
+        def __len__(self):
+            return len(hours)
+
+        def __call__(self, hour, air, last):
+            forcing, *rest = hours(hour, None if air is None else float(air[0]), float(last[0]))
+            return (forcing, *([value] for value in rest))
+
+    power, air, operative, state = simulate_network(
+        zone.network, _Wrapped(), warmup_passes=warmup_passes
+    )
+    return power[:, 0], air[:, 0], operative[:, 0], state

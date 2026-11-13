@@ -8,8 +8,14 @@ named setting with a string enum in `epsm_rc.options` (`ThermalModel`,
 `ControlTemperature`, `WindowOptics`, `SolarTime`, `HeatRecovery`, plus enums for
 the airflow, ground, self-shadowing, cold-attic and context-shading policies).
 
-Conditioned basements and cold attics require `thermal_model="iso13790_5r1c"`.
-The heat-recovery rule runs in Python and in both Rust kernels, including coupled
+Conditioned basements and cold attics are supported by both models. Under ISO
+52016-1 the main space, a conditioned basement and each cold attic are zones of
+one network, joined by single node chains for the separating floor and the
+attic ceiling; the attic is an unconditioned zone with its own air, roof and
+gable storage and per-face solar (`cold_attic_policy="unconditioned_zone"`, the
+new default; 5R1C keeps `"quasi_steady_buffer"`). Results add
+`attic_air_temperature_c`. The Rust kernel runs the multi-zone network and
+matches the Python recurrence. The heat-recovery rule runs in Python and in both Rust kernels, including coupled
 basement domains. Diagnostics report `window_optics` and `solar_time`.
 
 Deprecated, with a `DeprecationWarning`: `RCSettings.from_policy` and the profile

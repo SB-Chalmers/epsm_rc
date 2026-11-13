@@ -43,7 +43,7 @@ def patched(model, native):
     from epsm_rc import _iso52016_platform as adapter
     from epsm_rc import iso13790, platform
 
-    saved = (platform._run_domain, adapter.run_zone, iso13790._can_use_native)
+    saved = (platform._run_domain, adapter.run_network, iso13790._can_use_native)
     timer = {"solve": 0.0}
 
     def run_domain(*args, **kwargs):
@@ -54,13 +54,13 @@ def patched(model, native):
             timer["solve"] += time.perf_counter() - start
 
     platform._run_domain = run_domain
-    adapter.run_zone = lambda *a, **k: saved[1](*a, native=native, **k)
+    adapter.run_network = lambda *a, **k: saved[1](*a, native=native, **k)
     if model == "5r1c" and not native:
         iso13790._can_use_native = lambda *a, **k: False
     try:
         yield timer
     finally:
-        platform._run_domain, adapter.run_zone, iso13790._can_use_native = saved
+        platform._run_domain, adapter.run_network, iso13790._can_use_native = saved
 
 
 def main():

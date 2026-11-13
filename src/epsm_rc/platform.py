@@ -113,8 +113,9 @@ class RCSettings:
         ``iso52016_1`` (default): ISO 52016-1 Clause 6.5 with node chains per
         element. ``iso13790_5r1c``: the ISO 13790 5R1C network. Preparation,
         solar, gains, airflow and ground reductions are shared; the 5R1C mass and
-        coupling coefficients are inactive under ISO 52016-1. ISO 52016-1 does not
-        yet support conditioned basements or cold attics.
+        coupling coefficients are inactive under ISO 52016-1. Under ISO 52016-1 a
+        conditioned basement and cold attics are zones of one multi-zone network,
+        coupled through their separating floor and ceiling node chains.
     control_temperature : ControlTemperature or str
         ``air`` (default), as EnergyPlus ideal loads, or ``operative``, as
         ISO 52016-1 specifies. Used by ISO 52016-1; 5R1C always controls air.
@@ -182,9 +183,13 @@ class RCSettings:
         between 1 and 30 degrees; default 10. Numerical choice, not an ISO requirement.
 
     cold_attic_policy : str
-        ``reject`` keeps omitted attic assumptions visible. The explicit
-        ``quasi_steady_buffer`` uses supplied attic outdoor exchange and physical
-        shell/ceiling conductances, retaining shell solar/sky but omitting shell storage.
+        ``unconditioned_zone`` (default; ISO 52016-1) models each cold attic as
+        an unconditioned zone with its own air node, shell node chains, solar
+        and the declared outdoor exchange, coupled through the ceiling.
+        ``quasi_steady_buffer`` (5R1C) uses the same exchange and physical
+        shell/ceiling conductances in steady state, retaining shell solar/sky but
+        omitting shell storage. ``reject`` refuses cold attics. Every option
+        needs the attic outdoor exchange declared on the Building.
     interzone_floor_surface_resistance_m2_k_w : float
         Positive combined room-side films for the main/basement separating floor,
         in m² K/W; initial assumption 0.27 (0.17 + 0.10).
@@ -233,7 +238,7 @@ class RCSettings:
     self_shadowing_policy: SelfShadowingPolicy = SelfShadowingPolicy.REJECT
     solar_time: SolarTime = SolarTime.MIDPOINT
     window_optics: WindowOptics = WindowOptics.ANGULAR
-    cold_attic_policy: ColdAtticPolicy = ColdAtticPolicy.REJECT
+    cold_attic_policy: ColdAtticPolicy = ColdAtticPolicy.UNCONDITIONED_ZONE
     interzone_floor_surface_resistance_m2_k_w: float = 0.27
     context_shading_method: ContextShading = ContextShading.ISO13790_HOURLY_HORIZON
     horizon_azimuth_step_deg: float = 10.0
@@ -1269,6 +1274,8 @@ def _prepare_radiation(
             )
             orientation_irradiance[orientation] = channels
         channels = shaded(channels, term["surface_name"])
+        if element_irradiance is not None:
+            element_irradiance[("attic", term["surface_name"])] = channels["poa_global"]
         opaque += (
             channels["poa_global"] * term["solar_coefficient_m2"] * term["transmission_fraction"]
         )
@@ -1733,26 +1740,21 @@ def _prepare_domain(preparation, *, domain=None):
     if iso52016_model:
         from epsm_core.bridges import thermal_bridge_uplifts
 
-        from ._iso52016_platform import build_zone
+        from ._iso52016_platform import ZonePart
 
-        if attic.ceiling_area_m2:
-            raise ValueError(
-                "The ISO 52016-1 model does not yet support cold attics; "
-                "select thermal_model='iso13790_5r1c' for this building." + PREFLIGHT_HINT
-            )
-        zone, hourly, ground_kinds, notes = build_zone(
-            (
-                scope.elements,
-                attic,
-                settings,
-                ground_reduction,
-                thermal_bridge_uplifts(spec),
-                element_irradiance,
-                scope.area,
-                scope.volume,
-            )
+        iso52016_inputs = ZonePart(
+            name=domain.name if domain is not None else "main",
+            elements=scope.elements,
+            attic=attic,
+            settings=settings,
+            ground_reduction=ground_reduction,
+            uplifts=thermal_bridge_uplifts(spec),
+            element_irradiance=element_irradiance,
+            floor_area_m2=scope.area,
+            volume_m3=scope.volume,
+            months=times.month.to_numpy(),
+            monthly_ground=ground,
         )
-        iso52016_inputs = (zone, hourly, ground_kinds, times.month.to_numpy(), ground, notes)
     return PreparedDomain(
         domain.name if domain is not None else "aggregate",
         model,
@@ -1773,11 +1775,10 @@ def _run_domain(domain):
     from .iso13790 import _can_use_native
 
     if domain.iso52016 is not None:
-        from ._iso52016_platform import run_zone
+        from ._iso52016_platform import attach_attic_results, run_network
 
-        zone, hourly, ground_kinds, months, ground, _ = domain.iso52016
-        power, air, _ = run_zone(domain, zone, hourly, ground_kinds, months, ground)
-        return domain.finish(power, air)
+        run = run_network([domain])
+        return attach_attic_results(domain.finish(run.power[:, 0], run.air[:, 0]), run)
     if domain.forcing is None or not _can_use_native(
         domain.model, needs_demand=True, prepared=True
     ):
@@ -1853,10 +1854,11 @@ def simulate_building(building, *, weather, directory=None, settings=None, prepa
     Restart after changing installed source or numerical dependencies.
     Each call creates fresh thermal state. Buildings without basements retain
     one conditioned domain (ISO 52016-1 by default, or 5R1C). Conditioned
-    basements use separately controlled 5R1C main/basement domains with
-    conservative physical floor exchange; ISO 52016-1 rejects them. Cold attics
-    require an explicit finite quasi-steady buffer policy and outdoor exchange;
-    attic shell/air storage is omitted. All paths model sensible heat only. Heat recovery reduces
+    basements are a separately controlled domain: with ISO 52016-1 a zone of
+    the same network, joined through the separating floor's node chain; with
+    5R1C a coupled 5R1C domain with conservative physical floor exchange. Cold
+    attics need the attic outdoor exchange: ISO 52016-1 models each as an
+    unconditioned zone, 5R1C as a quasi-steady buffer without attic storage. All paths model sensible heat only. Heat recovery reduces
     mechanical conductance once; infiltration is never recovered. No weather
     padding, stochastic window opening or legacy construction presets are used.
     Standalone correctness fixes and migration details are recorded in the release notes.
@@ -1885,11 +1887,6 @@ def simulate_building(building, *, weather, directory=None, settings=None, prepa
     with hourly_schedule_scope():
         preparation = _prepare_building(building, weather, settings, preparation_cache)
         if preparation.spec.geometry.basement_conditioned:
-            if preparation.settings.thermal_model == ThermalModel.ISO52016_1:
-                raise ValueError(
-                    "The ISO 52016-1 model does not yet support conditioned basements; "
-                    "select thermal_model='iso13790_5r1c' for this building."
-                )
             result = simulate_conditioned_domains(preparation, _prepare_domain)
         else:
             result = _run_domain(_prepare_domain(preparation))

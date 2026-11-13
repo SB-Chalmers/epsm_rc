@@ -147,10 +147,17 @@ class SelfShadowingPolicy(_Choice):
 
 
 class ColdAtticPolicy(_Choice):
-    """Treatment of unconditioned attics."""
+    """Treatment of unconditioned attics.
 
-    REJECT = "reject"
+    ``unconditioned_zone`` (default, ISO 52016-1 only) keeps the attic as an
+    unconditioned zone of the multi-zone network, as EnergyPlus does.
+    ``quasi_steady_buffer`` (ISO 13790 5R1C only) eliminates the attic air node
+    in steady state. ``reject`` refuses buildings with cold attics.
+    """
+
+    UNCONDITIONED_ZONE = "unconditioned_zone"
     QUASI_STEADY_BUFFER = "quasi_steady_buffer"
+    REJECT = "reject"
 
 
 class ContextShading(_Choice):

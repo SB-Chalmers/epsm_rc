@@ -165,7 +165,17 @@ def simulate_conditioned_domains(preparation, prepare_domain):
     selections, conductance, reduction = select_domains(building, preparation.resolved, settings)
     prepared = [prepare_domain(preparation, domain=selection) for selection in selections]
     count = len(prepared[0].time_axis)
-    powers, temperatures, exchanges, residuals = _run_coupled_domains(prepared, conductance)
+    network_run = None
+    if prepared[0].iso52016 is not None:
+        # ISO 52016-1: both domains (and any cold attic) are zones of one network.
+        from ._iso52016_platform import run_network
+
+        network_run = run_network(prepared)
+        powers = np.ascontiguousarray(network_run.power[:, :2].T)
+        temperatures = np.ascontiguousarray(network_run.air[:, :2].T)
+        exchanges, residuals = network_run.exchanges, np.zeros(count)
+    else:
+        powers, temperatures, exchanges, residuals = _run_coupled_domains(prepared, conductance)
     results = [
         domain.finish(powers[index], temperatures[index]) for index, domain in enumerate(prepared)
     ]
@@ -186,6 +196,8 @@ def simulate_conditioned_domains(preparation, prepare_domain):
         hourly[f"{domain.name}_indoor_temperature_c"] = temperatures[index]
         hourly[f"{domain.name}_space_heating_demand_kwh"] = np.maximum(powers[index], 0) / 1000
         hourly[f"interzone_heat_to_{domain.name}_w"] = exchanges[index]
+    if network_run is not None:
+        hourly.update(network_run.attic_hourly())
     scalars = {key: float(values.sum()) for key, values in hourly.items() if key.endswith("kwh")}
     units = {
         key: "kWh" if key.endswith("kwh") else "W" if key.endswith("_w") else "C" for key in hourly
@@ -196,7 +208,11 @@ def simulate_conditioned_domains(preparation, prepare_domain):
         **diagnostics["effective_configuration"],
         "methods": {
             **diagnostics["effective_configuration"]["methods"],
-            "thermal_domain": "coupled_main_and_conditioned_basement",
+            "thermal_domain": (
+                "iso52016_1_multizone_main_and_conditioned_basement"
+                if network_run is not None
+                else "coupled_main_and_conditioned_basement"
+            ),
         },
     }
     diagnostics["domain_reduction"] = {
@@ -264,10 +280,20 @@ def simulate_conditioned_domains(preparation, prepare_domain):
         for element in building.elements
         if element.boundary == "Internal" and hasattr(element.construction, "components")
     )
+    coupling = (
+        [
+            "Main and basement are zones of one ISO 52016-1 network with separate schedules",
+            "The separating floor is one five-node chain with Table 25 films on both faces",
+        ]
+        if network_run is not None
+        else [
+            "Separating floor layer resistance plus declared surface films connects the air nodes",
+            "Separating floor active storage is divided equally, preserving existing one-side total capacity",
+        ]
+    )
     diagnostics["approximations"] = [
         "Two coupled conditioned domains with separately resolved main and basement schedules",
-        "Separating floor layer resistance plus declared surface films connects the air nodes",
-        "Separating floor active storage is divided equally, preserving existing one-side total capacity",
+        *coupling,
         *[
             item
             for item in diagnostics["approximations"]
