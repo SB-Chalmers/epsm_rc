@@ -1,3 +1,15 @@
+# File: test_context_shading.py
+# Purpose: Independent G.3 balances and lightweight context-to-RC integration.
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 """Independent G.3 balances and lightweight context-to-RC integration."""
 
 from dataclasses import replace

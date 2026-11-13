@@ -1,3 +1,15 @@
+# File: test_core_engine_comparison.py
+# Purpose: Real Core compilation and RC calculation consume the same authored physical state.
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 """Real Core compilation and RC calculation consume the same authored physical state."""
 
 import json
@@ -81,8 +93,11 @@ def test_real_compilation_and_rc_share_supplied_inputs(case, area, energyplus, t
         weather=weather,
         directory=tmp_path,
         energyplus=energyplus,
-        rc_settings=RCSettings.from_policy(
-            "epsm_rc_5r1c_v1",
+        rc_settings=RCSettings(
+            thermal_model="iso13790_5r1c",
+            window_optics="constant_shgc",
+            solar_time="hour_start",
+            heat_recovery="always",
             airflow_policy="sensible_only_unlimited_supply",
             ground_policy="conductance_multiplier",
             self_shadowing_policy="ignore",

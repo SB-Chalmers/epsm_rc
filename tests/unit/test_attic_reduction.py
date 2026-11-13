@@ -1,3 +1,15 @@
+# File: test_attic_reduction.py
+# Purpose: Finite attic-node balances and physically useful limiting cases.
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 """Finite attic-node balances and physically useful limiting cases."""
 
 import pytest
@@ -66,8 +78,9 @@ def test_public_cold_attic_uses_finite_buffer_and_retains_explicit_exchange(
     result = simulate_building(
         building,
         weather=Weather.from_epw(synthetic_weather),
-        settings=RCSettings.from_policy(
-            "epsm_rc_5r1c_v2",
+        settings=RCSettings(
+            thermal_model="iso13790_5r1c",
+            heat_recovery="always",
             airflow_policy="sensible_only_unlimited_supply",
             ground_policy="conductance_multiplier",
             cold_attic_policy="quasi_steady_buffer",
@@ -92,6 +105,7 @@ def test_cold_attic_cannot_infer_exchange_or_bypass_policy(synthetic_weather):
     building = Building(preset="illustrative-reference")
     building.geometry = building.geometry.updated(roof=RoofSpec(shape="gable"))
     settings = {
+        "thermal_model": "iso13790_5r1c",
         "airflow_policy": "sensible_only_unlimited_supply",
         "ground_policy": "conductance_multiplier",
     }
@@ -158,6 +172,7 @@ def test_vertical_attic_interface_to_taller_main_space_remains_explicitly_unsupp
             building,
             weather=Weather.from_epw(synthetic_weather),
             settings=RCSettings(
+                thermal_model="iso13790_5r1c",
                 airflow_policy="sensible_only_unlimited_supply",
                 ground_policy="conductance_multiplier",
                 self_shadowing_policy="ignore",
@@ -207,6 +222,7 @@ def test_internal_attic_wall_storage_is_omitted_when_attics_share_one_zone(synth
         )
     )
     settings = RCSettings(
+        thermal_model="iso13790_5r1c",
         airflow_policy="sensible_only_unlimited_supply",
         ground_policy="conductance_multiplier",
         self_shadowing_policy="ignore",

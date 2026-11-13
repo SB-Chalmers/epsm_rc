@@ -1,14 +1,32 @@
+// File: types.rs
+// Purpose: Plain values shared by the native kernels.
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Sanjay Somanath
+// License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+// Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+// Project PI: Alexander Hollberg
+// Computational Sustainable Design Group
+// Research Area of Sustainable Built Environments
+// Chalmers University of Technology, Gothenburg
+// Date created: 2026-10-29
+
 //! Values shared by the numerical kernels. No Python objects enter a kernel.
 
+/// Kernel errors are static messages; bindings turn them into `ValueError`.
 pub type KernelResult<T> = Result<T, &'static str>;
 
+/// Node temperatures of a 5R1C zone (°C).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ThermalState {
+    /// Air node θ_air.
     pub t_air: f64,
+    /// Central surface node θ_s.
     pub t_s: f64,
+    /// Mass node θ_m.
     pub t_m: f64,
 }
 
+/// Forcing for one hour: outdoor temperature (°C) and gains (W).
 #[derive(Clone, Copy, Debug)]
 pub struct StepInputs {
     pub t_out: f64,
@@ -20,6 +38,7 @@ pub struct StepInputs {
     pub include_sky_radiation: bool,
 }
 
+/// Setpoints (°C) and capacity limits (W) for one hour.
 #[derive(Clone, Copy, Debug)]
 pub struct Thermostat {
     pub max_heating_power: f64,
@@ -29,6 +48,7 @@ pub struct Thermostat {
 }
 
 impl Thermostat {
+    /// Reject non-finite or unordered setpoints and negative capacity.
     pub fn validate(&self, dt_hours: f64) -> KernelResult<()> {
         if !dt_hours.is_finite() || dt_hours <= 0.0 {
             return Err("dt_hours must be positive and finite");
@@ -49,6 +69,8 @@ impl Thermostat {
     }
 }
 
+/// Coupled two-domain control result: powers (W), air temperatures (°C), the
+/// heat each domain receives from the other (W) and the energy-balance residual.
 #[derive(Clone, Copy, Debug)]
 pub struct ControlSolution {
     pub powers: [f64; 2],
@@ -57,11 +79,13 @@ pub struct ControlSolution {
     pub residual: f64,
 }
 
+/// Hourly power (W) and air temperature (°C) of one domain.
 pub struct DomainOutput {
     pub power: Vec<f64>,
     pub indoor: Vec<f64>,
 }
 
+/// Hourly results of the coupled main and basement domains.
 pub struct CoupledOutput {
     pub powers: [Vec<f64>; 2],
     pub temperatures: [Vec<f64>; 2],
@@ -82,6 +106,7 @@ pub struct SimulationInputs {
 }
 
 impl SimulationInputs {
+    /// Check lengths and controls before the loop starts.
     pub fn validate(&self, controls: Thermostat) -> KernelResult<()> {
         controls.validate(self.dt_hours)?;
         let count = self.outdoor.len();
@@ -107,6 +132,7 @@ impl SimulationInputs {
     }
 }
 
+/// Hourly results of [`crate::iso13790::simulate`].
 pub struct SimulationOutput {
     pub heating_demand: Vec<f64>,
     pub t_air: Vec<f64>,

@@ -1,12 +1,41 @@
+# File: shading.py
+# Purpose: ISO 13790:2008 Annex G.5.4.2 hourly external-horizon approximation.
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 """ISO 13790:2008 Annex G.5.4.2 hourly external-horizon approximation.
 
+Notes
+-----
 One average horizon angle is prepared at each receiving element's representative
 point. Equal-azimuth midpoint quadrature covers the 180 degrees facing a facade;
 horizontal surfaces use 360 degrees (an explicitly reported extension). Geometry
 is never intersected inside the hourly thermal recurrence. Only direct radiation
 is reduced, as in equation G.3; diffuse and ground reflection stay unchanged.
 This implements that shading method, not whole-standard or national certification.
+
+Examples
+--------
+Example::
+
+    import numpy as np
+    from epsm_rc.shading import shade_irradiance
+
+    channels = {
+        "poa_direct": np.array([400.0, 300.0]),
+        "poa_sky_diffuse": np.array([80.0, 60.0]),
+        "poa_ground_diffuse": np.array([20.0, 20.0]),
+    }
+    shaded = shade_irradiance(channels, np.array([10.0, 40.0]), 20.0)
+    # Below the 20° horizon the direct part is removed; diffuse is unchanged.
+    assert list(shaded["poa_global"]) == [100.0, 380.0]
 """
 
 from __future__ import annotations

@@ -1,3 +1,15 @@
+# File: test_native_platform_dispatch.py
+# Purpose: Prepared native execution retains custom numerical model implementations.
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 """Prepared native execution retains custom numerical model implementations."""
 
 import numpy as np
@@ -8,6 +20,7 @@ from epsm_rc import Building5R1C, RCSettings, simulate_building
 
 def simulation_settings():
     return RCSettings(
+        thermal_model="iso13790_5r1c",
         airflow_policy="sensible_only_unlimited_supply",
         ground_policy="conductance_multiplier",
         self_shadowing_policy="ignore",

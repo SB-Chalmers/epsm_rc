@@ -4,9 +4,19 @@ Core owns physical geometry, construction assignments and zone operation. RC
 reduces those explicit inputs; it does not infer a basement depth, heating
 setpoint, attic ventilation rate, roof construction or ground temperature.
 
-A conditioned basement is represented by a second 5R1C domain coupled to the main
-space. This preserves declared basement operation, including an 18 °C basement
-below a 20 °C main programme. An unconditioned basement remains unsupported.
+A conditioned basement is a second, separately controlled domain. This
+preserves declared basement operation, including an 18 °C basement below a
+20 °C main programme. An unconditioned basement remains unsupported. Both
+thermal models support basements and cold attics:
+
+| | ISO 52016-1 (default) | ISO 13790 5R1C |
+|---|---|---|
+| Conditioned basement | Second zone of one node network; the separating floor is one five-node element with a face in each zone | Second 5R1C domain coupled through a floor conductance |
+| Cold attic | Unconditioned zone with air node, roof and gable node chains and per-face solar (`cold_attic_policy="unconditioned_zone"`, default) | Quasi-steady buffer without attic storage (`cold_attic_policy="quasi_steady_buffer"`) |
+
+EnergyPlus models both spaces as zones, which the ISO 52016-1 treatment follows.
+Against EnergyPlus the two models agree within a few percent on heating; see
+`benchmarks/iso52016/results/zones_summary.md` for zone temperatures and cooling.
 
 ```python
 from epsm_core import (
@@ -35,8 +45,12 @@ building.zone_uses = (ZoneUseSpec(
     use=building.operation.updated(heating_setpoint=ScheduleSpec.constant(18)),
     source="declared illustrative basement control",
 ),)
-settings = RCSettings.from_policy(
-    "epsm_rc_5r1c_v2",
+settings = RCSettings(  # ISO 52016-1 with an unconditioned attic zone (defaults)
+    airflow_policy="sensible_only_unlimited_supply",
+    ground_policy="conductance_multiplier",
+)
+legacy = RCSettings(  # the 5R1C reduction of the same building
+    thermal_model="iso13790_5r1c",
     airflow_policy="sensible_only_unlimited_supply",
     ground_policy="conductance_multiplier",
     cold_attic_policy="quasi_steady_buffer",
@@ -48,7 +62,34 @@ snapshot retains the same explicit controls and attic exchange when compiled for
 EnergyPlus. `examples/14_roofs_and_basements.ipynb` runs this public interface with
 packaged weather and inspects the domain diagnostics.
 
-## Conditioned basement reduction
+## ISO 52016-1 zones
+
+With the default `thermal_model="iso52016_1"` the main space, a conditioned
+basement and each cold attic are zones of one ISO 52016-1 network
+(`docs/iso52016.md`). Domain selection, gains, airflow, ground and solar
+preparation are the same as for 5R1C below; only the thermal coupling differs.
+
+- The separating floor keeps its layer resistance and full capacity as one
+  five-node element. Its upper face is in the main zone and its lower face in
+  the basement, both with the Table 25 downward-flow coefficients; no
+  `interzone_floor_surface_resistance_m2_k_w` or capacity split is needed.
+- Both thermostats are solved together each hour, so a held basement setpoint
+  and a floating main space (or the reverse) are exact.
+- The attic air node holds only air. The declared exchange (hourly fraction
+  schedules are allowed) sets its ventilation conductance. Roof and gable faces
+  keep their resolved tilt, azimuth, area and construction; they receive Perez
+  plane-of-array solar on their absorptance and the sky term with the attic's
+  sky view factors. The ceiling's lower face is in the main zone and its upper
+  face in the attic (upward-flow coefficients). The Core top uplift is a bridge
+  conductance between the two air nodes.
+- Results add `attic_air_temperature_c` (numbered when several attics exist)
+  next to `main_indoor_temperature_c` and `basement_indoor_temperature_c`.
+  `interzone_heat_to_main_w` and `interzone_heat_to_basement_w` report the heat
+  conducted through the middle of the separating floor.
+
+The sections below describe the 5R1C reductions.
+
+## Conditioned basement reduction (5R1C)
 
 Core's resolved zone inputs select the use, airflow, conditioned volume and load
 reference area for each thermal zone. RC aggregates equal main-space programmes
@@ -93,9 +134,9 @@ volume-weighted reporting value; separate `main_indoor_temperature_c` and
 `basement_indoor_temperature_c` channels retain the controls. Interzone exchange
 is reported in watts and is not added to purchased energy or heating demand.
 
-## Finite cold-attic reduction
+## Finite cold-attic reduction (5R1C)
 
-Cold attics require explicit `cold_attic_policy="quasi_steady_buffer"` and a
+5R1C cold attics require `cold_attic_policy="quasi_steady_buffer"` and a
 sourced `UnconditionedExchangeSpec(zone_kind="attic", ...)`. An explicit zero rate
 means a sealed scenario. A missing declaration stays missing. The current buffer
 supports constant exchange fractions; varying exchange schedules are rejected.

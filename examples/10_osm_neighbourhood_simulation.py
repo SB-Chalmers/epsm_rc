@@ -1,8 +1,16 @@
 #!/usr/bin/env python3
+# File: 10_osm_neighbourhood_simulation.py
+# Purpose: Demo: Simulate a Neighbourhood of Buildings from OpenStreetMap.
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 EPSM Development contributors
-# License: See LICENSE at the project root.
-# Date modified: 2026-10-20
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 """
 =============================================================================
 Demo: Simulate a Neighbourhood of Buildings from OpenStreetMap

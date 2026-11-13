@@ -1,7 +1,38 @@
+# File: _logging.py
+# Purpose: Package-local standard-library logging helpers; no output on import.
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 EPSM Development contributors
-# License: See LICENSE at the project root.
-"""Package-local standard-library logging helpers; no output on import."""
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
+"""Package-local standard-library logging helpers; no output on import.
+
+Notes
+-----
+``operation`` opens a context for one public call; inside it ``bind_context``
+adds identifiers (for example ``run_id``) and ``context_logger`` attaches them
+to each record. The package installs no handlers, so the host application
+decides whether and where records are written.
+
+Examples
+--------
+Example::
+
+    from epsm_rc._logging import bind_context, context_logger, current_context, operation
+
+    @operation("example.step")
+    def step():
+        bind_context(run_id="example")
+        context_logger("epsm_rc.example").info("prepared")
+        return current_context()
+
+    assert step(log_context={"study_id": "demo"})["run_id"] == "example"
+"""
 
 from __future__ import annotations
 

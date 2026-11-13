@@ -1,3 +1,15 @@
+# File: test_preparation_cache.py
+# Purpose: Preparation reuse must never reuse a thermal state or conceal input edits.
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 """Preparation reuse must never reuse a thermal state or conceal input edits."""
 
 from contextlib import nullcontext
@@ -11,8 +23,11 @@ from epsm_rc import PreparationCache, RCSettings, simulate_building
 
 
 def settings():
-    return RCSettings.from_policy(
-        "epsm_rc_5r1c_v1",
+    return RCSettings(
+        thermal_model="iso13790_5r1c",
+        window_optics="constant_shgc",
+        solar_time="hour_start",
+        heat_recovery="always",
         airflow_policy="sensible_only_unlimited_supply",
         ground_policy="conductance_multiplier",
     )

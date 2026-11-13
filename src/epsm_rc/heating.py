@@ -1,14 +1,22 @@
-# File: src/epsm_rc/heating.py
+# File: heating.py
 # Purpose: Standalone thermal demand and explicit heating-system calculations.
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 EPSM Development contributors
-# License: See LICENSE at the project root.
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 # Research attribution: hplib and Carnot references are retained below.
-# Date modified: 2026-10-20
 # Changelog:
 #   2026-10-20 - Report model selection and reject failed hplib calculations.
 """Standalone heating systems with explicitly chosen heat-pump calculations.
 
+Notes
+-----
 ``HeatPumpCarnot`` uses an adopted Carnot-efficiency approximation;
 ``HeatPumpHPLib`` uses the requested hplib model and its published correlation.
 Their prediction accuracy is not established by this package's software checks.

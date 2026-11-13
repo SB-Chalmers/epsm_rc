@@ -1,3 +1,15 @@
+# File: test_geometry_sensitivity_engine_integration.py
+# Purpose: Independent physical trends for new geometry in both real annual engines.
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 """Independent physical trends for new geometry in both real annual engines."""
 
 import os
@@ -29,8 +41,9 @@ def test_warmer_basement_and_greater_attic_exchange_increase_heating(synthetic_w
             pytest.fail("Geometry release requires EnergyPlus 24.2")
         pytest.skip("EnergyPlus 24.2 is required for the geometry release comparison")
     weather = Weather.from_epw(synthetic_weather)
-    settings = RCSettings.from_policy(
-        "epsm_rc_5r1c_v2",
+    settings = RCSettings(
+        thermal_model="iso13790_5r1c",
+        heat_recovery="always",
         airflow_policy="sensible_only_unlimited_supply",
         cold_attic_policy="quasi_steady_buffer",
     )

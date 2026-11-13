@@ -1,8 +1,41 @@
+# File: _forcing.py
+# Purpose: Owned hourly forcing and prepared-domain records shared by RC execution paths.
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 """Owned hourly forcing and prepared-domain records shared by RC execution paths.
 
+Notes
+-----
 This leaf module has no package imports, so the single-domain adapter and the
 coupled-domain runner can both depend on it without importing each other.
+
+Examples
+--------
+Example::
+
+    from importlib.resources import files
+    from epsm_core import Building, Weather
+    from epsm_rc import RCSettings, simulate_building
+
+    weather = Weather.from_epw(files("epsm_rc") / "data/epw/goteborg.epw")
+    settings = RCSettings(
+        airflow_policy="sensible_only_unlimited_supply",
+        ground_policy="conductance_multiplier",
+    )
+    building = Building(preset="illustrative-reference")
+    from epsm_rc.platform import _prepare_building, _prepare_domain
+
+    domain = _prepare_domain(_prepare_building(building, weather, settings, None))
+    first_hour = domain.forcing.at(0)  # keyword inputs of one 5R1C step
+    assert domain.heating_limits_w[0] >= 0
 """
 
 from collections.abc import Callable
@@ -70,6 +103,7 @@ class PreparedDomain:
     reference_area_m2: float
     volume_m3: float
     forcing: object = None
+    iso52016: object = None
 
 
 @dataclass
@@ -91,6 +125,8 @@ class HourlyInputs:
     month_hours: np.ndarray | None
     coefficients: tuple
     aggregate_split: bool
+    recovery_bypass: bool = False
+    recovery_effectiveness: float = 0.0
 
     def __post_init__(self):
         # The native kernels read these fields by name; fix their types once here.
@@ -118,6 +154,21 @@ class HourlyInputs:
             self.natural[hour]
         )
         model.ach_ventilation = float(self.ventilation[hour])
+        if self.recovery_bypass:
+            # Recovery acts only when it reduces the load (the EnergyPlus ideal-loads
+            # rule): in heating mode with colder outdoor air, or cooling mode with
+            # warmer. The mode is judged one hour lagged, from the previous hour's
+            # HVAC power or its air temperature against the setpoints, so a zone
+            # that needs heat but has none available still counts as heating.
+            # Tolerances keep the decision identical in the Python and Rust loops
+            # when the air sits on a setpoint to rounding precision.
+            last = getattr(model, "_last_hvac_power", 0.0)
+            heating = last > 1e-3 or model.t_air <= float(self.heating_setpoints[hour]) + 1e-6
+            cooling = last < -1e-3 or model.t_air >= float(self.cooling_setpoints[hour]) - 1e-6
+            active = (heating and temperature < model.t_air - 1e-6) or (
+                cooling and temperature > model.t_air + 1e-6
+            )
+            model.heat_recovery_efficiency = self.recovery_effectiveness if active else 0.0
         if not isfinite(model.ach_infiltration) or model.ach_infiltration < 0:
             raise ValueError("Hourly infiltration must be finite and nonnegative")
         model._update_ventilation_coefficient()

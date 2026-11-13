@@ -1,0 +1,86 @@
+# Cooling and heating vs EnergyPlus (38 cases)
+
+Cooling is the EnergyPlus sensible coil energy, the boundary of both RC models.
+Latent cooling, 7% of the E+ total, is excluded.
+
+## Cooling
+
+| Model | Total / E+ | Median case ratio | Cases within ±20 % | Mean abs error kWh/m² | Median peak ratio | Median hourly CV(RMSE) % | Median hourly r | Median hours ratio |
+|---|---|---|---|---|---|---|---|---|
+| 5R1C, constant SHGC | 7.32 | 7.72 | 0/38 | 3.78 | 1.58 | 2285 | 0.62 | 2.92 |
+| 5R1C, angular optics | 5.74 | 5.63 | 0/38 | 2.83 | 1.50 | 1933 | 0.64 | 2.42 |
+| 52016, constant SHGC | 6.39 | 5.87 | 2/38 | 3.23 | 1.48 | 2036 | 0.63 | 2.31 |
+| 52016, angular optics | 4.84 | 4.66 | 2/38 | 2.33 | 1.40 | 1739 | 0.67 | 1.99 |
+| 5R1C, constant SHGC, HR when beneficial | 2.70 | 2.84 | 0/38 | 1.02 | 1.56 | 1004 | 0.86 | 1.40 |
+| 5R1C, angular optics, HR when beneficial | 1.91 | 2.03 | 0/38 | 0.54 | 1.48 | 716 | 0.89 | 1.01 |
+| 52016, constant SHGC, HR when beneficial | 1.90 | 1.82 | 2/38 | 0.54 | 1.41 | 722 | 0.92 | 0.89 |
+| 52016 air control, constant SHGC, HR when beneficial | 1.62 | 1.59 | 7/38 | 0.37 | 1.19 | 458 | 0.95 | 1.01 |
+| 52016, angular optics, HR when beneficial | 1.21 | 0.89 | 8/38 | 0.19 | 1.23 | 470 | 0.93 | 0.48 |
+
+## Heating
+
+| Model | Total / E+ | Median case ratio | Cases within ±20 % | Mean abs error kWh/m² | Median peak ratio | Median hourly CV(RMSE) % | Median hourly r | Median hours ratio |
+|---|---|---|---|---|---|---|---|---|
+| 5R1C, constant SHGC | 0.90 | 0.85 | 30/38 | 5.56 | 1.05 | 31 | 0.97 | 0.82 |
+| 5R1C, angular optics | 0.92 | 0.88 | 36/38 | 4.53 | 1.05 | 28 | 0.98 | 0.84 |
+| 52016, constant SHGC | 0.93 | 0.87 | 34/38 | 5.08 | 1.05 | 26 | 0.98 | 0.81 |
+| 52016, angular optics | 0.95 | 0.90 | 36/38 | 4.19 | 1.05 | 23 | 0.98 | 0.84 |
+| 5R1C, constant SHGC, HR when beneficial | 0.94 | 0.94 | 38/38 | 3.27 | 1.05 | 31 | 0.96 | 0.91 |
+| 5R1C, angular optics, HR when beneficial | 0.96 | 0.96 | 38/38 | 2.38 | 1.05 | 30 | 0.97 | 0.94 |
+| 52016, constant SHGC, HR when beneficial | 0.95 | 0.92 | 38/38 | 3.92 | 1.05 | 27 | 0.98 | 0.87 |
+| 52016 air control, constant SHGC, HR when beneficial | 0.94 | 0.93 | 38/38 | 3.46 | 1.01 | 26 | 0.98 | 0.93 |
+| 52016, angular optics, HR when beneficial | 0.97 | 0.94 | 38/38 | 3.07 | 1.05 | 23 | 0.98 | 0.90 |
+
+## Cooling total / E+ by group
+
+| Group | E+ kWh/m² | 5R1C, constant SHGC | 5R1C, angular optics | 52016, constant SHGC | 52016, angular optics | 5R1C, constant SHGC, HR when beneficial | 5R1C, angular optics, HR when beneficial | 52016, constant SHGC, HR when beneficial | 52016 air control, constant SHGC, HR when beneficial | 52016, angular optics, HR when beneficial |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mf | 0.0 | 39.27 | 27.38 | 30.69 | 20.61 | 7.97 | 3.92 | 2.15 | 1.84 | 0.47 |
+| office | 0.9 | 6.17 | 5.10 | 5.07 | 4.04 | 2.71 | 1.99 | 1.87 | 1.60 | 1.24 |
+| school | 0.9 | 6.49 | 5.04 | 6.17 | 4.64 | 2.37 | 1.71 | 1.91 | 1.62 | 1.22 |
+| advanced | 0.6 | 10.47 | 8.30 | 9.25 | 7.08 | 2.74 | 1.90 | 1.88 | 1.61 | 1.13 |
+| existing | 0.5 | 6.37 | 4.87 | 5.42 | 3.99 | 2.78 | 1.97 | 1.90 | 1.63 | 1.24 |
+| standard | 0.7 | 5.56 | 4.38 | 4.87 | 3.74 | 2.59 | 1.87 | 1.91 | 1.62 | 1.25 |
+
+## Per case cooling (kWh/m²)
+
+| Case | E+ | 5R1C, constant SHGC | 5R1C, angular optics | 52016, constant SHGC | 52016, angular optics | 5R1C, constant SHGC, HR when beneficial | 5R1C, angular optics, HR when beneficial | 52016, constant SHGC, HR when beneficial | 52016 air control, constant SHGC, HR when beneficial | 52016, angular optics, HR when beneficial |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mf_se02-advanced-000 | 0.08 | 3.92 | 2.73 | 3.20 | 2.08 | 0.54 | 0.28 | 0.19 | 0.15 | 0.01 |
+| mf_se02-advanced-090 | 0.15 | 4.67 | 3.49 | 3.94 | 2.79 | 0.78 | 0.44 | 0.33 | 0.27 | 0.11 |
+| mf_se02-existing-000 | 0.05 | 0.40 | 0.22 | 0.10 | 0.02 | 0.40 | 0.22 | 0.10 | 0.10 | 0.02 |
+| mf_se02-existing-090 | 0.11 | 0.58 | 0.35 | 0.19 | 0.07 | 0.58 | 0.35 | 0.19 | 0.18 | 0.07 |
+| mf_se02-standard-000 | 0.01 | 0.18 | 0.08 | 0.00 | 0.00 | 0.18 | 0.08 | 0.00 | 0.00 | 0.00 |
+| mf_se02-standard-090 | 0.03 | 0.27 | 0.14 | 0.00 | 0.00 | 0.27 | 0.14 | 0.00 | 0.01 | 0.00 |
+| mf_se05-advanced-000 | 0.05 | 4.41 | 3.15 | 3.77 | 2.58 | 0.51 | 0.22 | 0.20 | 0.16 | 0.01 |
+| mf_se05-advanced-090 | 0.11 | 5.18 | 3.96 | 4.53 | 3.34 | 0.75 | 0.39 | 0.38 | 0.30 | 0.11 |
+| mf_se05-existing-000 | 0.01 | 0.20 | 0.07 | 0.00 | 0.00 | 0.20 | 0.07 | 0.00 | 0.00 | 0.00 |
+| mf_se05-existing-090 | 0.03 | 0.34 | 0.15 | 0.01 | 0.00 | 0.34 | 0.15 | 0.01 | 0.03 | 0.00 |
+| mf_se05-standard-000 | 0.00 | 0.13 | 0.03 | 0.00 | 0.00 | 0.13 | 0.03 | 0.00 | 0.00 | 0.00 |
+| mf_se05-standard-090 | 0.01 | 0.21 | 0.08 | 0.00 | 0.00 | 0.21 | 0.08 | 0.00 | 0.01 | 0.00 |
+| mf_se07-existing-000 | 0.00 | 2.83 | 1.79 | 2.29 | 1.28 | 0.21 | 0.07 | 0.00 | 0.00 | 0.00 |
+| mf_se07-existing-090 | 0.03 | 3.47 | 2.43 | 2.89 | 1.90 | 0.34 | 0.15 | 0.06 | 0.05 | 0.00 |
+| office_se03-advanced-000 | 0.48 | 4.90 | 3.90 | 3.60 | 2.66 | 1.37 | 0.96 | 0.63 | 0.54 | 0.34 |
+| office_se03-advanced-090 | 0.67 | 5.55 | 4.57 | 4.16 | 3.23 | 1.69 | 1.22 | 0.85 | 0.72 | 0.51 |
+| office_se03-existing-000 | 0.28 | 0.91 | 0.64 | 0.28 | 0.14 | 0.91 | 0.64 | 0.28 | 0.28 | 0.14 |
+| office_se03-existing-090 | 0.36 | 1.12 | 0.84 | 0.41 | 0.23 | 1.12 | 0.84 | 0.41 | 0.38 | 0.23 |
+| office_se03-standard-000 | 0.59 | 1.66 | 1.18 | 0.82 | 0.48 | 1.66 | 1.18 | 0.82 | 0.70 | 0.48 |
+| office_se03-standard-090 | 0.82 | 2.06 | 1.52 | 1.12 | 0.69 | 2.06 | 1.52 | 1.12 | 0.94 | 0.69 |
+| office_se06-advanced-000 | 0.92 | 7.93 | 6.66 | 7.09 | 5.77 | 2.65 | 1.89 | 2.12 | 1.79 | 1.38 |
+| office_se06-advanced-090 | 1.23 | 8.64 | 7.41 | 7.78 | 6.51 | 3.15 | 2.36 | 2.56 | 2.19 | 1.81 |
+| office_se06-existing-000 | 1.23 | 8.07 | 6.64 | 7.03 | 5.58 | 3.51 | 2.53 | 2.72 | 2.30 | 1.80 |
+| office_se06-existing-090 | 1.70 | 9.01 | 7.63 | 7.97 | 6.57 | 4.21 | 3.23 | 3.38 | 2.89 | 2.43 |
+| office_se06-standard-000 | 1.02 | 7.67 | 6.34 | 6.57 | 5.24 | 3.04 | 2.18 | 2.29 | 1.94 | 1.47 |
+| office_se06-standard-090 | 1.39 | 8.49 | 7.20 | 7.38 | 6.08 | 3.64 | 2.76 | 2.85 | 2.43 | 1.99 |
+| school_se04-advanced-000 | 0.67 | 5.85 | 4.48 | 5.49 | 4.05 | 1.55 | 1.08 | 1.08 | 0.96 | 0.63 |
+| school_se04-advanced-090 | 0.84 | 6.64 | 5.29 | 6.31 | 4.90 | 1.88 | 1.35 | 1.41 | 1.23 | 0.89 |
+| school_se04-existing-000 | 0.79 | 3.50 | 2.42 | 2.98 | 1.87 | 1.93 | 1.37 | 1.41 | 1.18 | 0.90 |
+| school_se04-existing-090 | 1.00 | 4.26 | 3.13 | 3.81 | 2.57 | 2.38 | 1.72 | 1.82 | 1.51 | 1.21 |
+| school_se04-standard-000 | 0.88 | 4.32 | 3.12 | 4.02 | 2.69 | 2.07 | 1.46 | 1.60 | 1.35 | 0.99 |
+| school_se04-standard-090 | 1.12 | 5.12 | 3.90 | 4.88 | 3.54 | 2.51 | 1.85 | 2.08 | 1.74 | 1.37 |
+| school_se06-advanced-000 | 0.75 | 6.98 | 5.47 | 6.65 | 5.09 | 1.87 | 1.31 | 1.42 | 1.24 | 0.84 |
+| school_se06-advanced-090 | 0.96 | 7.79 | 6.33 | 7.50 | 6.00 | 2.25 | 1.64 | 1.85 | 1.59 | 1.17 |
+| school_se06-existing-000 | 0.85 | 6.23 | 4.75 | 5.99 | 4.42 | 2.19 | 1.54 | 1.74 | 1.47 | 1.08 |
+| school_se06-existing-090 | 1.10 | 7.16 | 5.70 | 6.96 | 5.43 | 2.65 | 1.96 | 2.24 | 1.89 | 1.50 |
+| school_se06-standard-000 | 1.03 | 7.44 | 5.81 | 7.24 | 5.55 | 2.57 | 1.84 | 2.22 | 1.88 | 1.39 |
+| school_se06-standard-090 | 1.37 | 8.41 | 6.83 | 8.26 | 6.62 | 3.11 | 2.31 | 2.84 | 2.38 | 1.92 |

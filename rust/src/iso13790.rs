@@ -1,3 +1,39 @@
+// File: iso13790.rs
+// Purpose: ISO 13790 Annex C 5R1C zone, thermostat and standalone hourly loop.
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Sanjay Somanath
+// License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+// Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+// Project PI: Alexander Hollberg
+// Computational Sustainable Design Group
+// Research Area of Sustainable Built Environments
+// Chalmers University of Technology, Gothenburg
+// Date created: 2026-10-29
+
+//! ISO 13790:2008 Annex C simple hourly method: the 5R1C network.
+//!
+//! One air node (θ_air), one central surface node (θ_s) and one mass node (θ_m)
+//! with capacity C_m. Conductances: H_ve (ventilation, air node), H_tr,is (air to
+//! surface), H_tr,w (windows, surface node), H_tr,ms (surface to mass) and
+//! H_tr,em (opaque elements, mass node). Each hour follows Annex C:
+//!
+//! 1. Heat flows split gains between nodes (Eq. C.1 to C.3).
+//! 2. The series conductances H_tr,1..3 combine the air and surface paths
+//!    (Eq. C.6 to C.8).
+//! 3. The mass node advances with a Crank-Nicolson step (Eq. C.4, C.5), and the
+//!    hour uses the mean of the old and new mass temperatures (Eq. C.9).
+//! 4. Surface and air temperatures follow (Eq. C.10, C.11); operative temperature
+//!    is 0.3 θ_air + 0.7 θ_s (Eq. C.12).
+//! 5. The thermostat interpolates between a free-floating trial and a trial with
+//!    10 W/m² (Eq. C.13). Without window opening the network is linear, so the
+//!    response to unit power ([`Core5R1C::sensitivities`]) gives the same result
+//!    without the second trial.
+//!
+//! Every function mirrors `epsm_rc/iso13790.py`; the Python tests compare both
+//! paths hour by hour. Heat recovery reduces the mechanical part of H_ve; the
+//! hour-by-hour decision for the `when_beneficial` option is taken in
+//! [`crate::domain::DomainArrays::apply_at`].
+
 use crate::types::{
     KernelResult, SimulationInputs, SimulationOutput, StepInputs, ThermalState, Thermostat,
 };
@@ -5,6 +41,12 @@ use crate::types::{
 // Forced inlining is limited to measured control/airflow hot paths. Keep
 // benchmarks/native.py comparisons when changing these boundaries.
 
+/// Run the standalone hourly loop over owned forcing (`Building5R1C.simulate`).
+///
+/// The state starts at the heating setpoint. Unoccupied hours use the setback
+/// setpoints when an occupancy schedule is supplied. `random` supplies uniform
+/// draws for stochastic window opening and is not called when it is disabled.
+/// Returns heating (+) or cooling (−) power in W and the node temperatures.
 pub fn simulate<F>(
     core: &mut Core5R1C,
     forcing: &SimulationInputs,
@@ -67,52 +109,88 @@ where
     Ok(output)
 }
 
+/// First hour of each month in a 365-day year, for monthly ground temperatures.
 const MONTH_START_HOURS: [i64; 12] = [
     0, 744, 1416, 2160, 2880, 3624, 4344, 5088, 5832, 6552, 7296, 8016,
 ];
 
+/// Parameters and state of one 5R1C zone, read from `Building5R1C._native_parameters`.
+///
+/// Conductances are in W/K, capacity in J/K, temperatures in °C and powers in W.
+/// The `prepared_*` fields cache hour-invariant coefficients for the platform
+/// path, where airflow changes hourly but the fabric does not.
 #[derive(Clone, Debug)]
 #[cfg_attr(test, derive(Default))]
 pub struct Core5R1C {
+    /// Conditioned floor area A_f (m²); scales the 10 W/m² thermostat trial.
     pub floor_area_m2: f64,
+    /// Air volume (m³) used for H_ve.
     pub building_vol: f64,
+    /// Total internal surface area A_t (m²).
     pub a_tot: f64,
+    /// Effective mass area A_m (m²).
     pub mass_area: f64,
+    /// Internal heat capacity C_m (J/K).
     pub c_m: f64,
+    /// Total opaque transmission conductance H_tr,op (W/K), split below for the boundary temperature.
     pub h_tr_op: f64,
+    /// Part of H_tr,op to outdoor air; weights θ_e in the opaque boundary temperature.
     pub h_tr_op_walls_roof: f64,
+    /// Part of H_tr,op to the ground; weights the monthly ground temperature.
     pub h_tr_ground: f64,
+    /// Thermal-bridge conductance to outdoor air (W/K).
     pub h_tr_tb: f64,
+    /// Window transmission H_tr,w, connected to the surface node (W/K).
     pub h_tr_w: f64,
+    /// Surface-to-mass coupling H_tr,ms = h_ms A_m (W/K).
     pub h_tr_ms: f64,
+    /// Air-to-surface coupling H_tr,is = h_is A_t (W/K).
     pub h_tr_is: f64,
+    /// Mass-to-exterior conductance H_tr,em (W/K).
     pub h_tr_em: f64,
+    /// Mass-surface heat transfer coefficient h_ms (W/(m² K)), 9.1 by default.
     pub h_ms: f64,
+    /// ρ_a c_a of air (J/(m³ K)).
     pub air_volumetric_heat_capacity_j_m3_k: f64,
+    /// Unrecovered air changes per hour: infiltration plus natural ventilation.
     pub ach_infiltration: f64,
+    /// Mechanical air changes per hour, eligible for heat recovery.
     pub ach_ventilation: f64,
+    /// Sensible recovery effectiveness applied to `ach_ventilation` this hour.
     pub heat_recovery_efficiency: f64,
+    /// Share of internal gains delivered to the air node (0.5 in Eq. C.1).
     pub convective_fraction_internal: f64,
+    /// Standalone constant internal gains (W/m²).
     pub internal_gains_w_per_m2: f64,
+    /// Heating setpoint for the current hour (°C).
     pub t_set_heating: f64,
+    /// Cooling setpoint for the current hour (°C).
     pub t_set_cooling: f64,
     pub t_set_heating_setback: Option<f64>,
     pub t_set_cooling_setback: Option<f64>,
+    /// Control operative instead of air temperature.
     pub use_operative_temperature: bool,
+    /// Probability of opening windows when it would cool; 0 disables it.
     pub ventilation_behaviour: f64,
     pub ach_window_open: f64,
+    /// Mean sky-air temperature difference Δθ_er (K) for the sky loss.
     pub delta_theta_er: f64,
+    /// Sky radiation loss subtracted from the surface node (W).
     pub sky_radiation_loss_w: f64,
+    /// Monthly ground boundary temperatures, if a ground policy supplies them.
     pub ground_temps_monthly: Option<[f64; 12]>,
     pub ground_temp_annual_mean: f64,
+    /// The platform path: cache hour-invariant coefficients between calls.
     pub prepared_hourly: bool,
     pub prepared_mass_ratio: f64,
     pub prepared_window_ratio: f64,
+    /// Node temperatures at the end of the last completed hour.
     pub state: ThermalState,
     pub t_supply: f64,
     pub windows_open: bool,
     /// Window decision held for every thermostat trial of one hour.
     pub window_decision: Option<bool>,
+    /// Ventilation conductance H_ve for this hour (W/K).
     pub h_ve: f64,
     pub prepared_airflow: Option<(f64, f64, f64)>,
     pub prepared_network: (f64, f64, f64),
@@ -122,12 +200,18 @@ pub struct Core5R1C {
 }
 
 impl Core5R1C {
+    /// Month index (0 to 11) of an hour of the year, wrapping outside one year.
     #[inline]
     pub fn month_index_from_hour_of_year(hour_of_year: i64) -> usize {
         let hour_wrapped = hour_of_year.rem_euclid(8760);
         MONTH_START_HOURS.partition_point(|&h| h <= hour_wrapped) - 1
     }
 
+    /// Recompute H_ve = ρ_a c_a V [n_unrecovered + n_mech (1 − η)] / 3600.
+    ///
+    /// `ach_total_opt` overrides the total air changes (window opening). In the
+    /// prepared path the series conductances, Crank-Nicolson factors and unit
+    /// responses are recomputed only when airflow or η changed.
     #[inline(always)]
     pub fn update_ventilation_coefficient(
         &mut self,
@@ -189,6 +273,7 @@ impl Core5R1C {
         Ok(())
     }
 
+    /// H_tr,1 = 1 / (1/H_ve + 1/H_tr,is), Eq. (C.6).
     #[inline]
     pub fn h_tr_1(&self) -> f64 {
         if self.prepared_hourly {
@@ -201,6 +286,7 @@ impl Core5R1C {
         }
     }
 
+    /// H_tr,2 = H_tr,1 + H_tr,w, Eq. (C.7).
     #[inline]
     pub fn h_tr_2(&self) -> f64 {
         if self.prepared_hourly {
@@ -209,6 +295,7 @@ impl Core5R1C {
         self.h_tr_1() + self.h_tr_w
     }
 
+    /// H_tr,3 = 1 / (1/H_tr,2 + 1/H_tr,ms), Eq. (C.8).
     #[inline]
     pub fn h_tr_3(&self) -> f64 {
         if self.prepared_hourly {
@@ -222,11 +309,17 @@ impl Core5R1C {
         }
     }
 
+    /// Operative temperature 0.3 θ_air + 0.7 θ_s, Eq. (C.12).
     #[inline]
     pub fn t_operative(&self) -> f64 {
         0.3 * self.state.t_air + 0.7 * self.state.t_s
     }
 
+    /// Change of (θ_m, θ_s, θ_air) per watt delivered to the air node this hour.
+    ///
+    /// Differentiates Eq. (C.4), (C.5), (C.10) and (C.11) with respect to φ_HC,
+    /// including the H_ve → 0 limit. The thermostat uses it to replace the second
+    /// Eq. (C.13) trial when the hour is linear.
     #[inline(always)]
     pub fn compute_sensitivities(&self, dt_hours: f64) -> (f64, f64, f64) {
         let h1 = self.h_tr_1();
@@ -274,6 +367,7 @@ impl Core5R1C {
         (k_m, k_s, k_air)
     }
 
+    /// Cached unit responses in the prepared hourly path, else computed.
     #[inline]
     pub fn sensitivities(&self, dt_hours: f64) -> (f64, f64, f64) {
         if self.prepared_hourly && dt_hours == 1.0 {
@@ -283,6 +377,11 @@ impl Core5R1C {
         }
     }
 
+    /// Split gains into φ_ia (air), φ_st (surface) and φ_m (mass), Eq. (C.1)–(C.3).
+    ///
+    /// Radiant gains go to the mass and surface nodes in proportion to A_m/A_t and
+    /// the remaining area after windows. The sky loss is taken from φ_st. HVAC
+    /// power `energy_demand` is convective and added to φ_ia.
     #[inline(always)]
     pub fn calc_heat_flows(
         &mut self,
@@ -337,6 +436,11 @@ impl Core5R1C {
         (phi_ia, phi_st, phi_m)
     }
 
+    /// Total heat flow to the mass node φ_m,tot, Eq. (C.5).
+    ///
+    /// The opaque boundary temperature weights outdoor air and the monthly ground
+    /// temperature by their conductances. Supply air is at outdoor temperature;
+    /// heat recovery is already in H_ve.
     #[inline(always)]
     pub fn calc_phi_m_tot(
         &mut self,
@@ -396,6 +500,7 @@ impl Core5R1C {
             + h3 * (phi_st + self.h_tr_w * t_out + h1 * ((phi_ia / self.h_ve) + t_supply)) / h2
     }
 
+    /// Mass temperature at the end of the hour by Crank-Nicolson, Eq. (C.4).
     #[inline]
     pub fn calc_t_m_next(&self, t_m_prev: f64, phi_m_tot: f64, dt_hours: f64) -> f64 {
         if self.prepared_hourly && dt_hours == 1.0 {
@@ -408,6 +513,7 @@ impl Core5R1C {
         (t_m_prev * (c_dt - 0.5 * h_sum) + phi_m_tot) / (c_dt + 0.5 * h_sum)
     }
 
+    /// Central surface node temperature θ_s, Eq. (C.10).
     #[inline]
     pub fn calc_t_s(&self, t_m: f64, t_out: f64, phi_ia: f64, phi_st: f64) -> f64 {
         let t_supply = t_out;
@@ -433,6 +539,7 @@ impl Core5R1C {
         }
     }
 
+    /// Air node temperature θ_air, Eq. (C.11).
     #[inline]
     pub fn calc_t_air(&self, t_s: f64, t_out: f64, phi_ia: f64) -> f64 {
         let t_supply = t_out;
@@ -444,6 +551,10 @@ impl Core5R1C {
         }
     }
 
+    /// Advance one hour with a fixed HVAC power and return (θ_air, θ_s, θ_m).
+    ///
+    /// Window opening, if enabled, uses the decision held for this hour so that
+    /// every thermostat trial sees the same network.
     #[inline(always)]
     pub fn step_with_rng<F>(
         &mut self,
@@ -498,6 +609,7 @@ impl Core5R1C {
         Ok((self.state.t_air, self.state.t_s, self.state.t_m))
     }
 
+    /// [`Self::step_with_rng`] with deterministic window opening.
     #[inline]
     pub fn step_deterministic(
         &mut self,
@@ -522,6 +634,13 @@ impl Core5R1C {
         Ok(rng_fn()? < self.ventilation_behaviour)
     }
 
+    /// Thermostat power for one hour (Eq. C.13): + heating, − cooling, in W.
+    ///
+    /// Runs the free-floating hour; if the control temperature lies outside the
+    /// setpoints, the power that reaches the setpoint is found from the unit
+    /// response (linear hours) or from a 10 W/m² trial (window opening), then
+    /// clipped to the available heating or cooling capacity. The state ends at
+    /// the controlled hour.
     #[inline(always)]
     pub fn calc_heating_demand_with_rng<F>(
         &mut self,
