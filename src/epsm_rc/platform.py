@@ -183,10 +183,16 @@ class RCSettings:
         monthly approximation. A source must also be supplied.
     monthly_ground_temperature_source : str or None
         Source or assumption identifying the supplied monthly boundary.
-    self_shadowing_policy : str
-        ``reject`` (default) requires an explicit decision for courtyards,
-        concave footprints and multiple parts. ``ignore`` acknowledges omitted
-        self-shadowing; context horizon shading is a separate method.
+    self_shadowing_policy : SelfShadowingPolicy or str
+        Shading of the envelope by the building's own wings, courtyards and
+        parts. ``hourly_sunlit_fraction`` (default) scales each receiver's direct
+        radiation by its hourly sunlit share and its sky diffuse radiation by the
+        sky view it keeps, from a sampled horizon profile of the building's own
+        faces. ``iso13790_hourly_horizon`` treats those faces as ISO 13790 Annex
+        G.5.4.2 obstacles (one average angle, direct radiation only).
+        ``ignore`` omits self-shading and records the omission; ``reject``
+        refuses concave, courtyard and multi-part geometry. Convex single-part
+        buildings are unchanged by every choice.
     solar_time : SolarTime or str
         ``midpoint`` (default) samples solar position half an hour into each
         weather interval without changing result labels; ``hour_start`` samples
@@ -272,7 +278,7 @@ class RCSettings:
     iso13370_wall_thickness_source: str | None = None
     monthly_ground_temperatures_c: tuple[float, ...] | None = None
     monthly_ground_temperature_source: str | None = None
-    self_shadowing_policy: SelfShadowingPolicy = SelfShadowingPolicy.REJECT
+    self_shadowing_policy: SelfShadowingPolicy = SelfShadowingPolicy.HOURLY_SUNLIT_FRACTION
     solar_time: SolarTime = SolarTime.MIDPOINT
     window_optics: WindowOptics = WindowOptics.ANGULAR
     cold_attic_policy: ColdAtticPolicy = ColdAtticPolicy.UNCONDITIONED_ZONE
@@ -764,6 +770,12 @@ def _iso13370_reduction(
     return ground, 1.0, report
 
 
+SELF_SHADING_METHODS = (
+    SelfShadowingPolicy.HOURLY_SUNLIT_FRACTION,
+    SelfShadowingPolicy.ISO13790_HOURLY_HORIZON,
+)
+
+
 def _self_shadowing_capabilities(geometry, settings: RCSettings) -> dict:
     """Gate geometry that can occlude its own facades before irradiance calculation."""
     affected = []
@@ -781,11 +793,12 @@ def _self_shadowing_capabilities(geometry, settings: RCSettings) -> dict:
             "Select self_shadowing_policy='ignore' in RCSettings to acknowledge its omission."
             + PREFLIGHT_HINT
         )
+    calculated = settings.self_shadowing_policy in SELF_SHADING_METHODS
     return {
         "policy": settings.self_shadowing_policy,
-        "omitted": bool(affected),
+        "omitted": bool(affected) and not calculated,
         "affected_geometry": affected,
-        "geometry_occlusion_applied": False,
+        "geometry_occlusion_applied": bool(affected) and calculated,
     }
 
 
@@ -900,6 +913,12 @@ def _authoring_checks(building, settings):
     """Keep settings-dependent authoring gates shared by inspection and execution."""
     if building.context.buildings and settings.context_shading_method == "reject":
         yield "rc_context", "settings.context_shading_method", lambda: _reject_context()
+    if settings.overhang_shading_method == OverhangShading.REJECT and _has_overhang(
+        building.facade
+    ):
+        # Core 0.10.1+ no longer reports overhangs as unsupported for RC, so the
+        # explicit refusal must come from RC itself.
+        yield "rc_overhang", "settings.overhang_shading_method", lambda: _reject_overhang()
     if building.hvac is not None:
         yield (
             "rc_airflow",
@@ -914,6 +933,22 @@ def _authoring_checks(building, settings):
             "settings.self_shadowing_policy",
             lambda: _self_shadowing_capabilities(building.geometry, settings),
         )
+
+
+def _has_overhang(facade):
+    """Whether the facade or any override carries an overhang with depth."""
+    if facade is None:
+        return False
+    return bool(facade.overhang.depth_m) or any(
+        o.overhang is not None and o.overhang.depth_m for o in facade.overrides
+    )
+
+
+def _reject_overhang():
+    raise ValueError(
+        f"{FACADE_SHADING_RESTRICTION}: overhang_shading_method='reject' refuses overhangs; "
+        "select 'iso13790_hourly_overhang' to model them"
+    )
 
 
 def _reject_context():
@@ -1189,6 +1224,43 @@ def _context_horizons(preparation, elements, attic, facades):
     return horizons, context_shading
 
 
+def _self_shading_receivers(preparation, elements, attic, facades):
+    """Cached own-geometry shading data per receiver, empty when nothing can shade."""
+    spec, settings = preparation.spec, preparation.settings
+    if settings.self_shadowing_policy not in SELF_SHADING_METHODS:
+        return {}
+    if not _self_shadowing_capabilities(spec.geometry, settings)["affected_geometry"]:
+        return {}
+    from .self_shading import prepare_receivers
+
+    orientations = {}
+    for element in elements:
+        role = element.role.value
+        if element.identifier in attic.shell_element_ids or element.boundary != "Outdoors":
+            continue
+        if role in {"ROOF", "TOP_FLOOR"}:
+            orientations[element.identifier] = (0, spec.geometry.orientation_deg)
+        elif role == "WINDOW" or role.startswith("EXT_WALL"):
+            orientations[element.identifier] = (90, facades[element.facade_id].azimuth_deg)
+    key = {
+        "geometry": spec.geometry.model_dump(mode="json"),
+        "facade": spec.facade.model_dump(mode="json"),
+        "attic": [term["surface_name"] for term in attic.shell_terms],
+        "method": settings.self_shadowing_policy,
+        "implementation": preparation.implementation,
+    }
+    return preparation.prepared(
+        "self_shading",
+        key,
+        lambda: prepare_receivers(
+            preparation.resolved,
+            orientations,
+            attic.shell_terms,
+            method=settings.self_shadowing_policy,
+        ),
+    )
+
+
 def _overhang_shading(preparation):
     """Per-element ISO 13790 G.5.4.3 overhang panes and their report."""
     spec, settings = preparation.spec, preparation.settings
@@ -1281,8 +1353,15 @@ def _prepare_radiation(
     overhangs, overhang_shading = _overhang_shading(preparation)
 
     sky_diffuse = settings.context_sky_diffuse == ContextSkyDiffuse.ISOTROPIC_HORIZON
+    own = _self_shading_receivers(preparation, elements, attic, facades)
 
-    def shaded(channels, identifier, tilt_deg=90.0):
+    def shaded(channels, identifier, tilt_deg=90.0, azimuth_deg=180.0):
+        if identifier in own:
+            from .self_shading import shade_irradiance as shade_own
+
+            channels = shade_own(
+                channels, 90 - zenith, sun_azimuth, own[identifier], tilt_deg, azimuth_deg
+            )
         if not horizons:
             return channels
         from .shading import shade_irradiance
@@ -1343,7 +1422,7 @@ def _prepare_radiation(
 
             channels = prepared("plane_irradiance", radiation_key, calculate_plane, readonly=True)
             orientation_irradiance[orientation] = channels
-        channels = shaded(channels, element.identifier, orientation[0])
+        channels = shaded(channels, element.identifier, orientation[0], azimuth)
         if role == "WINDOW" and element.identifier in overhangs:
             from .overhang import shade_irradiance as shade_overhang
 
@@ -1424,7 +1503,7 @@ def _prepare_radiation(
                 ),
             )
             orientation_irradiance[orientation] = channels
-        channels = shaded(channels, term["surface_name"], term["tilt_deg"])
+        channels = shaded(channels, term["surface_name"], term["tilt_deg"], term["azimuth_deg"])
         if element_irradiance is not None:
             element_irradiance[("attic", term["surface_name"])] = channels["poa_global"]
         opaque += (

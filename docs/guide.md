@@ -318,12 +318,13 @@ effective method, selected boundary/source and effective multiplier. The shared
 Core Building currently compiles a Kiva specification; the RC settings route
 provides an explicit monthly approximation for that authoring interface.
 
-RC does not calculate geometry-derived self-shadowing. Courtyards, concave
-footprints and multiple building parts require explicit
-`self_shadowing_policy="ignore"`; the default rejects these geometries before
-the solver. Diagnostics identify affected parts and the selected omission, and
-run identity includes the policy. One convex part remains supported with the
-default policy. Context buildings now use the ISO 13790:2008 Annex G.5.4.2 hourly
+Courtyards, concave footprints and multiple building parts shade their own
+envelope. The default `self_shadowing_policy="hourly_sunlit_fraction"`
+calculates that shading from the building's own geometry in both thermal models;
+see [radiation methods](radiation.md#self-shading). `iso13790_hourly_horizon`,
+`ignore` and `reject` are the alternatives. Diagnostics identify affected parts
+and whether occlusion was applied, and run identity includes the policy. Convex
+single-part buildings are unchanged by every choice. Context buildings now use the ISO 13790:2008 Annex G.5.4.2 hourly
 horizon method by default. Each physical outdoor receiver uses an average
 obstruction angle prepared once from context footprints and elevations; only
 direct solar radiation is reduced. Diffuse and ground-reflected radiation remain
