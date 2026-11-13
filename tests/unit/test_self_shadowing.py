@@ -1,5 +1,5 @@
 # File: test_self_shadowing.py
-# Purpose: Affected geometry requires explicit acknowledgment of omitted self-shadowing.
+# Purpose: Rejecting or ignoring self-shadowing is explicit and reported.
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Sanjay Somanath
 # License: MIT; see the project-root LICENSE for the full permission and warranty terms.
@@ -10,7 +10,7 @@
 # Chalmers University of Technology, Gothenburg
 # Date created: 2026-10-29
 
-"""Affected geometry requires explicit acknowledgment of omitted self-shadowing."""
+"""Rejecting or ignoring self-shadowing is explicit and reported."""
 
 import math
 from importlib.resources import files
@@ -70,6 +70,7 @@ def test_affected_geometry_rejected_before_solver(case, weather, monkeypatch, re
             settings=RCSettings(
                 airflow_policy="sensible_only_unlimited_supply",
                 ground_policy="conductance_multiplier",
+                self_shadowing_policy="reject",
             ),
         )
 
