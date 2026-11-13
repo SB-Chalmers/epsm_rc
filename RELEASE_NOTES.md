@@ -1,4 +1,4 @@
-# Unreleased — ISO 52016-1 model and named defaults matching EnergyPlus
+# Release 0.12.0 — ISO 52016-1 model and named defaults matching EnergyPlus
 
 **Default results change.** `RCSettings()` now selects the options that agreed
 best with EnergyPlus (`docs/iso52016.md`, `benchmarks/iso52016/`): the ISO
@@ -23,9 +23,13 @@ names `epsm_rc_5r1c_v1`/`v2` (expanded to explicit choices), the keywords
 `window_optics_method`, `solar_time_reference`, `heat_recovery_control` and
 `iso52016_control_temperature`, and the values `simple_glazing_angular_v1`,
 `interval_midpoint`, `continuous`, `load_dependent_bypass` and
-`iso52016_1_hourly`. To reproduce earlier results, pass
+`iso52016_1_hourly`. Settings saved by RC 0.11 (`dataclasses.asdict` output with
+`policy_version`) still load, with a warning, and keep their 5R1C profile. To
+reproduce earlier results, pass
 `thermal_model="iso13790_5r1c", window_optics="constant_shgc",
-solar_time="hour_start", heat_recovery="always"`.
+solar_time="hour_start", heat_recovery="always"`; the former profiles give
+bit-identical results. Deprecated interfaces remain available; their removal is
+no earlier than 0.13.0.
 
 # Release 0.11.0 — thermal-bridge surcharge and clearer errors
 

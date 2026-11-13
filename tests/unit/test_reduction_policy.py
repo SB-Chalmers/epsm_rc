@@ -43,6 +43,33 @@ def test_legacy_profile_expands_to_explicit_choices():
         RCSettings.from_policy("unknown")
 
 
+def test_settings_saved_by_rc_0_11_keep_their_profile():
+    # ``dataclasses.asdict`` of RC 0.11 settings, as stored in study and
+    # workflow specifications.
+    saved = {
+        "policy_version": "epsm_rc_5r1c_v1",
+        "airflow_policy": "sensible_only_unlimited_supply",
+        "solar_time_reference": "hour_start",
+        "window_optics_method": "constant_shgc",
+    }
+    with pytest.warns(DeprecationWarning, match="policy_version"):
+        settings = RCSettings(**saved)
+    with pytest.warns(DeprecationWarning):
+        expected = RCSettings.from_policy(
+            "epsm_rc_5r1c_v1", airflow_policy="sensible_only_unlimited_supply"
+        )
+    assert settings == expected
+    with pytest.warns(DeprecationWarning):
+        v2 = RCSettings(policy_version="epsm_rc_5r1c_v2", solar_time_reference=None)
+    assert (v2.thermal_model, v2.solar_time, v2.window_optics) == (
+        "iso13790_5r1c",
+        "midpoint",
+        "angular",
+    )
+    with pytest.raises(ValueError, match="policy_version"):
+        RCSettings(policy_version="unknown")
+
+
 @pytest.mark.parametrize(
     "changes,property_name",
     [
