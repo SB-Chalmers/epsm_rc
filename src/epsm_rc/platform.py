@@ -220,7 +220,8 @@ class RCSettings:
     shows the options and plain strings are accepted. Defaults are the options
     that agreed best with EnergyPlus (``benchmarks/iso52016``). The keywords
     ``window_optics_method``, ``solar_time_reference``, ``heat_recovery_control``
-    and ``iso52016_control_temperature`` and ``from_policy`` are deprecated aliases.
+    and ``iso52016_control_temperature``, ``from_policy`` and the ``policy_version``
+    keyword of settings saved by RC 0.11 are deprecated aliases.
     These values describe reduction assumptions rather than material evidence.
     Main and conditioned basement may have distinct resolved controls. Other
     mixed uses, unconditioned basements, facade shading details, detailed HVAC and PV remain
@@ -489,6 +490,22 @@ _dataclass_init = RCSettings.__init__
 
 
 def _init_with_renamed_keywords(self, *args, **kwargs):
+    profile = {}
+    if "policy_version" in kwargs:
+        # Settings saved by RC 0.11 and earlier carry the profile name; expand it
+        # so a stored v1/v2 dictionary keeps its 5R1C physics instead of failing
+        # or silently adopting the newer defaults.
+        name = kwargs.pop("policy_version")
+        if name not in LEGACY_PROFILES:
+            valid = ", ".join(repr(option) for option in LEGACY_PROFILES)
+            raise ValueError(f"Unknown policy_version {name!r}; choose one of {valid}")
+        warnings.warn(
+            f"RCSettings(policy_version={name!r}) is deprecated; pass thermal_model, "
+            "window_optics, solar_time and heat_recovery directly",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        profile = LEGACY_PROFILES[name]
     for old, new in _RENAMED_FIELDS.items():
         if old in kwargs:
             if new in kwargs:
@@ -498,8 +515,10 @@ def _init_with_renamed_keywords(self, *args, **kwargs):
                 DeprecationWarning,
                 stacklevel=2,
             )
-            kwargs[new] = kwargs.pop(old)
-    _dataclass_init(self, *args, **kwargs)
+            value = kwargs.pop(old)
+            if value is not None:
+                kwargs[new] = value
+    _dataclass_init(self, *args, **{**profile, **kwargs})
 
 
 _init_with_renamed_keywords.__doc__ = _dataclass_init.__doc__
