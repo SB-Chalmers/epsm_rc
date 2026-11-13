@@ -1,3 +1,15 @@
+# File: test_single_preparation.py
+# Purpose: Run ownership and one building preparation across independent thermal domains.
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 """Run ownership and one building preparation across independent thermal domains."""
 
 from copy import deepcopy
@@ -42,7 +54,8 @@ def test_each_run_prepares_one_snapshot_graph_and_weather(basement, monkeypatch)
     count(platform, "read_epw", "weather")
     before = building.snapshot().sha256
     settings = RCSettings(
-        airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier"
+        airflow_policy="sensible_only_unlimited_supply",
+        ground_policy="conductance_multiplier",
     )
     first = simulate_building(building, weather=weather, settings=settings)
     assert calls == {"snapshot_inputs": 1, "geometry": 1, "weather": 1}

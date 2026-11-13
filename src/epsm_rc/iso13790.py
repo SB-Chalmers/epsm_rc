@@ -1,8 +1,21 @@
-# -*- coding: utf-8 -*-
+# File: iso13790.py
+# Purpose: ISO 13790:2008 5R1C Simplified Hourly Thermal Building Model.
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 """
 ISO 13790:2008 5R1C Simplified Hourly Thermal Building Model
 =============================================================
 
+Notes
+-----
 Implements the simplified hourly method from ISO 13790:2008 for calculating
 building heating/cooling demand. The 5R1C model uses 5 thermal resistances and
 1 thermal capacitance to represent building thermal dynamics.
@@ -111,6 +124,15 @@ The following features provide strict ISO 13790 compliance:
         Eq. (C.2): Φ_m = (A_m/A_t) × (0.5 × Φ_int + Φ_sol)
         Eq. (C.3): Φ_st = (1 - A_m/A_t - H_tr,w/(9.1×A_t)) × (0.5 × Φ_int + Φ_sol)
     The default flexible mode allows convective_fraction_internal calibration.
+
+Examples
+--------
+Example::
+
+    from epsm_rc import Building5R1C
+
+    zone = Building5R1C(floor_area_m2=100)
+    zone.t_air  # °C; step() advances one hour
 
 References
 ----------

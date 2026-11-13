@@ -1,6 +1,33 @@
+# File: outputs.py
+# Purpose: Discover the shared-building RC output contract without running its solver.
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 EPSM Development contributors
-"""Discover the shared-building RC output contract without running its solver."""
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
+"""Discover the shared-building RC output contract without running its solver.
+
+Notes
+-----
+The catalogue lists every hourly and scalar output with its unit, including
+channels that appear only for some buildings or settings, and the calendar the
+hourly arrays use. Nothing is
+simulated, so it is cheap to call before ``simulate_building``.
+
+Examples
+--------
+Example::
+
+    from epsm_rc.outputs import output_capabilities
+
+    catalogue = output_capabilities()
+    sorted(catalogue)  # ['calendar', 'engine', 'format', 'outputs', 'unverified_requests']
+"""
 
 from __future__ import annotations
 
@@ -52,13 +79,13 @@ def output_capabilities(building=None, *, settings=None):
     for name, unit in BASE_OUTPUT_UNITS.items():
         add(name, unit)
     outputs.extend(delivery_output_capabilities(building))
-    angular = settings is not None and settings.window_optics_method == "simple_glazing_angular_v1"
+    angular = settings is not None and settings.window_optics == "angular"
     for name in (*ANGULAR_WINDOW_OUTPUTS, *ANGULAR_DERIVED_OUTPUTS):
         add(
             name,
             "W",
             available=angular,
-            reason=None if angular else "Requires simple_glazing_angular_v1 optics",
+            reason=None if angular else "Requires angular window optics",
         )
     geometry = getattr(building, "geometry", None)
     basement = geometry is not None and geometry.basement_conditioned

@@ -1,3 +1,15 @@
+# File: test_iso13370_platform.py
+# Purpose: The explicit ground policy survives Core preparation and both solver paths.
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 """The explicit ground policy survives Core preparation and both solver paths."""
 
 from importlib.resources import files
@@ -11,6 +23,7 @@ from epsm_rc import RCSettings, preflight, simulate_building
 def settings(**overrides):
     return RCSettings(
         **{
+            "thermal_model": "iso13790_5r1c",
             "airflow_policy": "sensible_only_unlimited_supply",
             "ground_policy": "iso13370_periodic_approximation",
             "iso13370_wall_thickness_m": 0.3,
@@ -76,6 +89,7 @@ def test_periodic_ground_native_and_python_agree_and_preserve_physical_storage(
         reference_building,
         weather=weather,
         settings=RCSettings(
+            thermal_model="iso13790_5r1c",
             airflow_policy="sensible_only_unlimited_supply",
             ground_policy="conductance_multiplier",
         ),

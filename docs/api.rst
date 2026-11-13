@@ -5,7 +5,7 @@ These operations receive the same physical Core Building used by the full engine
 Read the assumptions and failure conditions before selecting a reduction policy.
 
 .. autoclass:: epsm_rc.platform.RCSettings
-   :members: from_policy, effective_configuration
+   :members: effective_configuration, from_policy
 
 Check inputs before simulating
 ------------------------------

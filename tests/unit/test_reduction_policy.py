@@ -1,3 +1,15 @@
+# File: test_reduction_policy.py
+# Purpose: An explicit versioned reduction configures the coefficients actually used.
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 """An explicit versioned reduction configures the coefficients actually used."""
 
 from importlib.resources import files
@@ -20,13 +32,42 @@ def test_missing_reduction_policy_is_rejected_before_io():
         simulate_building(None, weather="absent.epw")
 
 
-def test_named_policy_is_inspectable_and_versioned():
-    settings = RCSettings.from_policy("epsm_rc_5r1c_v1")
-    assert settings.policy_version == "epsm_rc_5r1c_v1"
+def test_legacy_profile_expands_to_explicit_choices():
+    with pytest.warns(DeprecationWarning, match="from_policy"):
+        settings = RCSettings.from_policy("epsm_rc_5r1c_v1")
+    assert settings.thermal_model == "iso13790_5r1c"
+    assert settings.heat_recovery == "always"
     assert settings.internal_surface_area_factor == 4.5
     assert settings.air_volumetric_heat_capacity_j_m3_k == 1200.0
     with pytest.raises(ValueError, match="policy"):
         RCSettings.from_policy("unknown")
+
+
+def test_settings_saved_by_rc_0_11_keep_their_profile():
+    # ``dataclasses.asdict`` of RC 0.11 settings, as stored in study and
+    # workflow specifications.
+    saved = {
+        "policy_version": "epsm_rc_5r1c_v1",
+        "airflow_policy": "sensible_only_unlimited_supply",
+        "solar_time_reference": "hour_start",
+        "window_optics_method": "constant_shgc",
+    }
+    with pytest.warns(DeprecationWarning, match="policy_version"):
+        settings = RCSettings(**saved)
+    with pytest.warns(DeprecationWarning):
+        expected = RCSettings.from_policy(
+            "epsm_rc_5r1c_v1", airflow_policy="sensible_only_unlimited_supply"
+        )
+    assert settings == expected
+    with pytest.warns(DeprecationWarning):
+        v2 = RCSettings(policy_version="epsm_rc_5r1c_v2", solar_time_reference=None)
+    assert (v2.thermal_model, v2.solar_time, v2.window_optics) == (
+        "iso13790_5r1c",
+        "midpoint",
+        "angular",
+    )
+    with pytest.raises(ValueError, match="policy_version"):
+        RCSettings(policy_version="unknown")
 
 
 @pytest.mark.parametrize(
@@ -50,13 +91,16 @@ def test_effective_coefficients_change_actual_reduced_properties(inputs, changes
         building,
         weather=weather,
         settings=RCSettings(
-            airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier"
+            thermal_model="iso13790_5r1c",
+            airflow_policy="sensible_only_unlimited_supply",
+            ground_policy="conductance_multiplier",
         ),
     )
     changed = simulate_building(
         building,
         weather=weather,
         settings=RCSettings(
+            thermal_model="iso13790_5r1c",
             airflow_policy="sensible_only_unlimited_supply",
             ground_policy="conductance_multiplier",
             **changes,
@@ -85,6 +129,7 @@ def test_effective_gain_ventilation_and_mass_methods_change_results(inputs, chan
             building,
             weather=weather,
             settings=RCSettings(
+                thermal_model="iso13790_5r1c",
                 airflow_policy="sensible_only_unlimited_supply",
                 ground_policy="conductance_multiplier",
                 **configuration,
@@ -129,8 +174,11 @@ def test_complete_constructions_do_not_receive_fallback_class(inputs, monkeypatc
     result = simulate_building(
         building,
         weather=weather,
-        settings=RCSettings.from_policy(
-            "epsm_rc_5r1c_v1",
+        settings=RCSettings(
+            thermal_model="iso13790_5r1c",
+            window_optics="constant_shgc",
+            solar_time="hour_start",
+            heat_recovery="always",
             airflow_policy="sensible_only_unlimited_supply",
             ground_policy="conductance_multiplier",
         ),
@@ -165,6 +213,7 @@ def test_new_solver_coefficients_require_positive_values(parameters):
 def test_mass_exterior_fallback_is_declared_and_reported(inputs):
     building, weather = inputs
     settings = RCSettings(
+        thermal_model="iso13790_5r1c",
         airflow_policy="sensible_only_unlimited_supply",
         ground_policy="conductance_multiplier",
         mass_surface_coefficient_w_m2_k=0.01,

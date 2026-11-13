@@ -1,14 +1,37 @@
 # File: radiation.py
 # Purpose: Shared vectorized radiation operations with explicit legacy policies.
 # SPDX-License-Identifier: MIT
-# License: MIT; see the project-root LICENSE.
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
 # Date created: 2026-10-18
+
 """Shared plane-of-array calculations for standalone and Core-adapter radiation.
 
+Notes
+-----
 The legacy standalone path retains its safe-input handling and left-associated
 sum. The adapter retains pvlib's sum order, zero-diffuse limit and daylight checks.
 Those differences are named here rather than silently changing saved results.
 All returned arrays are detached and writable; supplied weather is never changed.
+
+Examples
+--------
+Example::
+
+    import numpy as np
+    from epsm_rc.radiation import plane_irradiance
+
+    zenith, sun_azimuth = np.array([60.0]), np.array([180.0])
+    dni, ghi, dhi = np.array([500.0]), np.array([350.0]), np.array([100.0])
+    channels = plane_irradiance(
+        90, 180, zenith, sun_azimuth, dni, ghi, dhi, albedo=0.2, dni_extra=np.array([1360.0])
+    )
+    south_wall = channels["poa_global"]  # W/m²
 """
 
 from __future__ import annotations

@@ -1,8 +1,15 @@
-# File: benchmarks/run.py
+# File: run.py
 # Purpose: Installed-wheel numerical regressions and reproducible annual timings.
 # SPDX-License-Identifier: MIT
-# License: MIT; see the project-root LICENSE.
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
 # Date created: 2026-10-18
+
 """Compare explicit physical fixtures using separately installed RC wheels.
 
 Run from a source checkout with an installed package; no source directories are
@@ -146,8 +153,12 @@ def run(args, cache):
             check=True,
         )
     synthetic = controlled_weather(args.directory / "controlled.epw")
-    settings = RCSettings.from_policy(
-        f"epsm_rc_5r1c_v{args.policy}",
+    angular = args.policy == 2
+    settings = RCSettings(
+        thermal_model="iso13790_5r1c",
+        window_optics="angular" if angular else "constant_shgc",
+        solar_time="midpoint" if angular else "hour_start",
+        heat_recovery="always",
         airflow_policy="sensible_only_unlimited_supply",
         self_shadowing_policy="ignore",
     )

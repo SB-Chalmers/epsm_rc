@@ -2,10 +2,15 @@
 # Purpose: Compile shared Core inputs and calculate RC from one captured Building.
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Sanjay Somanath
-# Author: Sanjay Somanath
-# Research attribution: Numerical solver credits remain in iso13790.py.
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
 # Date created: 2026-10-14
-# Date modified: 2026-10-20
+
+# Research attribution: Numerical solver credits remain in iso13790.py.
 # Changelog:
 #   2026-10-14 - Replace independent IDF emitters with shared compilation and RC input identity.
 """Compile Core inputs and calculate RC demand from one captured physical Building.
@@ -13,6 +18,26 @@
 This helper performs no EnergyPlus annual simulation and no calibration. Core
 owns the validated epJSON model; the RC adapter records its selected reductions.
 No materials, constructions, glazing or schedules are inferred here.
+
+Notes
+-----
+The returned ``EngineComparison`` holds the compiled EnergyPlus inputs and
+the RC result for the same captured Building, so both engines read identical
+physical inputs. Run EnergyPlus separately when an annual reference is needed.
+
+Examples
+--------
+Example::
+
+    from epsm_rc.comparison import prepare_engine_comparison
+
+    comparison = prepare_engine_comparison(
+        building,
+        weather=weather,
+        directory="outputs/comparison",
+        rc_settings=settings,
+        energyplus="/path/to/energyplus",  # or set ENERGYPLUS_EXE
+    )
 """
 
 from __future__ import annotations

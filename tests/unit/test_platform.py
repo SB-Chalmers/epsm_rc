@@ -1,3 +1,15 @@
+# File: test_platform.py
+# Purpose: Physical balance and public Core-to-RC handoff regressions.
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 """Physical balance and public Core-to-RC handoff regressions."""
 
 from importlib.resources import files
@@ -103,6 +115,7 @@ def test_changed_reduction_settings_get_distinct_calculation_identity(reference_
         building,
         weather=weather,
         settings=RCSettings(
+            thermal_model="iso13790_5r1c",
             effective_mass_depth_m=0.05,
             airflow_policy="sensible_only_unlimited_supply",
             ground_policy="conductance_multiplier",
@@ -112,6 +125,7 @@ def test_changed_reduction_settings_get_distinct_calculation_identity(reference_
         building,
         weather=weather,
         settings=RCSettings(
+            thermal_model="iso13790_5r1c",
             effective_mass_depth_m=0.2,
             airflow_policy="sensible_only_unlimited_supply",
             ground_policy="conductance_multiplier",
@@ -146,7 +160,9 @@ def test_solar_limits_accept_read_only_provider_arrays(monkeypatch, reference_bu
         reference_building,
         weather=weather,
         settings=RCSettings(
-            airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier"
+            window_optics="constant_shgc",  # the stub supplies only plane-of-array totals
+            airflow_policy="sensible_only_unlimited_supply",
+            ground_policy="conductance_multiplier",
         ),
     )
     assert result.scalars["space_heating_demand_kwh"] > 0

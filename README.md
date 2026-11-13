@@ -56,6 +56,7 @@ reduction settings. Private dependencies need an accessible index or local check
 - [Ground heat-transfer methods and limits](docs/ground.rst)
 - [Standalone numerical API](docs/standalone.rst)
 - [Radiation methods and limits](docs/radiation.md)
+- [ISO 52016-1 hourly model](docs/iso52016.md)
 - [Performance and benchmarks](benchmarks/README.md)
 - [Project guide and development](docs/guide.md)
 

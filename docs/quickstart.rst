@@ -12,8 +12,7 @@ set of assumptions; it is not evidence about a real building.
 
    building = Building(preset="illustrative-reference")
    weather = Weather.from_epw("weather.epw")
-   settings = RCSettings.from_policy(
-       "epsm_rc_5r1c_v2",
+   settings = RCSettings(
        airflow_policy="sensible_only_unlimited_supply",
        ground_policy="conductance_multiplier",
    )
@@ -42,8 +41,7 @@ properties, an alternative to the fixed multiplier is available:
 
 .. code-block:: python
 
-   settings = RCSettings.from_policy(
-       "epsm_rc_5r1c_v2",
+   settings = RCSettings(
        airflow_policy="sensible_only_unlimited_supply",
        ground_policy="iso13370_periodic_approximation",
        iso13370_wall_thickness_m=0.30,
@@ -74,9 +72,15 @@ preparation while each run gets new thermal state. Use one cache per worker.
            for _ in range(2)
        ]
 
-Keep the chosen settings and assumptions with study results. The v1 policy
-preserves the historical hour-start solar sampling; v2 explicitly selects
-midpoint sampling and angular glazing. Both support context buildings through the
-ISO 13790 hourly average-horizon approximation. Diffuse radiation is unchanged;
+Keep the chosen settings and assumptions with study results. Each physics
+choice is a named setting with an enum of options in ``epsm_rc.options``:
+``thermal_model`` (``ThermalModel``), ``control_temperature``
+(``ControlTemperature``), ``window_optics`` (``WindowOptics``), ``solar_time``
+(``SolarTime``) and ``heat_recovery`` (``HeatRecovery``). Defaults are the
+options that agreed best with EnergyPlus: ISO 52016-1 with air control, angular
+optics, midpoint solar time and heat recovery only when beneficial. Use
+``thermal_model="iso13790_5r1c"`` for conditioned basements and cold attics.
+Both models support context buildings through the ISO 13790 hourly
+average-horizon approximation. Diffuse radiation is unchanged;
 facade shading details remain unsupported. See the repository's
 ``docs/radiation.md`` for scope.

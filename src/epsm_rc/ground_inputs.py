@@ -1,9 +1,47 @@
+# File: ground_inputs.py
+# Purpose: Resolve explicitly scoped ISO 13370 inputs from Core's physical snapshot.
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 """Resolve explicitly scoped ISO 13370 inputs from Core's physical snapshot.
 
+Notes
+-----
 This adapter never changes an installed construction. Core's conductivity-based
 bridge convention is applied to material resistance before the soil calculation;
 nominal material storage remains the responsibility of the ordinary RC adapter.
+
+Examples
+--------
+Example::
+
+    from importlib.resources import files
+    from epsm_core import Building, Weather
+    from epsm_rc import RCSettings, simulate_building
+
+    weather = Weather.from_epw(files("epsm_rc") / "data/epw/goteborg.epw")
+    settings = RCSettings(
+        airflow_policy="sensible_only_unlimited_supply",
+        ground_policy="conductance_multiplier",
+    )
+    building = Building(preset="illustrative-reference")
+    from dataclasses import replace
+
+    iso = replace(
+        settings,
+        ground_policy="iso13370_periodic_approximation",
+        iso13370_wall_thickness_m=0.3,
+        iso13370_wall_thickness_source="assumed for the example",
+    )
+    result = simulate_building(building, weather=weather, settings=iso)
+    result.diagnostics["ground_reduction"]["steady_conductance_w_k"]
 """
 
 from __future__ import annotations

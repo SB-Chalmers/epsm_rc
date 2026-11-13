@@ -1,5 +1,36 @@
+# File: _validation.py
+# Purpose: Shared input checks whose messages name the field, the value and the valid range.
 # SPDX-License-Identifier: MIT
-"""Shared input checks whose messages name the field, the value and the valid range."""
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
+"""Shared input checks whose messages name the field, the value and the valid range.
+
+Notes
+-----
+Each check raises ``ValueError`` (or ``TypeError`` for non-numbers and
+booleans) with a message naming the field, the value received and the valid
+range, so errors from settings and public calls point at the input to fix.
+
+Examples
+--------
+Example::
+
+    from epsm_rc._validation import finite, fraction
+
+    finite("floor_area_m2", 100.0, positive=True)
+    fraction("solar_shading_factor", 0.7)
+    try:
+        finite("floor_area_m2", -1.0, positive=True)
+    except ValueError as error:
+        print(error)  # floor_area_m2 must be finite and positive, not -1.0
+"""
 
 from math import isfinite
 from numbers import Real

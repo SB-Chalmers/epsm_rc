@@ -1,5 +1,19 @@
+# File: solar.py
+# Purpose: Solar gains calculation for ISO 13790 5R1C model.
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 """Solar gains calculation for ISO 13790 5R1C model.
 
+Notes
+-----
 Uses pvlib for accurate solar position and irradiance calculations.
 
 Provides two methods:
@@ -16,6 +30,16 @@ References:
     - pvlib: https://pvlib-python.readthedocs.io/
     - Perez et al. (1990) for diffuse sky model
     - BEDOT Thesis (Chalmers 2018) for validation approach
+
+Examples
+--------
+Example::
+
+    import numpy as np
+    from epsm_rc.solar import simplified_solar_gains
+
+    ghi = np.array([0.0, 200.0, 500.0])
+    gains_w = simplified_solar_gains(ghi, total_window_area=30.0, g_value=0.6)
 """
 
 from __future__ import annotations

@@ -1,7 +1,28 @@
+// File: coupled.rs
+// Purpose: Main and conditioned-basement 5R1C domains coupled through the floor.
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Sanjay Somanath
+// License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+// Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+// Project PI: Alexander Hollberg
+// Computational Sustainable Design Group
+// Research Area of Sustainable Built Environments
+// Chalmers University of Technology, Gothenburg
+// Date created: 2026-10-29
+
+//! Main and conditioned-basement 5R1C domains coupled through the floor.
+//!
+//! Each hour both domains run free-floating, then [`solve_controls_inner`] finds
+//! the pair of powers that satisfies both thermostats and the floor exchange
+//! G (θ_other − θ_own), with G the inter-domain conductance. The exchange is
+//! equal and opposite, so energy is conserved; the residual is reported.
+
 use crate::domain::DomainArrays;
 use crate::iso13790::Core5R1C;
 use crate::types::{ControlSolution, CoupledOutput, KernelResult, StepInputs};
 
+/// Hourly loop over both domains. Each domain's previous-hour power drives its
+/// heat-recovery mode (see [`crate::domain::DomainArrays::apply_at`]).
 pub fn run_coupled_domains(
     core0: &mut Core5R1C,
     core1: &mut Core5R1C,
@@ -16,9 +37,10 @@ pub fn run_coupled_domains(
         exchanges: std::array::from_fn(|_| Vec::with_capacity(count)),
         residuals: Vec::with_capacity(count),
     };
+    let mut last = [0.0; 2];
     for hour in 0..count {
-        let inputs0 = arrays0.apply_at(core0, hour)?;
-        let inputs1 = arrays1.apply_at(core1, hour)?;
+        let inputs0 = arrays0.apply_at(core0, hour, last[0])?;
+        let inputs1 = arrays1.apply_at(core1, hour, last[1])?;
         let solution = step_coupled_pair(
             core0,
             core1,
@@ -34,6 +56,7 @@ pub fn run_coupled_domains(
                 arrays1.cooling_limits_w[hour],
             ],
         )?;
+        last = solution.powers;
         for index in 0..2 {
             result.powers[index].push(solution.powers[index]);
             result.temperatures[index].push(solution.temperatures[index]);
@@ -53,6 +76,7 @@ enum ControlMode {
     CoolLimit,
 }
 
+/// Solve a 2×2 linear system with partial pivoting.
 #[inline]
 fn solve_2x2(mut a: [[f64; 2]; 2], mut b: [f64; 2]) -> [f64; 2] {
     if a[1][0].abs() > a[0][0].abs() {
@@ -68,6 +92,9 @@ fn solve_2x2(mut a: [[f64; 2]; 2], mut b: [f64; 2]) -> [f64; 2] {
     [x0, x1]
 }
 
+/// Choose the active control set (free, heating, cooling or at a limit) for each
+/// domain from free temperatures and unit responses, and solve the coupled
+/// balance for powers, temperatures and exchanges. Fails if no admissible set exists.
 #[inline(always)]
 pub fn solve_controls_inner(
     free: [f64; 2],
@@ -228,6 +255,7 @@ pub fn solve_controls_inner(
     Err("No admissible coupled heating/cooling control state")
 }
 
+/// Advance both domains one hour with coupled thermostat control.
 #[inline(always)]
 pub fn step_coupled_pair(
     core0: &mut Core5R1C,

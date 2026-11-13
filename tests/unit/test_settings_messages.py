@@ -1,3 +1,15 @@
+# File: test_settings_messages.py
+# Purpose: Settings and public-call errors name the field, the value and how to fix it.
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 """Settings and public-call errors name the field, the value and how to fix it."""
 
 import pytest
@@ -10,12 +22,13 @@ from epsm_rc.parametric import generate_polygon_idf
 @pytest.mark.parametrize(
     ("field", "value", "valid"),
     [
-        ("policy_version", "v2", "'epsm_rc_5r1c_v1', 'epsm_rc_5r1c_v2'"),
+        ("thermal_model", "5r1c", "'iso13790_5r1c'"),
         ("ground_policy", "kiva", "'iso13370_periodic_approximation'"),
-        ("window_optics_method", "angular", "'simple_glazing_angular_v1'"),
+        ("window_optics", "dynamic", "'angular'"),
+        ("heat_recovery", "sometimes", "'when_beneficial'"),
         ("cold_attic_policy", "buffer", "'quasi_steady_buffer'"),
         ("context_shading_method", "horizon", "'iso13790_hourly_horizon'"),
-        ("solar_time_reference", "midpoint", "'interval_midpoint'"),
+        ("solar_time", "noon", "'midpoint'"),
     ],
 )
 def test_unknown_policy_lists_the_received_value_and_valid_options(field, value, valid):
@@ -39,14 +52,13 @@ def test_numeric_settings_reject_nonnumbers_and_out_of_range_values(field, value
 
 
 def test_repr_shows_the_required_explicit_choices():
-    settings = RCSettings.from_policy(
-        "epsm_rc_5r1c_v2",
+    settings = RCSettings(
         airflow_policy="sensible_only_unlimited_supply",
         ground_policy="conductance_multiplier",
     )
     assert repr(settings) == (
-        "RCSettings(policy='epsm_rc_5r1c_v2', airflow='sensible_only_unlimited_supply', "
-        "ground='conductance_multiplier', optics='simple_glazing_angular_v1')"
+        "RCSettings(model='iso52016_1', airflow='sensible_only_unlimited_supply', "
+        "ground='conductance_multiplier', optics='angular', heat_recovery='when_beneficial')"
     )
 
 
@@ -63,10 +75,10 @@ def test_requirement_errors_keep_the_policy_and_point_to_preflight():
         simulate_building(
             Building(preset="illustrative-reference"),
             weather=weather,
-            settings=RCSettings.from_policy("epsm_rc_5r1c_v2"),
+            settings=RCSettings(),
         )
     message = str(error.value)
-    assert "RCSettings.from_policy('epsm_rc_5r1c_v2'" in message
+    assert "RCSettings(airflow_policy='sensible_only_unlimited_supply')" in message
     assert "epsm_rc.preflight(" in message
 
 

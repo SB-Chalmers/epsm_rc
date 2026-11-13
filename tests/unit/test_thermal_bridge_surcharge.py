@@ -1,3 +1,15 @@
+# File: test_thermal_bridge_surcharge.py
+# Purpose: Core's absolute thermal-bridge surcharge reaches the 5R1C conductance once.
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 """Core's absolute thermal-bridge surcharge reaches the 5R1C conductance once."""
 
 from importlib.resources import files
@@ -10,8 +22,9 @@ from epsm_rc import RCSettings, simulate_building
 
 
 def evaluate(building):
-    settings = RCSettings.from_policy(
-        "epsm_rc_5r1c_v2",
+    settings = RCSettings(
+        thermal_model="iso13790_5r1c",
+        heat_recovery="always",
         airflow_policy="sensible_only_unlimited_supply",
         ground_policy="conductance_multiplier",
     )

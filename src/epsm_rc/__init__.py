@@ -1,11 +1,19 @@
-# File: src/epsm_rc/__init__.py
+# File: __init__.py
 # Purpose: Deliberate public imports with lazy advanced and optional APIs.
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 EPSM Development contributors
-# License: See LICENSE at the project root.
-# Date modified: 2026-10-20
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 """Hourly reduced thermal calculation from explicit physical or numerical inputs.
 
+Notes
+-----
 Use ``simulate_building`` with a Core Building, explicit weather and ``RCSettings``
 for the recommended shared physical interface. ``Building5R1C`` and the named
 standalone modules retain numerical experiments without Core. Advanced APIs load
@@ -44,6 +52,11 @@ __all__ = [
     "preflight",
     "output_capabilities",
     "RCSettings",
+    "ThermalModel",
+    "ControlTemperature",
+    "WindowOptics",
+    "SolarTime",
+    "HeatRecovery",
     "PreparationCache",
     # Core model
     "Building5R1C",
@@ -97,6 +110,11 @@ def __getattr__(name):
         "preflight": "platform",
         "output_capabilities": "outputs",
         "RCSettings": "platform",
+        "ThermalModel": "options",
+        "ControlTemperature": "options",
+        "WindowOptics": "options",
+        "SolarTime": "options",
+        "HeatRecovery": "options",
         "ParametricBuilding": "parametric",
         "generate_idf": "parametric",
         "get_5r1c_params": "parametric",

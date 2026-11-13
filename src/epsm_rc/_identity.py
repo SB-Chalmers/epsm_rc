@@ -1,11 +1,30 @@
 # File: _identity.py
 # Purpose: Capture installed calculation identity once per Python process.
 # SPDX-License-Identifier: MIT
-# License: MIT; see the project-root LICENSE.
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 """Lazy process identity; restart after editing installed sources or dependencies.
 
+Notes
+-----
 Identity is provenance for the loaded calculation, not a live source watcher.
 No file or dependency inspection happens at import or on subsequent evaluations.
+
+Examples
+--------
+Example::
+
+    from epsm_rc._identity import implementation_identity
+
+    identity = implementation_identity()  # computed once per process
+    assert "epsm_rc" in identity["source_sha256"]
 """
 
 from __future__ import annotations

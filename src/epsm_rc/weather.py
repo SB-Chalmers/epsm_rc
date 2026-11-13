@@ -2,14 +2,21 @@
 # Purpose: Parse explicitly selected EPW inputs after shared checksum/calendar validation.
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Sanjay Somanath
-# Author: Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 # Research attribution: Existing numerical model credits remain in iso13790.py.
-# Date created: Unknown; retained weather module predates this refactor.
-# Date modified: 2026-10-20
 # Changelog:
 #   2026-10-14 - Require explicit selection and shared validation; remove annual padding/truncation.
 """Weather data from EPW files for Swedish load simulation.
 
+Notes
+-----
 Uses EnergyPlus Weather (EPW) format - Typical Meteorological Year data.
 Weather selection is explicit; Göteborg is an optional named bundled preset.
 Strict loading requires epsm_rc[platform] and delegates calendar/checksum checks
@@ -29,6 +36,14 @@ EPW Field Reference (0-indexed from data rows):
   14: Direct Normal Radiation [Wh/m²]
   15: Diffuse Horizontal Radiation [Wh/m²]
   ...
+
+Examples
+--------
+Example::
+
+    from epsm_rc.weather import load_epw
+
+    epw = load_epw(preset="goteborg")  # explicit bundled preset
 """
 
 from __future__ import annotations

@@ -1,27 +1,22 @@
-# File: src/epsm_rc/gis_footprint.py
+# File: gis_footprint.py
 # Purpose: Explicit GIS footprint readers preserving geometry and height evidence.
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 EPSM Development contributors
-# License: See LICENSE at the project root.
-# Date modified: 2026-10-20
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 # Changelog:
 #   2026-10-20 - Document explicit inputs, units, mutation and I/O boundaries.
 """
 Import building footprints from GIS sources → BuildingGeometry.
 
-Three entry-points, one return type:
-
-    from epsm_rc.gis_footprint import FootprintImporter
-
-    # 1. OpenStreetMap way/relation ID
-    geom = FootprintImporter.from_osm(way_id=90851303, num_floors=2, floor_height=2.5)
-
-    # 2. GeoJSON file or dict
-    geom = FootprintImporter.from_geojson("building.geojson", num_floors=2, floor_height=2.5)
-
-    # 3. Shapefile (EPSG:3006 or auto-detected CRS)
-    geoms = FootprintImporter.from_shapefile("footprints.shp", num_floors=2, floor_height=2.5)
-
+Notes
+-----
 All methods return BuildingGeometry (or list thereof) in a local metric
 coordinate system with the centroid shifted to the origin.
 Polygon holes and MultiPolygon components are preserved in Core geometry,
@@ -35,6 +30,21 @@ Coordinate handling:
 - WGS84 (EPSG:4326) → UTM auto-zone  (for OSM / GeoJSON in lon/lat)
 - EPSG:3006 (SWEREF99 TM) → used directly (already metric)
 - Other projected CRS → used directly if units are metres
+
+Examples
+--------
+Three entry points, one return type::
+
+    from epsm_rc.gis_footprint import FootprintImporter
+
+    # 1. OpenStreetMap way/relation ID
+    geom = FootprintImporter.from_osm(way_id=90851303, num_floors=2, floor_height=2.5)
+
+    # 2. GeoJSON file or dict
+    geom = FootprintImporter.from_geojson("building.geojson", num_floors=2, floor_height=2.5)
+
+    # 3. Shapefile (EPSG:3006 or auto-detected CRS)
+    geoms = FootprintImporter.from_shapefile("footprints.shp", num_floors=2, floor_height=2.5)
 """
 
 from __future__ import annotations

@@ -1,17 +1,26 @@
 # File: platform.py
-# Purpose: Reduce shared Core Buildings to independent hourly 5R1C evaluations.
+# Purpose: Reduce shared Core Buildings to hourly ISO 52016-1 or 5R1C evaluations.
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Sanjay Somanath
-# Author: Sanjay Somanath
-# Research attribution: Existing numerical solver credits are retained in iso13790.py.
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
 # Date created: 2026-10-14
-# Date modified: 2026-10-21
+
+# Research attribution: Existing numerical solver credits are retained in iso13790.py.
 # Changelog:
+#   2026-11-13 - Named option enums with EnergyPlus-matching defaults; ISO 52016-1
+#                model; heat recovery only when beneficial.
 #   2026-10-19 - Preserve conditioned-basement controls and finite cold-attic buffers.
 #   2026-10-14 - Add the Core adapter with explicit reduction and delivery assumptions.
 #   2026-10-14 - Use the common solver with sensible recovery applied once.
-"""Reduce a Core Building to independent hourly 5R1C evaluations.
+"""Reduce a Core Building to independent hourly ISO 52016-1 or 5R1C evaluations.
 
+Notes
+-----
 The reduction prepares each conditioned thermal domain once. Material
 inventory remains in Core; only transport/storage equivalents enter this model.
 Solar radiation uses actual facade azimuths and Perez irradiance with the supplied
@@ -24,12 +33,31 @@ Self-shadowing for courtyards, concave footprints or multiple parts requires an
 explicit omission policy, reported in diagnostics and calculation identity.
 Weather is read explicitly; optional output writes hourly arrays. No catalogue loads occur
 on import. Sensible recovery uses the common standalone solver implementation.
+
+Examples
+--------
+Example::
+
+    from importlib.resources import files
+    from epsm_core import Building, Weather
+    from epsm_rc import RCSettings, simulate_building
+
+    weather = Weather.from_epw(files("epsm_rc") / "data/epw/goteborg.epw")
+    settings = RCSettings(
+        airflow_policy="sensible_only_unlimited_supply",
+        ground_policy="conductance_multiplier",
+    )
+    building = Building(preset="illustrative-reference")
+
+    result = simulate_building(building, weather=weather, settings=settings)
+    result.scalars["space_heating_demand_kwh"]
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import warnings
 from dataclasses import asdict, dataclass, replace
 from datetime import timedelta, timezone
 from io import StringIO
@@ -47,31 +75,36 @@ from epsm_rc._logging import operation as logged_operation
 from ._forcing import HourlyInputs, PreparedDomain, _immutable_columns, _immutable_series
 from ._identity import implementation_identity
 from ._results import DomainReduction
-from ._validation import choice, finite, fraction
+from ._validation import finite, fraction
 from .domains import select_domains, simulate_conditioned_domains
 from .iso13790 import Building5R1C, Construction, ConstructionLayer
 from .optics import SimpleGlazingOptics
+from .options import (
+    LEGACY_PROFILES,
+    AirflowPolicy,
+    ColdAtticPolicy,
+    ContextShading,
+    ControlTemperature,
+    GroundPolicy,
+    HeatRecovery,
+    SelfShadowingPolicy,
+    SolarTime,
+    ThermalModel,
+    WindowOptics,
+)
 from .preparation import PreparationCache
 from .radiation import plane_irradiance
 
 logger = context_logger(__name__)
 
 # Valid selections for each explicit reduction policy field of RCSettings.
-POLICY_VERSIONS = frozenset({"epsm_rc_5r1c_v1", "epsm_rc_5r1c_v2"})
-AIRFLOW_POLICIES = frozenset({"reject", "sensible_only_unlimited_supply"})
-GROUND_POLICIES = frozenset(
-    {
-        "reject",
-        "conductance_multiplier",
-        "prescribed_monthly_temperature",
-        "iso13370_periodic_approximation",
-    }
-)
-SOLAR_TIME_REFERENCES = frozenset({"hour_start", "interval_midpoint"})
-WINDOW_OPTICS_METHODS = frozenset({"constant_shgc", "simple_glazing_angular_v1"})
-COLD_ATTIC_POLICIES = frozenset({"reject", "quasi_steady_buffer"})
-SELF_SHADOWING_POLICIES = frozenset({"reject", "ignore"})
-CONTEXT_SHADING_METHODS = frozenset({"reject", "iso13790_hourly_horizon"})
+# Renamed RCSettings keywords, accepted with a DeprecationWarning.
+_RENAMED_FIELDS = {
+    "window_optics_method": "window_optics",
+    "solar_time_reference": "solar_time",
+    "heat_recovery_control": "heat_recovery",
+    "iso52016_control_temperature": "control_temperature",
+}
 PREFLIGHT_HINT = (
     " Run epsm_rc.preflight(building, weather=weather, settings=settings) to list every"
     " unmet requirement at once."
@@ -91,14 +124,28 @@ class RCSettings:
         ``conductance_multiplier`` ground policy; baseline value 0.5.
     ground_reflectance : float
         Solar ground albedo in [0, 1]; default 0.2.
-    airflow_policy : str
+    airflow_policy : AirflowPolicy or str
         ``reject`` (default) rejects unsupported latent recovery and supply
         temperature limits, including Core's default limits. Select
         ``sensible_only_unlimited_supply`` to explicitly omit these fields.
         Omitted requested values are retained in result diagnostics.
-    policy_version : str
-        Version of the baseline defaults, ``epsm_rc_5r1c_v1`` or v2. Explicit
-        overrides are retained alongside this baseline identity.
+    thermal_model : ThermalModel or str
+        ``iso52016_1`` (default): ISO 52016-1 Clause 6.5 with node chains per
+        element. ``iso13790_5r1c``: the ISO 13790 5R1C network. Preparation,
+        solar, gains, airflow and ground reductions are shared; the 5R1C mass and
+        coupling coefficients are inactive under ISO 52016-1. Under ISO 52016-1 a
+        conditioned basement and cold attics are zones of one multi-zone network,
+        coupled through their separating floor and ceiling node chains.
+    control_temperature : ControlTemperature or str
+        ``air`` (default), as EnergyPlus ideal loads, or ``operative``, as
+        ISO 52016-1 specifies. Used by ISO 52016-1; 5R1C always controls air.
+    heat_recovery : HeatRecovery or str
+        ``when_beneficial`` (default) recovers sensible heat only when it reduces
+        the load: in heating mode with outdoor air colder than the zone, or
+        cooling mode with outdoor air warmer. The mode comes from the previous
+        hour's HVAC power or air temperature against the setpoints. Other hours
+        bypass the exchanger, so summer ventilation cools freely, as EnergyPlus
+        ideal loads do. ``always`` recovers in every hour.
     internal_surface_area_factor, mass_area_factors : float or tuple
         Ratios to conditioned floor area. Mass-area factors correspond to
         construction capacities below, between and above the two thresholds.
@@ -138,13 +185,14 @@ class RCSettings:
         ``reject`` (default) requires an explicit decision for courtyards,
         concave footprints and multiple parts. ``ignore`` acknowledges omitted
         self-shadowing; context horizon shading is a separate method.
-    solar_time_reference : str
-        ``hour_start`` retains v1; ``interval_midpoint`` samples solar position
-        half an hour into each weather interval without changing result labels.
-    window_optics_method : str
-        ``constant_shgc`` retains v1; ``simple_glazing_angular_v1`` selects the
-        documented specular equivalent-layer approximation with beam/diffuse
-        optics and nominal inward absorption. Explicit v2 selects both upgrades.
+    solar_time : SolarTime or str
+        ``midpoint`` (default) samples solar position half an hour into each
+        weather interval without changing result labels; ``hour_start`` samples
+        it at the start.
+    window_optics : WindowOptics or str
+        ``angular`` (default) selects the documented specular equivalent-layer
+        approximation with beam/diffuse optics and nominal inward absorption;
+        ``constant_shgc`` applies the normal-incidence SHGC in every hour.
     context_shading_method : str
         ``iso13790_hourly_horizon`` (default) applies Annex G.5.4.2 equation G.3
         using a representative point and average front-horizon angle per receiver.
@@ -155,15 +203,25 @@ class RCSettings:
         between 1 and 30 degrees; default 10. Numerical choice, not an ISO requirement.
 
     cold_attic_policy : str
-        ``reject`` keeps omitted attic assumptions visible. The explicit
-        ``quasi_steady_buffer`` uses supplied attic outdoor exchange and physical
-        shell/ceiling conductances, retaining shell solar/sky but omitting shell storage.
+        ``unconditioned_zone`` (default; ISO 52016-1) models each cold attic as
+        an unconditioned zone with its own air node, shell node chains, solar
+        and the declared outdoor exchange, coupled through the ceiling.
+        ``quasi_steady_buffer`` (5R1C) uses the same exchange and physical
+        shell/ceiling conductances in steady state, retaining shell solar/sky but
+        omitting shell storage. ``reject`` refuses cold attics. Every option
+        needs the attic outdoor exchange declared on the Building.
     interzone_floor_surface_resistance_m2_k_w : float
         Positive combined room-side films for the main/basement separating floor,
         in m² K/W; initial assumption 0.27 (0.17 + 0.10).
 
     Notes
     -----
+    Every choice is a string enum in ``epsm_rc.options``; ``list(WindowOptics)``
+    shows the options and plain strings are accepted. Defaults are the options
+    that agreed best with EnergyPlus (``benchmarks/iso52016``). The keywords
+    ``window_optics_method``, ``solar_time_reference``, ``heat_recovery_control``
+    and ``iso52016_control_temperature``, ``from_policy`` and the ``policy_version``
+    keyword of settings saved by RC 0.11 are deprecated aliases.
     These values describe reduction assumptions rather than material evidence.
     Main and conditioned basement may have distinct resolved controls. Other
     mixed uses, unconditioned basements, facade shading details, detailed HVAC and PV remain
@@ -179,8 +237,7 @@ class RCSettings:
     effective_mass_depth_m: float = 0.1
     ground_coupling_factor: float = 0.5
     ground_reflectance: float = 0.2
-    airflow_policy: str = "reject"
-    policy_version: str = "epsm_rc_5r1c_v1"
+    airflow_policy: AirflowPolicy = AirflowPolicy.REJECT
     internal_surface_area_factor: float = 4.5
     convective_internal_gains_fraction: float = 0.5
     mass_capacity_thresholds_j_m2_k: tuple[float, float] = (165_000.0, 260_000.0)
@@ -194,38 +251,39 @@ class RCSettings:
     sky_air_temperature_difference_k: float = 11.0
     wall_sky_view_factor: float = 0.5
     roof_sky_view_factor: float = 1.0
-    ground_policy: str = "reject"
+    ground_policy: GroundPolicy = GroundPolicy.REJECT
     iso13370_wall_thickness_m: float | None = None
     iso13370_wall_thickness_source: str | None = None
     monthly_ground_temperatures_c: tuple[float, ...] | None = None
     monthly_ground_temperature_source: str | None = None
-    self_shadowing_policy: str = "reject"
-    solar_time_reference: str | None = None
-    window_optics_method: str | None = None
-    cold_attic_policy: str = "reject"
+    self_shadowing_policy: SelfShadowingPolicy = SelfShadowingPolicy.REJECT
+    solar_time: SolarTime = SolarTime.MIDPOINT
+    window_optics: WindowOptics = WindowOptics.ANGULAR
+    cold_attic_policy: ColdAtticPolicy = ColdAtticPolicy.UNCONDITIONED_ZONE
     interzone_floor_surface_resistance_m2_k_w: float = 0.27
-    context_shading_method: str = "iso13790_hourly_horizon"
+    context_shading_method: ContextShading = ContextShading.ISO13790_HOURLY_HORIZON
     horizon_azimuth_step_deg: float = 10.0
+    thermal_model: ThermalModel = ThermalModel.ISO52016_1
+    control_temperature: ControlTemperature = ControlTemperature.AIR
+    heat_recovery: HeatRecovery = HeatRecovery.WHEN_BENEFICIAL
 
     def __post_init__(self):
         finite("effective_mass_depth_m", self.effective_mass_depth_m, positive=True)
         fraction("ground_coupling_factor", self.ground_coupling_factor)
         fraction("ground_reflectance", self.ground_reflectance)
-        choice("airflow_policy", self.airflow_policy, AIRFLOW_POLICIES)
-        choice("policy_version", self.policy_version, POLICY_VERSIONS)
-        angular = self.policy_version == "epsm_rc_5r1c_v2"
-        if self.solar_time_reference is None:
-            object.__setattr__(
-                self, "solar_time_reference", "interval_midpoint" if angular else "hour_start"
-            )
-        if self.window_optics_method is None:
-            object.__setattr__(
-                self,
-                "window_optics_method",
-                "simple_glazing_angular_v1" if angular else "constant_shgc",
-            )
-        choice("solar_time_reference", self.solar_time_reference, SOLAR_TIME_REFERENCES)
-        choice("window_optics_method", self.window_optics_method, WINDOW_OPTICS_METHODS)
+        for name, kind in (
+            ("airflow_policy", AirflowPolicy),
+            ("ground_policy", GroundPolicy),
+            ("self_shadowing_policy", SelfShadowingPolicy),
+            ("cold_attic_policy", ColdAtticPolicy),
+            ("context_shading_method", ContextShading),
+            ("thermal_model", ThermalModel),
+            ("control_temperature", ControlTemperature),
+            ("heat_recovery", HeatRecovery),
+            ("solar_time", SolarTime),
+            ("window_optics", WindowOptics),
+        ):
+            object.__setattr__(self, name, kind.parse(getattr(self, name), name))
         positive = (
             "internal_surface_area_factor",
             "surface_air_coefficient_w_m2_k",
@@ -259,7 +317,6 @@ class RCSettings:
             raise ValueError("Mass capacity thresholds must be strictly increasing")
         if max(self.mass_area_factors) > self.internal_surface_area_factor:
             raise ValueError("Effective mass area cannot exceed the internal surface area")
-        choice("ground_policy", self.ground_policy, GROUND_POLICIES)
         if self.ground_policy == "iso13370_periodic_approximation":
             width = self.iso13370_wall_thickness_m
             if isinstance(width, bool) or width is None or not np.isfinite(width) or width <= 0:
@@ -291,20 +348,18 @@ class RCSettings:
             raise ValueError(
                 "Select ground_policy='prescribed_monthly_temperature' for monthly inputs"
             )
-        choice("cold_attic_policy", self.cold_attic_policy, COLD_ATTIC_POLICIES)
         finite(
             "interzone_floor_surface_resistance_m2_k_w",
             self.interzone_floor_surface_resistance_m2_k_w,
             positive=True,
         )
-        choice("self_shadowing_policy", self.self_shadowing_policy, SELF_SHADOWING_POLICIES)
-        choice("context_shading_method", self.context_shading_method, CONTEXT_SHADING_METHODS)
         finite("horizon_azimuth_step_deg", self.horizon_azimuth_step_deg, minimum=1, maximum=30)
 
     def __repr__(self):
         return (
-            f"RCSettings(policy={self.policy_version!r}, airflow={self.airflow_policy!r}, "
-            f"ground={self.ground_policy!r}, optics={self.window_optics_method!r})"
+            f"RCSettings(model={self.thermal_model.value!r}, "
+            f"airflow={self.airflow_policy.value!r}, ground={self.ground_policy.value!r}, "
+            f"optics={self.window_optics.value!r}, heat_recovery={self.heat_recovery.value!r})"
         )
 
     __str__ = __repr__
@@ -321,11 +376,27 @@ class RCSettings:
 
     @classmethod
     def from_policy(cls, name: str, **overrides) -> RCSettings:
-        """Select the named baseline profile with inspectable explicit overrides."""
-        return cls(policy_version=name, **overrides)
+        """Deprecated: expand a former named profile into explicit choices.
+
+        ``epsm_rc_5r1c_v1`` is 5R1C with constant SHGC, hour-start solar time and
+        recovery in every hour; ``epsm_rc_5r1c_v2`` uses angular optics and
+        midpoint solar time. Set the choices directly instead.
+        """
+        if name not in LEGACY_PROFILES:
+            valid = ", ".join(repr(option) for option in LEGACY_PROFILES)
+            raise ValueError(f"Unknown policy {name!r}; choose one of {valid}")
+        warnings.warn(
+            f"RCSettings.from_policy({name!r}) is deprecated; pass thermal_model, "
+            "window_optics, solar_time and heat_recovery to RCSettings directly",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return cls(**{**LEGACY_PROFILES[name], **overrides})
 
     def effective_configuration(self) -> dict:
         """Return model assumptions, distinct from the supplied physical evidence."""
+        if self.thermal_model == ThermalModel.ISO52016_1:
+            return self._iso52016_configuration()
         return {
             "origin": "explicit_reduction_policy",
             "coefficients": asdict(self),
@@ -339,8 +410,9 @@ class RCSettings:
                 "mass_capacity": "room_side_depth_limited_constructions",
                 "mass_area": "construction_capacity_thresholds",
                 "solar": "perez_with_exact_zero_diffuse_limit",
-                "glazing": self.window_optics_method,
-                "solar_time_reference": self.solar_time_reference,
+                "glazing": self.window_optics.value,
+                "solar_time": self.solar_time.value,
+                "heat_recovery": self.heat_recovery.value,
                 "occupant_gains": "all_activity_treated_as_sensible",
                 "fan_heat": "omitted",
                 "thermal_domain": "one_conditioned_domain",
@@ -356,6 +428,103 @@ class RCSettings:
             },
         }
 
+    def _iso52016_configuration(self) -> dict:
+        """ISO 52016-1 assumptions; 5R1C node coefficients are listed as inactive."""
+        from . import iso52016
+
+        coefficients = asdict(self)
+        return {
+            "origin": "explicit_reduction_policy",
+            "coefficients": coefficients,
+            "inactive_coefficients": [
+                "effective_mass_depth_m",
+                "internal_surface_area_factor",
+                "mass_capacity_thresholds_j_m2_k",
+                "mass_area_factors",
+                "surface_air_coefficient_w_m2_k",
+                "mass_surface_coefficient_w_m2_k",
+                "convective_internal_gains_fraction",
+                "outside_wall_resistance_m2_k_w",
+                "outside_roof_resistance_m2_k_w",
+                "sky_radiation_coefficient_w_m2_k",
+            ],
+            "model_constants": {
+                "timestep_hours": 1.0,
+                "table25_h_ci_w_m2_k": dict(iso52016.H_CI),
+                "table25_h_ri_w_m2_k": iso52016.H_RI,
+                "table25_h_ce_w_m2_k": iso52016.H_CE,
+                "table25_h_re_w_m2_k": iso52016.H_RE,
+                "internal_gain_convective_fraction": iso52016.F_INT_C,
+                "window_solar_convective_fraction": iso52016.F_SOL_C,
+                "hvac_convective_fraction": iso52016.F_HC_C,
+                "internal_capacity_j_m2_k": iso52016.INTERNAL_CAPACITY_J_M2_K,
+                "warmup_passes": 1,
+            },
+            "methods": {
+                "thermal_model": self.thermal_model.value,
+                "element_nodes": "five_node_opaque_two_node_window",
+                "mass_distribution": "clause_6_5_7_2_class_from_layer_sequence",
+                "solar": "perez_with_exact_zero_diffuse_limit",
+                "glazing": self.window_optics.value,
+                "solar_time": self.solar_time.value,
+                "heat_recovery": self.heat_recovery.value,
+                "opaque_solar": "absorbed_at_exterior_node",
+                "sky_radiation": "per_element_exterior_node",
+                "internal_radiation": "area_weighted_mean_radiant_temperature",
+                "occupant_gains": "all_activity_treated_as_sensible",
+                "fan_heat": "omitted",
+                "thermal_domain": "one_conditioned_domain",
+                "boundaries": "core_physical_element_boundaries",
+                "internal_elements": "midplane_split_adiabatic",
+                "initial_temperature": "one_year_warmup_from_first_hour_heating_setpoint",
+                "integration": "hourly_backward_euler",
+                "control": self.control_temperature.value,
+                "load_interpolation": "exact_linear_response",
+                "self_shadowing": "geometry_capability_gate_with_explicit_omission",
+                "context_shading": self.context_shading_method,
+            },
+        }
+
+
+_dataclass_init = RCSettings.__init__
+
+
+def _init_with_renamed_keywords(self, *args, **kwargs):
+    profile = {}
+    if "policy_version" in kwargs:
+        # Settings saved by RC 0.11 and earlier carry the profile name; expand it
+        # so a stored v1/v2 dictionary keeps its 5R1C physics instead of failing
+        # or silently adopting the newer defaults.
+        name = kwargs.pop("policy_version")
+        if name not in LEGACY_PROFILES:
+            valid = ", ".join(repr(option) for option in LEGACY_PROFILES)
+            raise ValueError(f"Unknown policy_version {name!r}; choose one of {valid}")
+        warnings.warn(
+            f"RCSettings(policy_version={name!r}) is deprecated; pass thermal_model, "
+            "window_optics, solar_time and heat_recovery directly",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        profile = LEGACY_PROFILES[name]
+    for old, new in _RENAMED_FIELDS.items():
+        if old in kwargs:
+            if new in kwargs:
+                raise TypeError(f"Pass {new!r} or the deprecated {old!r}, not both")
+            warnings.warn(
+                f"RCSettings({old}=...) is deprecated; use {new}=...",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            value = kwargs.pop(old)
+            if value is not None:
+                kwargs[new] = value
+    _dataclass_init(self, *args, **{**profile, **kwargs})
+
+
+_init_with_renamed_keywords.__doc__ = _dataclass_init.__doc__
+_init_with_renamed_keywords.__signature__ = __import__("inspect").signature(_dataclass_init)
+RCSettings.__init__ = _init_with_renamed_keywords
+
 
 def _airflow_capabilities(airflow, settings: RCSettings) -> dict:
     """Reject unsupported requests or record the caller-selected omission."""
@@ -369,8 +538,7 @@ def _airflow_capabilities(airflow, settings: RCSettings) -> dict:
         raise ValueError(
             f"epsm_rc does not support airflow fields: {', '.join(omitted)}. "
             "To acknowledge their omission, set airflow_policy='sensible_only_unlimited_supply', "
-            "for example RCSettings.from_policy('epsm_rc_5r1c_v2', "
-            "airflow_policy='sensible_only_unlimited_supply'). When simulating through the "
+            "for example RCSettings(airflow_policy='sensible_only_unlimited_supply'). When simulating through the "
             "epsm platform, pass these RC settings explicitly." + PREFLIGHT_HINT
         )
     return {"effective_model": settings.airflow_policy, "omitted_inputs": omitted}
@@ -961,7 +1129,9 @@ def _context_horizons(preparation, elements, attic, facades):
     return horizons, context_shading
 
 
-def _prepare_radiation(preparation, model, elements, attic, areas, optical_models):
+def _prepare_radiation(
+    preparation, model, elements, attic, areas, optical_models, element_irradiance=None
+):
     """Prepare solar and sky forcing using the building's captured weather buffers."""
     from epsm_core.bridges import thermal_bridge_uplifts
     from epsm_core.geometry import facade_catalog
@@ -976,7 +1146,7 @@ def _prepare_radiation(preparation, model, elements, attic, areas, optical_model
         "year": year,
         "climate": spec.climate.model_dump(mode="json"),
         "implementation": preparation.implementation,
-        "solar_time_reference": settings.solar_time_reference,
+        "solar_time": settings.solar_time.value,
     }
     ghi = data["ghi"]
     if not np.isfinite(ghi).all() or ((ghi < 0) | (ghi >= 9999)).any():
@@ -987,11 +1157,9 @@ def _prepare_radiation(preparation, model, elements, attic, areas, optical_model
     )
 
     sun_times = (
-        times + pd.Timedelta(minutes=30)
-        if settings.solar_time_reference == "interval_midpoint"
-        else times
+        times + pd.Timedelta(minutes=30) if settings.solar_time == SolarTime.MIDPOINT else times
     )
-    if settings.window_optics_method == "simple_glazing_angular_v1":
+    if settings.window_optics == WindowOptics.ANGULAR:
         for name in ("dni", "dhi"):
             values = data[name]
             if not np.isfinite(values).all() or ((values < 0) | (values >= 9999)).any():
@@ -1031,7 +1199,7 @@ def _prepare_radiation(preparation, model, elements, attic, areas, optical_model
 
     radiation_hourly = (
         {name: np.zeros(len(axis)) for name in ANGULAR_WINDOW_OUTPUTS}
-        if settings.window_optics_method == "simple_glazing_angular_v1"
+        if settings.window_optics == WindowOptics.ANGULAR
         else {}
     )
     for element in elements:
@@ -1073,8 +1241,10 @@ def _prepare_radiation(preparation, model, elements, attic, areas, optical_model
             orientation_irradiance[orientation] = channels
         channels = shaded(channels, element.identifier)
         poa = channels["poa_global"]
+        if element_irradiance is not None and role != "WINDOW":
+            element_irradiance[element.identifier] = poa
         if role == "WINDOW":
-            if settings.window_optics_method == "constant_shgc":
+            if settings.window_optics == WindowOptics.CONSTANT_SHGC:
                 solar += (
                     poa
                     * element.area_m2
@@ -1143,6 +1313,8 @@ def _prepare_radiation(preparation, model, elements, attic, areas, optical_model
             )
             orientation_irradiance[orientation] = channels
         channels = shaded(channels, term["surface_name"])
+        if element_irradiance is not None:
+            element_irradiance[("attic", term["surface_name"])] = channels["poa_global"]
         opaque += (
             channels["poa_global"] * term["solar_coefficient_m2"] * term["transmission_fraction"]
         )
@@ -1215,7 +1387,7 @@ def _run_identity(preparation, settings, gain_reduction, domain):
 def _angular_optics(elements, settings):
     """One equivalent-layer optics model per distinct outdoor glazing."""
     optical_models = {}
-    if settings.window_optics_method == "simple_glazing_angular_v1":
+    if settings.window_optics == WindowOptics.ANGULAR:
         for element in elements:
             if (
                 element.role.value == "WINDOW"
@@ -1482,6 +1654,8 @@ def _domain_forcing(
         _immutable_series(month_hours, np.int64) if month_hours is not None else None,
         airflow.infiltration_coefficients,
         aggregate_split,
+        preparation.settings.heat_recovery == HeatRecovery.WHEN_BENEFICIAL,
+        float(airflow.sensible_recovery_effectiveness),
     )
     heating_limits_w = np.where(heating_on != 0.0, np.inf, 0.0)
     cooling_limits_w = (
@@ -1553,8 +1727,10 @@ def _prepare_domain(preparation, *, domain=None):
         heat_set,
         cool_set,
     )
+    iso52016_model = settings.thermal_model == ThermalModel.ISO52016_1
+    element_irradiance = {} if iso52016_model else None
     solar, opaque, radiation_hourly, times, context_shading = _prepare_radiation(
-        preparation, model, scope.elements, attic, areas, optical_models
+        preparation, model, scope.elements, attic, areas, optical_models, element_irradiance
     )
     model.t_m = model.t_air = model.t_s = float(heat_set[0])
     reduction = DomainReduction(
@@ -1599,6 +1775,25 @@ def _prepare_domain(preparation, *, domain=None):
         gain_reduction["aggregate_split_applied"],
         annual,
     )
+    iso52016_inputs = None
+    if iso52016_model:
+        from epsm_core.bridges import thermal_bridge_uplifts
+
+        from ._iso52016_platform import ZonePart
+
+        iso52016_inputs = ZonePart(
+            name=domain.name if domain is not None else "main",
+            elements=scope.elements,
+            attic=attic,
+            settings=settings,
+            ground_reduction=ground_reduction,
+            uplifts=thermal_bridge_uplifts(spec),
+            element_irradiance=element_irradiance,
+            floor_area_m2=scope.area,
+            volume_m3=scope.volume,
+            months=times.month.to_numpy(),
+            monthly_ground=ground,
+        )
     return PreparedDomain(
         domain.name if domain is not None else "aggregate",
         model,
@@ -1610,6 +1805,7 @@ def _prepare_domain(preparation, *, domain=None):
         scope.reference_area,
         scope.volume,
         forcing=forcing,
+        iso52016=iso52016_inputs,
     )
 
 
@@ -1617,6 +1813,11 @@ def _run_domain(domain):
     """Advance a fresh prepared domain using the same forcing as coupled runs."""
     from .iso13790 import _can_use_native
 
+    if domain.iso52016 is not None:
+        from ._iso52016_platform import attach_attic_results, run_network
+
+        run = run_network([domain])
+        return attach_attic_results(domain.finish(run.power[:, 0], run.air[:, 0]), run)
     if domain.forcing is None or not _can_use_native(
         domain.model, needs_demand=True, prepared=True
     ):
@@ -1629,6 +1830,7 @@ def _run_domain(domain):
                 max_cooling_power=domain.cooling_limits_w[hour],
                 advance=advance,
             )
+            domain.model._last_hvac_power = power[hour]
             indoor[hour] = domain.model.t_air
         return domain.finish(power, indoor)
 
@@ -1659,8 +1861,8 @@ def simulate_building(building, *, weather, directory=None, settings=None, prepa
         If supplied, create this directory and write ``hourly.npz``. An existing
         file with that name is overwritten. The caller owns output locations.
     settings : RCSettings or dict
-        Required explicit reduction assumptions. ``RCSettings.from_policy``
-        selects versioned baseline defaults and accepts explicit overrides.
+        Required explicit reduction assumptions. Physics choices default to the
+        options closest to EnergyPlus; see ``epsm_rc.options``.
     preparation_cache : PreparationCache or None
         Explicit bounded preparation reuse across independent runs. Weather bytes are
         verified per building; each run creates fresh thermal state. Source identity
@@ -1690,10 +1892,12 @@ def simulate_building(building, *, weather, directory=None, settings=None, prepa
     versions. Installed Python sources are read lazily once per process.
     Restart after changing installed source or numerical dependencies.
     Each call creates fresh thermal state. Buildings without basements retain
-    one conditioned 5R1C domain. Conditioned basements use separately controlled
-    main/basement domains with conservative physical floor exchange. Cold attics
-    require an explicit finite quasi-steady buffer policy and outdoor exchange;
-    attic shell/air storage is omitted. All paths model sensible heat only. Heat recovery reduces
+    one conditioned domain (ISO 52016-1 by default, or 5R1C). Conditioned
+    basements are a separately controlled domain: with ISO 52016-1 a zone of
+    the same network, joined through the separating floor's node chain; with
+    5R1C a coupled 5R1C domain with conservative physical floor exchange. Cold
+    attics need the attic outdoor exchange: ISO 52016-1 models each as an
+    unconditioned zone, 5R1C as a quasi-steady buffer without attic storage. All paths model sensible heat only. Heat recovery reduces
     mechanical conductance once; infiltration is never recovered. No weather
     padding, stochastic window opening or legacy construction presets are used.
     Standalone correctness fixes and migration details are recorded in the release notes.
@@ -1711,8 +1915,8 @@ def simulate_building(building, *, weather, directory=None, settings=None, prepa
     >>> result = simulate_building(
     ...     Building(preset="illustrative-reference"),
     ...     weather=weather,
-    ...     settings=RCSettings.from_policy(
-    ...         "epsm_rc_5r1c_v1", airflow_policy="sensible_only_unlimited_supply",
+    ...     settings=RCSettings(
+    ...         airflow_policy="sensible_only_unlimited_supply",
     ...         ground_policy="conductance_multiplier"))
     >>> result.scalars["space_heating_demand_kwh"] >= 0
     True

@@ -1,10 +1,43 @@
+# File: attic.py
+# Purpose: Cold attics resolved from Core's physical shell.
 # SPDX-License-Identifier: MIT
-"""Finite, zero-capacity attic nodes reduced from Core's resolved physical shell.
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
 
-Core owns all areas, ownership, geometry and declared outdoor exchange. This
-module eliminates an unconditioned attic air node in steady state; the retained
-ceiling capacity belongs to conditioned space. Attic air/shell storage is omitted
-explicitly, rather than assigning the attic outdoor temperature.
+"""Cold attics resolved from Core's physical shell.
+
+Core owns all areas, ownership, geometry and declared outdoor exchange. Two
+treatments use the same resolved faces:
+
+- ``quasi_steady_buffer`` (ISO 13790 5R1C): the unconditioned attic air node is
+  eliminated in steady state; the retained ceiling capacity belongs to
+  conditioned space. Attic air/shell storage is omitted explicitly, rather than
+  assigning the attic outdoor temperature.
+- ``unconditioned_zone`` (ISO 52016-1): the attic stays a thermally
+  unconditioned zone of the multi-zone network with its own air node, shell
+  node chains, solar and sky forcing, and the declared outdoor exchange. The
+  faces are returned in ``AtticReduction.zones`` for the network adapter.
+
+Notes
+-----
+EnergyPlus models the attic the same way as ``unconditioned_zone``: a zone
+without HVAC whose roof, gables and ceiling are heat-balance surfaces.
+
+Examples
+--------
+Example::
+
+    building.unconditioned_exchange = (
+        UnconditionedExchangeSpec(zone_kind="attic", outdoor_air_ach=0.5, source="..."),
+    )
+    result = simulate_building(building, weather=weather, settings=RCSettings())
+    result.hourly["attic_air_temperature_c"]
 """
 
 from dataclasses import dataclass
@@ -21,6 +54,7 @@ class AtticReduction:
     ceiling_area_m2: float
     shell_terms: tuple
     diagnostics: dict
+    zones: tuple = ()
 
 
 def eliminate_attic_node(ceiling_w_k, shell_w_k, ventilation_w_k):
@@ -74,8 +108,15 @@ def reduce_attics(
             (),
             {"effective_method": "not_required", "attics": []},
         )
-    if settings.cold_attic_policy != "quasi_steady_buffer":
-        raise ValueError("Cold attics require explicit cold_attic_policy='quasi_steady_buffer'")
+    policy = getattr(settings.cold_attic_policy, "value", settings.cold_attic_policy)
+    model = getattr(settings.thermal_model, "value", settings.thermal_model)
+    if policy == "reject":
+        raise ValueError("Cold attics are rejected by cold_attic_policy='reject'")
+    required = "unconditioned_zone" if model == "iso52016_1" else "quasi_steady_buffer"
+    if policy != required:
+        raise ValueError(
+            f"Cold attics with thermal_model={model!r} require cold_attic_policy={required!r}"
+        )
     exchanges = [
         exchange for exchange in spec.unconditioned_exchange if exchange.zone_kind == "attic"
     ]
@@ -83,7 +124,7 @@ def reduce_attics(
         raise ValueError("Cold attic reduction requires explicit attic outdoor exchange and source")
     exchange = exchanges[0]
     fractions = exchange.fraction.hourly(spec.climate.calendar_year)
-    if min(fractions) != max(fractions):
+    if policy == "quasi_steady_buffer" and min(fractions) != max(fractions):
         raise ValueError(
             "Quasi-steady attic reduction currently requires constant exchange fraction"
         )
@@ -93,7 +134,7 @@ def reduce_attics(
     elements = {element.identifier: element for element in building.elements}
     surfaces = resolved.surfaces
     zones = resolved.zones
-    shell_ids, ceiling_ids, terms, reports = set(), set(), [], []
+    shell_ids, ceiling_ids, terms, reports, attic_zones = set(), set(), [], [], []
     equivalent, area = 0.0, 0.0
     for name, zone in zones.items():
         if zone.get("physical_zone_kind") != "attic":
@@ -137,13 +178,14 @@ def reduce_attics(
             and face["boundary"] == "Surface"
             and face["construction_role"].removesuffix("_reverse") == "top"
         ]
-        hc, hs, local_area = 0.0, 0.0, 0.0
+        hc, hs, local_area, local_ceilings = 0.0, 0.0, 0.0, []
         top_uplift = thermal_bridge_uplifts(spec)["top"] if ceilings else 0.0
         for face in ceilings:
             owner = elements.get(face["physical_element_id"])
             if owner is None or owner.role.value != "TOP_FLOOR":
                 raise ValueError("Attic ceiling requires an explicit physical TOP_FLOOR owner")
             ceiling_ids.add(owner.identifier)
+            local_ceilings.append((owner.identifier, face["net_area_m2"]))
             hc += face["net_area_m2"] * owner.construction.u_value * (1 + top_uplift)
             local_area += face["net_area_m2"]
         local_terms = []
@@ -185,6 +227,10 @@ def reduce_attics(
                     * sky_view,
                     "physical_element_id": owner.identifier,
                     "surface_name": face["name"],
+                    "net_area_m2": face["net_area_m2"],
+                    "is_roof": is_roof,
+                    "sky_view_factor": sky_view,
+                    "solar_absorptance": alpha,
                     "receiver_vertices": face["vertices"],
                 }
             )
@@ -196,6 +242,23 @@ def reduce_attics(
             terms.append({**term, "transmission_fraction": fraction})
         equivalent += heq
         area += local_area
+        attic_zones.append(
+            {
+                "name": name,
+                "volume_m3": zone["volume_m3"],
+                "outdoor_air_ach": exchange.outdoor_air_ach,
+                "fraction": np.asarray(fractions, dtype=float),
+                "ceilings": tuple(local_ceilings),
+                "faces": tuple(local_terms),
+                "storage_elements": tuple(
+                    sorted(
+                        item["physical_element_id"]
+                        for item in resolved.internal_mass
+                        if item["zone"] == name and item["physical_element_id"] is not None
+                    )
+                ),
+            }
+        )
         reports.append(
             {
                 "zone": name,
@@ -216,14 +279,31 @@ def reduce_attics(
         equivalent,
         area,
         tuple(terms),
-        {
-            "effective_method": "quasi_steady_buffer",
-            "exchange": exchange.model_dump(mode="json"),
-            "effective_outdoor_air_ach": actual_ach,
-            "attics": reports,
-            "shell_storage": "omitted",
-            "air_storage": "omitted",
-            "ceiling_storage": "retained_on_conditioned_side",
-            "solar_and_sky": "finite_node_shell_forcing_transmitted_to_conditioned_domain",
-        },
+        (
+            {
+                "effective_method": "quasi_steady_buffer",
+                "exchange": exchange.model_dump(mode="json"),
+                "effective_outdoor_air_ach": actual_ach,
+                "attics": reports,
+                "shell_storage": "omitted",
+                "air_storage": "omitted",
+                "ceiling_storage": "retained_on_conditioned_side",
+                "solar_and_sky": "finite_node_shell_forcing_transmitted_to_conditioned_domain",
+            }
+            if policy == "quasi_steady_buffer"
+            else {
+                "effective_method": "unconditioned_zone",
+                "exchange": exchange.model_dump(mode="json"),
+                "mean_outdoor_air_ach": exchange.outdoor_air_ach * float(np.mean(fractions)),
+                "attics": [
+                    {key: report[key] for key in ("zone", "volume_m3", "ceiling_area_m2")}
+                    for report in reports
+                ],
+                "shell_storage": "iso52016_node_chains",
+                "air_storage": "attic_air_node",
+                "ceiling_storage": "interzone_node_chain",
+                "solar_and_sky": "per_face_on_attic_shell",
+            }
+        ),
+        tuple(attic_zones),
     )

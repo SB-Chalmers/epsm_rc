@@ -2,10 +2,15 @@
 # Purpose: Run compilation and RC calculation from explicit shared input files.
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Sanjay Somanath
-# Author: Sanjay Somanath
-# Research attribution: Numerical solver credits remain in iso13790.py.
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
 # Date created: 2026-10-14
-# Date modified: 2026-10-14
+
+# Research attribution: Numerical solver credits remain in iso13790.py.
 # Changelog:
 #   2026-10-14 - Demonstrate the explicit shared Core comparison CLI.
 """Compile EnergyPlus inputs and simulate RC from explicit shared input files.

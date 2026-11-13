@@ -1,3 +1,36 @@
+# Release 0.12.0 — ISO 52016-1 model and named defaults matching EnergyPlus
+
+**Default results change.** `RCSettings()` now selects the options that agreed
+best with EnergyPlus (`docs/iso52016.md`, `benchmarks/iso52016/`): the ISO
+52016-1 hourly model with air-temperature control, angular window optics,
+midpoint solar time and heat recovery only when it reduces the load. Each is a
+named setting with a string enum in `epsm_rc.options` (`ThermalModel`,
+`ControlTemperature`, `WindowOptics`, `SolarTime`, `HeatRecovery`, plus enums for
+the airflow, ground, self-shadowing, cold-attic and context-shading policies).
+
+Conditioned basements and cold attics are supported by both models. Under ISO
+52016-1 the main space, a conditioned basement and each cold attic are zones of
+one network, joined by single node chains for the separating floor and the
+attic ceiling; the attic is an unconditioned zone with its own air, roof and
+gable storage and per-face solar (`cold_attic_policy="unconditioned_zone"`, the
+new default; 5R1C keeps `"quasi_steady_buffer"`). Results add
+`attic_air_temperature_c`. The Rust kernel runs the multi-zone network and
+matches the Python recurrence. The heat-recovery rule runs in Python and in both Rust kernels, including coupled
+basement domains. Diagnostics report `window_optics` and `solar_time`.
+
+Deprecated, with a `DeprecationWarning`: `RCSettings.from_policy` and the profile
+names `epsm_rc_5r1c_v1`/`v2` (expanded to explicit choices), the keywords
+`window_optics_method`, `solar_time_reference`, `heat_recovery_control` and
+`iso52016_control_temperature`, and the values `simple_glazing_angular_v1`,
+`interval_midpoint`, `continuous`, `load_dependent_bypass` and
+`iso52016_1_hourly`. Settings saved by RC 0.11 (`dataclasses.asdict` output with
+`policy_version`) still load, with a warning, and keep their 5R1C profile. To
+reproduce earlier results, pass
+`thermal_model="iso13790_5r1c", window_optics="constant_shgc",
+solar_time="hour_start", heat_recovery="always"`; the former profiles give
+bit-identical results. Deprecated interfaces remain available; their removal is
+no earlier than 0.13.0.
+
 # Release 0.11.0 — thermal-bridge surcharge and clearer errors
 
 RC reads Core 0.9.0's per-role thermal-bridge uplifts

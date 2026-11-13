@@ -1,3 +1,15 @@
+# File: test_radiation.py
+# Purpose: Radiation channels, calendars and explicit policy changes at the Core handoff.
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-10-29
+
 """Radiation channels, calendars and explicit policy changes at the Core handoff."""
 
 from datetime import datetime, timedelta
@@ -101,7 +113,7 @@ def test_policy_samples_midpoint_but_preserves_output_labels(
     for name, values in old.hourly.items():
         np.testing.assert_array_equal(values, new.hourly[name])
     assert new.run_id != old.run_id
-    assert new.diagnostics["radiation"]["window_optics_method"] == "simple_glazing_angular_v1"
+    assert new.diagnostics["radiation"]["window_optics"] == "angular"
 
 
 def test_angular_channels_account_for_inward_absorption_and_cache(reference_building):

@@ -6,7 +6,7 @@ Building route is recommended for new building studies; it preserves input
 ownership and the common full/reduced engine boundary.
 
 The following interfaces remain during migration. Their removal will be no
-earlier than 0.12.0, with a release note describing the replacement:
+earlier than 0.13.0, with a release note describing the replacement:
 
 * ``create_swedish_apartment`` retains historical illustrative era assumptions.
   Supply Data constructions and explicit Core geometry for new building studies.
@@ -19,6 +19,19 @@ earlier than 0.12.0, with a release note describing the replacement:
   ``prepare_engine_comparison`` with fully authored physical inputs.
 * ``default_weather`` is a retired migration error. Select a local EPW, captured
   Core Weather or ``load_epw(preset="goteborg")`` explicitly.
+
+Named settings replace policy profiles (0.12.0). ``RCSettings()`` now defaults
+to ISO 52016-1 with air-temperature control, angular window optics, midpoint
+solar time, heat recovery only when beneficial and cold attics as unconditioned
+zones, so default results change. ``RCSettings.from_policy``, the
+``policy_version`` keyword of saved 0.11 settings, the keywords
+``window_optics_method``, ``solar_time_reference``, ``heat_recovery_control`` and
+``iso52016_control_temperature`` and the values ``simple_glazing_angular_v1``,
+``interval_midpoint``, ``continuous``, ``load_dependent_bypass`` and
+``iso52016_1_hourly`` warn and map to the new choices. Replace
+``from_policy("epsm_rc_5r1c_v1", ...)`` with
+``RCSettings(thermal_model="iso13790_5r1c", window_optics="constant_shgc",
+solar_time="hour_start", heat_recovery="always", ...)``.
 
 ``ParametricBuilding`` and ``get_5r1c_params`` remain historical standalone
 conveniences. They do not infer a physical Core Building. Existing import names

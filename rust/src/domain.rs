@@ -1,3 +1,22 @@
+// File: domain.rs
+// Purpose: Platform hourly forcing and loop for one 5R1C domain, with the heat-recovery rule.
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Sanjay Somanath
+// License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+// Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+// Project PI: Alexander Hollberg
+// Computational Sustainable Design Group
+// Research Area of Sustainable Built Environments
+// Chalmers University of Technology, Gothenburg
+// Date created: 2026-10-29
+
+//! Hourly platform forcing for one 5R1C domain, read from `HourlyInputs` columns.
+//!
+//! [`DomainArrays::apply_at`] sets one hour's setpoints, gains and airflow on the
+//! model exactly as `epsm_rc._forcing.HourlyInputs.at` does in Python, including
+//! the wind- and temperature-dependent infiltration correction and the
+//! heat-recovery rule. [`run_single_domain`] is the single-zone hourly loop.
+
 use crate::iso13790::Core5R1C;
 use crate::types::{DomainOutput, KernelResult, StepInputs, Thermostat};
 
@@ -11,6 +30,7 @@ pub struct DomainSnapshot {
 }
 
 impl DomainSnapshot {
+    /// Copy the 13 hourly columns into one contiguous allocation.
     pub fn new(
         columns: [&[f64]; 13],
         month_hours: Option<&[i64]>,
@@ -40,6 +60,7 @@ impl DomainSnapshot {
         })
     }
 
+    /// Borrow the snapshot as [`DomainArrays`].
     pub fn view(&self) -> DomainArrays<'_> {
         DomainArrays::new(
             std::array::from_fn(|index| {
@@ -52,6 +73,7 @@ impl DomainSnapshot {
     }
 }
 
+/// Borrowed hourly columns and coefficients for one domain.
 pub struct DomainArrays<'a> {
     pub temperatures: &'a [f64],
     pub gains: &'a [f64],
@@ -65,13 +87,18 @@ pub struct DomainArrays<'a> {
     pub solar: &'a [f64],
     pub opaque: &'a [f64],
     pub month_hours: Option<&'a [i64]>,
+    /// Infiltration correction c0 + c1 |θ_air − θ_e| + c2 w + c3 w².
     pub coefficients: (f64, f64, f64, f64),
     pub aggregate_split: bool,
     pub heating_limits_w: &'a [f64],
     pub cooling_limits_w: &'a [f64],
+    /// Recovery effectiveness when recovery is used only when beneficial; `None`
+    /// keeps the model's effectiveness in every hour (`heat_recovery="always"`).
+    pub recovery_bypass: Option<f64>,
 }
 
 impl<'a> DomainArrays<'a> {
+    /// Name the columns in `FORCING_COLUMNS` order followed by the two limits.
     pub fn new(
         columns: [&'a [f64]; 13],
         month_hours: Option<&'a [i64]>,
@@ -97,6 +124,7 @@ impl<'a> DomainArrays<'a> {
             month_hours,
             coefficients,
             aggregate_split,
+            recovery_bypass: None,
         }
     }
 
@@ -134,8 +162,21 @@ impl<'a> DomainArrays<'a> {
         Ok(())
     }
 
+    /// Apply hour `hour` to `core` and return its [`StepInputs`].
+    ///
+    /// When `recovery_bypass` holds an effectiveness, recovery is used only when it
+    /// reduces the load, as in EnergyPlus ideal loads: in heating mode with
+    /// outdoor air colder than the zone, or in cooling mode with warmer outdoor
+    /// air. The mode is lagged one hour: `last_power` was heating (> 1e-3 W) or
+    /// cooling (< −1e-3 W), or the air is within 1e-6 K of or beyond a setpoint.
+    /// The tolerances keep Python and Rust on the same side of each comparison.
     #[inline]
-    pub fn apply_at(&self, core: &mut Core5R1C, hour: usize) -> KernelResult<StepInputs> {
+    pub fn apply_at(
+        &self,
+        core: &mut Core5R1C,
+        hour: usize,
+        last_power: f64,
+    ) -> KernelResult<StepInputs> {
         let temperature = self.temperatures[hour];
         let gain = self.gains[hour];
         if !self.aggregate_split {
@@ -154,6 +195,15 @@ impl<'a> DomainArrays<'a> {
             + self.coefficients.3 * w.powi(2);
         core.ach_infiltration = self.infiltration[hour] * correction + self.natural[hour];
         core.ach_ventilation = self.ventilation[hour];
+        if let Some(effectiveness) = self.recovery_bypass {
+            // Same rule as `HourlyInputs.at`: recover only when it reduces the load.
+            let t_air = core.state.t_air;
+            let heating = last_power > 1e-3 || t_air <= core.t_set_heating + 1e-6;
+            let cooling = last_power < -1e-3 || t_air >= core.t_set_cooling - 1e-6;
+            let active =
+                (heating && temperature < t_air - 1e-6) || (cooling && temperature > t_air + 1e-6);
+            core.heat_recovery_efficiency = if active { effectiveness } else { 0.0 };
+        }
         if !core.ach_infiltration.is_finite() || core.ach_infiltration < 0.0 {
             return Err("Hourly infiltration must be finite and nonnegative");
         }
@@ -171,6 +221,9 @@ impl<'a> DomainArrays<'a> {
     }
 }
 
+/// Hourly loop of one platform domain; returns thermostat power and air temperature.
+///
+/// The previous hour's power feeds the heat-recovery mode of the next hour.
 pub fn run_single_domain(
     core: &mut Core5R1C,
     arrays: &DomainArrays<'_>,
@@ -178,15 +231,17 @@ pub fn run_single_domain(
     let count = arrays.temperatures.len();
     let mut power = Vec::with_capacity(count);
     let mut indoor = Vec::with_capacity(count);
+    let mut last = 0.0;
     for hour in 0..count {
-        let inputs = arrays.apply_at(core, hour)?;
+        let inputs = arrays.apply_at(core, hour, last)?;
         let controls = Thermostat {
             max_heating_power: arrays.heating_limits_w[hour],
             max_cooling_power: arrays.cooling_limits_w[hour],
             t_set_heat: core.t_set_heating,
             t_set_cool: core.t_set_cooling,
         };
-        power.push(core.calc_heating_demand_with_rng(inputs, controls, || Ok(1.0))?);
+        last = core.calc_heating_demand_with_rng(inputs, controls, || Ok(1.0))?;
+        power.push(last);
         indoor.push(core.state.t_air);
     }
     Ok(DomainOutput { power, indoor })
