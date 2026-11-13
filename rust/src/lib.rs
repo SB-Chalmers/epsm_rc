@@ -16,6 +16,8 @@
 //! - `domain` and `coupled`: the platform hourly loops for one domain and for
 //!   a main zone coupled to a conditioned basement.
 //! - `iso52016`: the ISO 52016-1 multi-zone, multi-node recurrence.
+//! - `self_shading`: horizon profiles and hourly sunlit fractions of a
+//!   building's own geometry.
 //! - `bindings` and `bindings52016`: NumPy and model conversion at the boundary.
 //!
 //! Every kernel mirrors a Python implementation and is tested against it; the
@@ -29,6 +31,7 @@ mod coupled;
 mod domain;
 mod iso13790;
 mod iso52016;
+mod self_shading;
 mod types;
 
 /// Register the kernels and the parameter-name contracts with Python.
@@ -40,6 +43,14 @@ fn _core_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(bindings::solve_controls_rs, m)?)?;
     m.add_function(wrap_pyfunction!(bindings::run_coupled_domains_hourly, m)?)?;
     m.add_function(wrap_pyfunction!(bindings52016::run_iso52016_network, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        self_shading::self_shading_horizon_profiles,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        self_shading::self_shading_sunlit_fraction,
+        m
+    )?)?;
     m.add("NATIVE_BASE_PARAMETERS", bindings::BASE_PARAMETERS.to_vec())?;
     m.add(
         "NATIVE_PREPARED_PARAMETERS",

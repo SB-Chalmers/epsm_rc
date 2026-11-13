@@ -29,7 +29,7 @@ cache.clear()
 
 The selected airflow and ground policies are explicit approximations in this
 example, not measurements. A supplied monthly ground boundary is preserved.
-Self-shadowing is rejected by default; selecting `ignore` records its omission.
+Self-shading by the building's own wings is calculated by default (see below).
 Context buildings use the ISO 13790 hourly horizon approximation described below.
 Overhangs above windows use the ISO 13790 hourly overhang method, also described
 below. Reveal, fin and balcony shading remain unsupported.
@@ -217,6 +217,46 @@ enabled and overhangs as the facade's only shading detail, the RC adapter remove
 only that restriction, in the same way as for context buildings; reveals, fins
 and balconies keep it. Like the horizon method, this implements one shading
 clause, not whole-standard or national certification.
+
+## Self-shading
+
+Concave footprints (L, U, T), courtyards and multi-part buildings shade their
+own facades and roofs. ISO 13790:2008 11.4.4 counts "other elements of the same
+building" as external obstacles; ISO 52016-1 refers solar shading to ISO 52010-1.
+`self_shadowing_policy` selects the treatment; the options are the enum
+`epsm_rc.SelfShadowingPolicy`:
+
+| Value | Direct | Sky diffuse | Notes |
+|---|---|---|---|
+| `hourly_sunlit_fraction` (default) | hourly sunlit share of sample points | kept share of the isotropic sky view factor | geometry from the building's own faces |
+| `iso13790_hourly_horizon` | removed below one average horizon angle (G.3) | unchanged | the standard's obstacle rule applied to own faces |
+| `ignore` | unchanged | unchanged | omission recorded in diagnostics |
+| `reject` | — | — | refuses affected geometry before the solver |
+
+`hourly_sunlit_fraction` samples every receiving face and window pane with a
+cell-centre grid (about 1 m spacing, 2 to 12 cells per axis), offset 1 cm
+outwards. For each point a horizon profile gives, at every azimuth degree, the
+highest elevation of the building's own outdoor and adiabatic face edges. Along
+a vertical half-plane the elevation of a straight edge is monotonic, so edge
+crossings give the exact profile for parts standing on common ground; pitched
+roofs and parts of different heights are included. In each hour a point is lit
+when the sun is above its profile at the sun's azimuth, and the receiver's
+direct radiation is scaled by the area-weighted lit share. Sky diffuse is scaled
+by the cosine-weighted share of the front sky hemisphere above the profile,
+integrated in closed form in elevation. Ground reflection is unchanged, as in
+EnergyPlus without reflection calculations. The method shares the solar
+preparation step, so the ISO 52016-1 and ISO 13790 5R1C models both use it, and
+it combines with context-building shading and overhangs.
+
+Profiles depend only on geometry and are cached by `PreparationCache`. The
+profile and hourly lookup loops run in the native extension when it is built
+(`rust/src/self_shading.rs`), with the NumPy implementation as the tested
+reference and fallback; a six-storey courtyard building adds about 0.3 s. A
+building that cannot shade itself (one convex part, no courtyard) skips the
+calculation, so its results are bit-identical under every policy. Against
+EnergyPlus `FullExterior` polygon clipping on L, U and courtyard buildings the
+default reproduces window incident and transmitted solar within about 1 %; see
+`benchmarks/iso52016/results/self_shading_summary.md`.
 
 ## Cache ownership
 

@@ -142,10 +142,21 @@ class GroundPolicy(_Choice):
 
 
 class SelfShadowingPolicy(_Choice):
-    """Treatment of building self-shadowing the RC models do not calculate."""
+    """Shading of a building's envelope by its own wings, courtyards and parts.
 
-    REJECT = "reject"
+    ``hourly_sunlit_fraction`` samples each receiver and scales direct radiation
+    by its hourly sunlit share and sky diffuse radiation by its kept sky view.
+    ``iso13790_hourly_horizon`` treats the building's own faces as Annex
+    G.5.4.2 obstacles (one average horizon angle, direct radiation only).
+    ``ignore`` omits self-shading and records the omission; ``reject`` refuses
+    concave, courtyard and multi-part buildings. Convex single-part buildings
+    cannot shade themselves, so every choice leaves them unchanged.
+    """
+
+    HOURLY_SUNLIT_FRACTION = "hourly_sunlit_fraction"
+    ISO13790_HOURLY_HORIZON = "iso13790_hourly_horizon"
     IGNORE = "ignore"
+    REJECT = "reject"
 
 
 class ColdAtticPolicy(_Choice):
