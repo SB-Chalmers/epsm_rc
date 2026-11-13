@@ -1303,6 +1303,9 @@ def _prepare_radiation(
         if settings.window_optics == WindowOptics.ANGULAR
         else {}
     )
+    # Windows of one glazing on one facade share incidence angles and optical
+    # properties, so each (orientation, glazing) pair is evaluated once.
+    window_optics = {}
     for element in elements:
         if element.identifier in attic.shell_element_ids:
             continue
@@ -1357,11 +1360,15 @@ def _prepare_radiation(
                     * spec.facade.solar_shading_factor
                 )
             else:
-                optics = optical_models[(element.construction.u_value, element.construction.shgc)]
-                # At night solar geometry remains finite and incident beam is zero.
-                incidence = irradiance.aoi(orientation[0], azimuth, zenith, sun_azimuth)
-                bt, _, ba = optics.beam_properties(incidence)
-                dt, _, da = optics.diffuse_properties()
+                glazing = (element.construction.u_value, element.construction.shgc)
+                optics = optical_models[glazing]
+                if (orientation, glazing) not in window_optics:
+                    # At night solar geometry remains finite and incident beam is zero.
+                    incidence = irradiance.aoi(orientation[0], azimuth, zenith, sun_azimuth)
+                    bt, _, ba = optics.beam_properties(incidence)
+                    dt, _, da = optics.diffuse_properties()
+                    window_optics[orientation, glazing] = bt, ba, dt, da
+                bt, ba, dt, da = window_optics[orientation, glazing]
                 beam = channels["poa_direct"]
                 sky, reflected = channels["poa_sky_diffuse"], channels["poa_ground_diffuse"]
                 diffuse = sky + reflected
