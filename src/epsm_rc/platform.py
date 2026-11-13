@@ -913,6 +913,12 @@ def _authoring_checks(building, settings):
     """Keep settings-dependent authoring gates shared by inspection and execution."""
     if building.context.buildings and settings.context_shading_method == "reject":
         yield "rc_context", "settings.context_shading_method", lambda: _reject_context()
+    if settings.overhang_shading_method == OverhangShading.REJECT and _has_overhang(
+        building.facade
+    ):
+        # Core 0.10.1+ no longer reports overhangs as unsupported for RC, so the
+        # explicit refusal must come from RC itself.
+        yield "rc_overhang", "settings.overhang_shading_method", lambda: _reject_overhang()
     if building.hvac is not None:
         yield (
             "rc_airflow",
@@ -927,6 +933,22 @@ def _authoring_checks(building, settings):
             "settings.self_shadowing_policy",
             lambda: _self_shadowing_capabilities(building.geometry, settings),
         )
+
+
+def _has_overhang(facade):
+    """Whether the facade or any override carries an overhang with depth."""
+    if facade is None:
+        return False
+    return bool(facade.overhang.depth_m) or any(
+        o.overhang is not None and o.overhang.depth_m for o in facade.overrides
+    )
+
+
+def _reject_overhang():
+    raise ValueError(
+        f"{FACADE_SHADING_RESTRICTION}: overhang_shading_method='reject' refuses overhangs; "
+        "select 'iso13790_hourly_overhang' to model them"
+    )
 
 
 def _reject_context():

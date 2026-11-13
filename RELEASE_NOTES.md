@@ -1,3 +1,31 @@
+# Release 0.12.2 — self-shading of concave, courtyard and multi-part buildings (13 November 2026)
+
+**Default results change for concave, courtyard and multi-part buildings only.**
+`self_shadowing_policy` (enum `SelfShadowingPolicy`) now defaults to
+`"hourly_sunlit_fraction"`: the building's own wings shade its facades, windows
+and roofs. Each receiver is sampled with a point grid; per-point horizon profiles
+from the building's own faces scale direct radiation by the hourly sunlit share
+and isotropic sky diffuse radiation by the sky view each point keeps. It sits in
+the shared solar preparation, so the ISO 52016-1 and ISO 13790 5R1C models both
+use it, together with context-building and overhang shading. Such buildings were
+previously refused unless `"ignore"` was selected; `"ignore"` and `"reject"`
+still exist, and `"iso13790_hourly_horizon"` applies the ISO 13790 Annex G.5.4.2
+obstacle rule to the building's own faces (one average angle, direct radiation
+only). Convex single-part buildings skip the calculation and give bit-identical
+results. Across 128 EnergyPlus cases (L, U and courtyard footprints, four
+climates) the default reproduces window solar within about 1 % and sensible
+cooling within about 3 %, against 4 to 23 % and 9 to 90 % overprediction when
+ignored (`benchmarks/iso52016/results/self_shading_summary.md`). The profile and
+hourly lookup loops run in the native extension, with NumPy as the fallback. See
+[radiation](docs/radiation.md#self-shading).
+
+Angular window optics are evaluated once per facade orientation and glazing
+instead of once per window element (byte-identical results, faster preparation).
+
+`overhang_shading_method="reject"` now refuses overhangs in RC itself. With Core
+0.10.1 or later, which no longer reports overhangs as unsupported for RC, the
+refusal was previously skipped and the overhang silently not modelled.
+
 # Release 0.12.1 — overhang shading and sky-diffuse context obstruction (13 November 2026)
 
 Overhangs above windows are supported. `overhang_shading_method` (enum

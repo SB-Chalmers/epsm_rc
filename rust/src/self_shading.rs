@@ -101,7 +101,11 @@ pub fn sunlit_fraction(
 ) -> Vec<f64> {
     let total: f64 = weights.iter().sum();
     let blocked: Vec<usize> = (0..weights.len())
-        .filter(|&p| profiles[p * count..(p + 1) * count].iter().any(|&h| h > 0.0))
+        .filter(|&p| {
+            profiles[p * count..(p + 1) * count]
+                .iter()
+                .any(|&h| h > 0.0)
+        })
         .collect();
     let clear: f64 = total - blocked.iter().map(|&p| weights[p]).sum::<f64>();
     let mut fraction = vec![1.0; altitude_deg.len()];
@@ -140,7 +144,9 @@ pub fn self_shading_horizon_profiles<'py>(
 ) -> PyResult<Bound<'py, PyArray1<f64>>> {
     let (points, starts, ends) = (points.as_slice()?, starts.as_slice()?, ends.as_slice()?);
     if points.len() % 3 != 0 || starts.len() % 3 != 0 || starts.len() != ends.len() || count == 0 {
-        return Err(PyValueError::new_err("self-shading arrays must be (n, 3) and count > 0"));
+        return Err(PyValueError::new_err(
+            "self-shading arrays must be (n, 3) and count > 0",
+        ));
     }
     let (points, starts, ends) = (points.to_vec(), starts.to_vec(), ends.to_vec());
     let profiles = py.detach(move || horizon_profiles(&points, &starts, &ends, count));
@@ -163,14 +169,15 @@ pub fn self_shading_sunlit_fraction<'py>(
     let altitude = altitude_deg.as_slice()?.to_vec();
     let azimuth = azimuth_deg.as_slice()?.to_vec();
     if count == 0 || profiles.len() != weights.len() * count || altitude.len() != azimuth.len() {
-        return Err(PyValueError::new_err("self-shading profile, weight or sun arrays mismatch"));
+        return Err(PyValueError::new_err(
+            "self-shading profile, weight or sun arrays mismatch",
+        ));
     }
-    if !(step_deg > 0.0) {
+    if step_deg.is_nan() || step_deg <= 0.0 {
         return Err(PyValueError::new_err("step_deg must be positive"));
     }
-    let fraction = py.detach(move || {
-        sunlit_fraction(&profiles, &weights, &altitude, &azimuth, count, step_deg)
-    });
+    let fraction = py
+        .detach(move || sunlit_fraction(&profiles, &weights, &altitude, &azimuth, count, step_deg));
     Ok(PyArray1::from_vec(py, fraction))
 }
 
@@ -194,7 +201,14 @@ mod tests {
     fn night_and_clear_points_are_lit() {
         let mut profiles = vec![0.0; 2 * 360];
         profiles[360..].iter_mut().for_each(|h| *h = 45.0);
-        let fraction = sunlit_fraction(&profiles, &[1.0, 3.0], &[-5.0, 30.0, 60.0], &[0.0, 90.0, 90.0], 360, 1.0);
+        let fraction = sunlit_fraction(
+            &profiles,
+            &[1.0, 3.0],
+            &[-5.0, 30.0, 60.0],
+            &[0.0, 90.0, 90.0],
+            360,
+            1.0,
+        );
         assert_eq!(fraction, vec![1.0, 0.25, 1.0]);
     }
 }
