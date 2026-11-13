@@ -1,5 +1,15 @@
+# File: summarise.py
+# Purpose: Summarise ``compare_energyplus.py`` results as Markdown tables and a JSON summary.
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 EPSM Development contributors
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-11-12
+
 """Summarise ``compare_energyplus.py`` results as Markdown tables and a JSON summary."""
 
 from __future__ import annotations
@@ -22,15 +32,15 @@ VARIANTS = (
     "iso52016_v2_bypass",
 )
 LABELS = {
-    "5r1c_v1": "5R1C v1",
-    "5r1c_v2": "5R1C v2",
-    "iso52016_v1": "52016 v1",
-    "iso52016_v2": "52016 v2",
-    "5r1c_v1_bypass": "5R1C v1 +HR bypass",
-    "5r1c_v2_bypass": "5R1C v2 +HR bypass",
-    "iso52016_v1_bypass": "52016 v1 +HR bypass",
-    "iso52016_v1_air_bypass": "52016 v1 air ctrl +HR bypass",
-    "iso52016_v2_bypass": "52016 v2 +HR bypass",
+    "5r1c_v1": "5R1C, constant SHGC",
+    "5r1c_v2": "5R1C, angular optics",
+    "iso52016_v1": "52016, constant SHGC",
+    "iso52016_v2": "52016, angular optics",
+    "5r1c_v1_bypass": "5R1C, constant SHGC, HR when beneficial",
+    "5r1c_v2_bypass": "5R1C, angular optics, HR when beneficial",
+    "iso52016_v1_bypass": "52016, constant SHGC, HR when beneficial",
+    "iso52016_v1_air_bypass": "52016 air control, constant SHGC, HR when beneficial",
+    "iso52016_v2_bypass": "52016, angular optics, HR when beneficial",
 }
 
 

@@ -65,8 +65,12 @@ def test_annual_shared_explicit_inputs(sensible, tmp_path, synthetic_weather):
         snapshot.to_building(),
         weather=weather,
         directory=tmp_path / "rc",
-        settings=RCSettings.from_policy(
-            "epsm_rc_5r1c_v1", airflow_policy="sensible_only_unlimited_supply"
+        settings=RCSettings(
+            thermal_model="iso13790_5r1c",
+            window_optics="constant_shgc",
+            solar_time="hour_start",
+            heat_recovery="always",
+            airflow_policy="sensible_only_unlimited_supply",
         ),
     )
     assert building.snapshot().sha256 == snapshot.sha256
@@ -142,8 +146,10 @@ def test_partial_shared_wall_lowers_heating_in_both_real_engines(tmp_path, synth
             snapshot.to_building(),
             weather=weather,
             directory=tmp_path / label / "rc",
-            settings=RCSettings.from_policy(
-                "epsm_rc_5r1c_v2", airflow_policy="sensible_only_unlimited_supply"
+            settings=RCSettings(
+                thermal_model="iso13790_5r1c",
+                heat_recovery="always",
+                airflow_policy="sensible_only_unlimited_supply",
             ),
         )
         assert building.snapshot().sha256 == snapshot.sha256
@@ -230,8 +236,9 @@ def test_conditioned_basement_and_finite_attic_share_physical_controls_in_real_e
         snapshot.to_building(),
         weather=weather,
         directory=tmp_path / "rc",
-        settings=RCSettings.from_policy(
-            "epsm_rc_5r1c_v2",
+        settings=RCSettings(
+            thermal_model="iso13790_5r1c",
+            heat_recovery="always",
             airflow_policy="sensible_only_unlimited_supply",
             cold_attic_policy="quasi_steady_buffer",
         ),

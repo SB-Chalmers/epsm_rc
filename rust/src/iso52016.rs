@@ -1,56 +1,112 @@
-//! ISO 52016-1 hourly zone recurrence on a pre-inverted network matrix.
-//!
-//! Python assembles the network (`epsm_rc.iso52016.Zone52016`) and inverts the
-//! constant matrix once. This loop evaluates hourly airflow exactly as
-//! `HourlyInputs.at` does, applies the rank-one ventilation update and the exact
-//! linear thermostat, and returns power, air and operative temperatures.
+// File: iso52016.rs
+// Purpose: ISO 52016-1 Clause 6.5 hourly recurrence on a pre-inverted network.
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Sanjay Somanath
+// License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+// Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+// Project PI: Alexander Hollberg
+// Computational Sustainable Design Group
+// Research Area of Sustainable Built Environments
+// Chalmers University of Technology, Gothenburg
+// Date created: 2026-11-12
 
+//! ISO 52016-1:2017 Clause 6.5 hourly zone recurrence on a pre-inverted network.
+//!
+//! Python assembles the network (`epsm_rc.iso52016.Zone52016`): five nodes per
+//! opaque element, two per window and one air node (Clause 6.5.6 and 6.5.7),
+//! with Table 25 surface coefficients. Backward Euler gives, each hour,
+//!
+//! ```text
+//! (A0 + H_ve e0 e0ᵀ) θ_t = C/Δt θ_{t−1} + P f_t + H_ve θ_e e0 + φ_HC h
+//! ```
+//!
+//! where A0 is constant, `e0` selects the air node, `f_t` holds the forcing
+//! (outdoor and ground temperature, internal and solar gains, sky term, absorbed
+//! solar per element) and `h` distributes HVAC power (fully convective, Annex B).
+//! Python inverts A0 once (M = A0⁻¹). Here the hourly H_ve enters through the
+//! Sherman-Morrison identity, so no matrix is factorised inside the loop.
+//!
+//! Because the network is linear, the free-floating state plus the response to
+//! one watt gives the exact thermostat power (Clause 6.5.5.2 without trials).
+//! The control temperature is the air or operative temperature, set by the
+//! `control` row. Airflow and the heat-recovery rule match
+//! `epsm_rc._forcing.HourlyInputs.at`. The year runs `1 + warmup_passes` times
+//! and the last pass is returned.
+
+/// Constant network matrices from `Zone52016._build`, row-major.
 pub struct Network52016 {
+    /// Number of nodes; node 0 is the air node.
     pub n: usize,
+    /// Number of forcing columns: five shared ones plus one per element.
     pub k: usize,
     /// Row-major n x n inverse of the constant matrix.
     pub m: Vec<f64>,
     /// Row-major n x k product of the inverse and the forcing map.
     pub mp: Vec<f64>,
+    /// Column of M for the air node (response to H_ve coupling).
     pub m_air: Vec<f64>,
+    /// M times the HVAC distribution vector: response to 1 W of HVAC.
     pub m_hvac: Vec<f64>,
+    /// Node capacity divided by the time step, C/Δt (W/K).
     pub c_dt: Vec<f64>,
+    /// Weights giving the control temperature from the node vector.
     pub control: Vec<f64>,
+    /// Index of each element's inside surface node.
     pub inner: Vec<usize>,
+    /// Element areas (m²), for the mean radiant and operative temperatures.
     pub areas: Vec<f64>,
 }
 
+/// Hourly forcing columns, each one value per hour.
 pub struct Hourly52016<'a> {
+    /// Outdoor air temperature (°C).
     pub theta_e: &'a [f64],
+    /// Ground boundary temperature (°C).
     pub theta_gr: &'a [f64],
+    /// Internal gains (W).
     pub phi_int: &'a [f64],
+    /// Solar gains transmitted through windows (W).
     pub phi_sol: &'a [f64],
     /// Row-major hours x elements absorbed solar (W/m²).
     pub absorbed: &'a [f64],
+    /// Heating setpoint (°C).
     pub set_heating: &'a [f64],
+    /// Cooling setpoint (°C).
     pub set_cooling: &'a [f64],
+    /// Heating capacity (W); 0 when heating is unavailable.
     pub heat_limit: &'a [f64],
+    /// Cooling capacity as a nonpositive power (W).
     pub cool_limit: &'a [f64],
+    /// Wind speed (m/s) for the infiltration correction.
     pub wind: &'a [f64],
+    /// Base infiltration air changes per hour before correction.
     pub infiltration: &'a [f64],
+    /// Natural ventilation air changes per hour (unrecovered).
     pub natural: &'a [f64],
+    /// Mechanical ventilation air changes per hour (recoverable).
     pub ventilation: &'a [f64],
 }
 
+/// Constants for H_ve = ρc V n_eff / 3600 and the heat-recovery rule.
 pub struct Airflow52016 {
+    /// Infiltration correction c0 + c1 |θ_air − θ_e| + c2 w + c3 w².
     pub coefficients: [f64; 4],
     pub volume_m3: f64,
     pub air_capacity_j_m3_k: f64,
+    /// Sensible recovery effectiveness of the mechanical airflow.
     pub recovery_effectiveness: f64,
+    /// Use recovery only when it reduces the load (`heat_recovery="when_beneficial"`).
     pub recovery_bypass: bool,
 }
 
+/// Hourly HVAC power (W, + heating), air and operative temperatures (°C).
 pub struct Output52016 {
     pub power: Vec<f64>,
     pub air: Vec<f64>,
     pub operative: Vec<f64>,
 }
 
+/// out += matrix · x for a row-major `rows × cols` matrix.
 fn matvec_add(matrix: &[f64], rows: usize, cols: usize, x: &[f64], out: &mut [f64]) {
     for (row, value) in out.iter_mut().enumerate().take(rows) {
         let line = &matrix[row * cols..(row + 1) * cols];
@@ -62,6 +118,14 @@ fn matvec_add(matrix: &[f64], rows: usize, cols: usize, x: &[f64], out: &mut [f6
     }
 }
 
+/// Run the hourly recurrence and return the last pass.
+///
+/// Each hour: infiltration from the previous air temperature; heat recovery
+/// active only when it reduces the load if `recovery_bypass` (same rule and
+/// tolerances as [`crate::domain::DomainArrays::apply_at`]); the free state
+/// y = M (C/Δt θ + P f + H_ve θ_e e0) corrected for H_ve by Sherman-Morrison;
+/// the HVAC response r likewise; then the power that brings the control
+/// temperature to the violated setpoint, clipped to the capacity.
 pub fn run(
     net: &Network52016,
     hours: &Hourly52016,
@@ -96,9 +160,10 @@ pub fn run(
                 return Err("Hourly infiltration must be finite and nonnegative".into());
             }
             let eta = if air.recovery_bypass {
-                let heating = last > 0.0 || t_air <= hours.set_heating[hour] + 1e-9;
-                let cooling = last < 0.0 || t_air >= hours.set_cooling[hour] - 1e-9;
-                let active = (heating && theta_e < t_air) || (cooling && theta_e > t_air);
+                let heating = last > 1e-3 || t_air <= hours.set_heating[hour] + 1e-6;
+                let cooling = last < -1e-3 || t_air >= hours.set_cooling[hour] - 1e-6;
+                let active =
+                    (heating && theta_e < t_air - 1e-6) || (cooling && theta_e > t_air + 1e-6);
                 if active {
                     air.recovery_effectiveness
                 } else {

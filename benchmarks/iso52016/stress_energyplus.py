@@ -1,5 +1,15 @@
+# File: stress_energyplus.py
+# Purpose: Stress the RC thermal response against EnergyPlus across climates and forms.
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 EPSM Development contributors
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-11-12
+
 """Stress the RC thermal response against EnergyPlus across climates and forms.
 
 Two modes per building: conditioned (heating plus 26 °C cooling) and
@@ -89,20 +99,20 @@ def make_building(archetype, state, form, orientation, mode):
 def rc_variants():
     from epsm_rc import RCSettings
 
-    v2 = RCSettings.from_policy(
-        "epsm_rc_5r1c_v2",
+    v2 = RCSettings(
+        thermal_model="iso13790_5r1c",
+        control_temperature="operative",
         airflow_policy="sensible_only_unlimited_supply",
         ground_policy="iso13370_periodic_approximation",
         iso13370_wall_thickness_m=0.3,
         iso13370_wall_thickness_source="ASSUMED 0.3 m wall at ground level for this comparison",
         self_shadowing_policy="ignore",
-        heat_recovery_control="load_dependent_bypass",
     )
-    iso = dict(thermal_model="iso52016_1_hourly")
+    iso = dict(thermal_model="iso52016_1")
     return {
         "5r1c": v2,
         "iso52016": replace(v2, **iso),
-        "iso52016_air": replace(v2, iso52016_control_temperature="air", **iso),
+        "iso52016_air": replace(v2, control_temperature="air", **iso),
     }
 
 

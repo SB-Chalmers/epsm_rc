@@ -11,6 +11,7 @@ from epsm_rc import RCSettings, preflight, simulate_building
 def settings(**overrides):
     return RCSettings(
         **{
+            "thermal_model": "iso13790_5r1c",
             "airflow_policy": "sensible_only_unlimited_supply",
             "ground_policy": "iso13370_periodic_approximation",
             "iso13370_wall_thickness_m": 0.3,
@@ -76,6 +77,7 @@ def test_periodic_ground_native_and_python_agree_and_preserve_physical_storage(
         reference_building,
         weather=weather,
         settings=RCSettings(
+            thermal_model="iso13790_5r1c",
             airflow_policy="sensible_only_unlimited_supply",
             ground_policy="conductance_multiplier",
         ),

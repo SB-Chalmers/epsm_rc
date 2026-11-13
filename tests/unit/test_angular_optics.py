@@ -10,16 +10,23 @@ from epsm_rc import RCSettings
 from epsm_rc.optics import SimpleGlazingOptics
 
 
-def test_named_radiation_policy_is_explicit_and_legacy_stays_unchanged():
-    legacy = RCSettings.from_policy("epsm_rc_5r1c_v1")
-    current = RCSettings.from_policy("epsm_rc_5r1c_v2")
-    assert legacy.solar_time_reference == "hour_start"
-    assert legacy.window_optics_method == "constant_shgc"
-    assert current.solar_time_reference == "interval_midpoint"
-    assert current.window_optics_method == "simple_glazing_angular_v1"
-    assert RCSettings(policy_version="epsm_rc_5r1c_v2") == current
-    assert current.effective_configuration()["methods"]["glazing"] == current.window_optics_method
-    for kwargs in ({"solar_time_reference": "guess"}, {"window_optics_method": "guess"}):
+def test_radiation_choices_are_enums_and_legacy_names_still_resolve():
+    from epsm_rc.options import SolarTime, WindowOptics
+
+    current = RCSettings()
+    assert current.solar_time is SolarTime.MIDPOINT
+    assert current.window_optics is WindowOptics.ANGULAR
+    with pytest.warns(DeprecationWarning):
+        legacy = RCSettings.from_policy("epsm_rc_5r1c_v1")
+    assert (legacy.solar_time, legacy.window_optics) == ("hour_start", "constant_shgc")
+    with pytest.warns(DeprecationWarning):
+        renamed = RCSettings(
+            solar_time_reference="interval_midpoint",
+            window_optics_method="simple_glazing_angular_v1",
+        )
+    assert renamed == current
+    assert current.effective_configuration()["methods"]["glazing"] == "angular"
+    for kwargs in ({"solar_time": "guess"}, {"window_optics": "guess"}):
         with pytest.raises(ValueError):
             RCSettings(**kwargs)
 

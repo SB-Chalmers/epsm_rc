@@ -81,8 +81,11 @@ def test_real_compilation_and_rc_share_supplied_inputs(case, area, energyplus, t
         weather=weather,
         directory=tmp_path,
         energyplus=energyplus,
-        rc_settings=RCSettings.from_policy(
-            "epsm_rc_5r1c_v1",
+        rc_settings=RCSettings(
+            thermal_model="iso13790_5r1c",
+            window_optics="constant_shgc",
+            solar_time="hour_start",
+            heat_recovery="always",
             airflow_policy="sensible_only_unlimited_supply",
             ground_policy="conductance_multiplier",
             self_shadowing_policy="ignore",

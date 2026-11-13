@@ -158,7 +158,7 @@ def finish_domain(
             "Ground boundary or conductance multiplier explicitly selected and reported",
             (
                 "Solar gains use fixed whole-window SHGC"
-                if settings.window_optics_method == "constant_shgc"
+                if settings.window_optics == "constant_shgc"
                 else "Solar gains use angular transmission and nominal inward absorption"
             ),
             "No fan heat feedback",
@@ -171,8 +171,8 @@ def finish_domain(
     }
     if radiation_hourly:
         diagnostics["radiation"] = {
-            "solar_time_reference": settings.solar_time_reference,
-            "window_optics_method": settings.window_optics_method,
+            "solar_time": settings.solar_time.value,
+            "window_optics": settings.window_optics.value,
             "diffuse_optics": "isotropic_hemispherical_average_of_angular_model",
             "inward_absorption": "nominal_summer_inward_fraction",
             "longwave": "unchanged_fixed_sky_air_difference",

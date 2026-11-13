@@ -10,13 +10,13 @@ an explicit `weather` already exist:
 from epsm_rc import PreparationCache, RCSettings, simulate_building
 
 cache = PreparationCache(max_entries=64)
-legacy = RCSettings.from_policy(
-    "epsm_rc_5r1c_v1",
+angular = RCSettings(  # window_optics="angular" and solar_time="midpoint" are defaults
     airflow_policy="sensible_only_unlimited_supply",
     ground_policy="conductance_multiplier",
 )
-angular = RCSettings.from_policy(
-    "epsm_rc_5r1c_v2",
+legacy = RCSettings(
+    window_optics="constant_shgc",
+    solar_time="hour_start",
     airflow_policy="sensible_only_unlimited_supply",
     ground_policy="conductance_multiplier",
 )
@@ -35,25 +35,28 @@ Overhang, reveal and balcony shading remain unsupported.
 
 ## Reproducibility and migration
 
-`epsm_rc_5r1c_v1` retains hour-start solar sampling, constant supplied SHGC and
-all existing thermal results. Select it when reproducing saved calculations.
+Two settings select the solar treatment. Their options are the enums
+`epsm_rc.SolarTime` and `epsm_rc.WindowOptics`; plain strings are accepted.
+
+- `solar_time="midpoint"` (default) evaluates the sun position at interval start
+  plus 30 minutes, retaining the original hour-start result labels.
+  `"hour_start"` evaluates it at the interval start.
+- `window_optics="angular"` (default) uses separate beam and diffuse optical
+  response, including the nominal inward-flowing fraction of absorbed solar
+  heat. `"constant_shgc"` applies the supplied SHGC in every hour. A constant
+  SHGC is not a solar transmittance.
+
+Select `"hour_start"` and `"constant_shgc"` (with `thermal_model="iso13790_5r1c"`
+and `heat_recovery="always"`) to reproduce calculations saved before these
+choices existed. The former profile names `epsm_rc_5r1c_v1` and
+`epsm_rc_5r1c_v2` still work through the deprecated `RCSettings.from_policy`.
 Optimization does not change timestep, control interpolation, constructions,
 load reference area or physical assumptions. Standalone solar entry points keep
 their prior midpoint convention, cardinal interface and legacy sum ordering.
 They delegate their common irradiance operations to the same radiation kernel.
 
-`epsm_rc_5r1c_v2` explicitly selects:
-
-- `solar_time_reference="interval_midpoint"`: solar position at interval start
-  plus 30 minutes, retaining the original hour-start result labels.
-- `window_optics_method="simple_glazing_angular_v1"`: separate beam and diffuse
-  optical response, including the nominal inward-flowing fraction of absorbed
-  solar heat. A constant SHGC is not a solar transmittance.
-
-The fields may also be overridden explicitly on either baseline policy. Effective
-settings and source identities enter diagnostics and calculation identity.
-Old settings dictionaries without these fields keep v1 behavior; selecting a
-new policy never edits a retained snapshot. The physical Building's supplied
+Effective settings and source identities enter diagnostics and calculation
+identity. Changing a setting never edits a retained snapshot. The physical Building's supplied
 U-value and SHGC remain unchanged. This release does not add hidden physical
 defaults, infer measured optical data or tune coefficients to match annual demand.
 
@@ -85,7 +88,7 @@ finite `0 < U <= 7` and `0 <= SHGC <= 1`, positive nominal resistances and physi
 correlated optical fractions. Unphysical combinations fail before the thermal
 simulation; no alternative coefficients or model are silently substituted.
 
-New-policy hourly diagnostics expose incident window beam/sky/ground radiation,
+With angular optics, hourly diagnostics expose incident window beam/sky/ground radiation,
 transmitted solar, inward absorbed solar, total window gains, opaque solar gains
 and the unchanged fixed sky loss, all in W. Annual component integrals are retained
 in diagnostics in kWh. These channels identify different physical quantities:
@@ -135,8 +138,7 @@ whole-standard or regulatory certification.
 Use the existing explicit settings alongside the context method:
 
 ```python
-settings = RCSettings.from_policy(
-    "epsm_rc_5r1c_v2",
+settings = RCSettings(
     airflow_policy="sensible_only_unlimited_supply",
     ground_policy="conductance_multiplier",
     context_shading_method="iso13790_hourly_horizon",
@@ -182,7 +184,7 @@ even in warm runs. `clear()` releases entries and resets counters.
 Use `preparation_cache` on RC's direct `simulate_building` API. The existing
 umbrella `epsm.Building.simulate` serializes all calculation options and cannot
 accept this transient cache object; its `cache` argument is for retained evaluation
-results. Ordinary umbrella calls with explicit v1/v2 RC settings remain supported.
+results. Ordinary umbrella calls with explicit RC settings remain supported.
 Exposing preparation reuse there requires a separate EPSM wrapper change; it is
 outside this Core/RC release. Worker scheduling and durable result caching remain
 outside RC. See [benchmarks](../benchmarks/README.md) for

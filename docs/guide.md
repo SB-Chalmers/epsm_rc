@@ -36,8 +36,7 @@ from epsm_rc import RCSettings, simulate_building
 
 building = Building(preset="illustrative-reference")
 weather = Weather.from_epw("weather.epw")
-settings = RCSettings.from_policy(
-    "epsm_rc_5r1c_v2",
+settings = RCSettings(
     airflow_policy="sensible_only_unlimited_supply",
     ground_policy="conductance_multiplier",
 )
@@ -148,8 +147,8 @@ from epsm_rc import prepare_engine_comparison, RCSettings
 comparison = prepare_engine_comparison(
     building, weather="weather.epw", directory="comparison",
     energyplus="/path/to/EnergyPlus-24.2/energyplus",
-    rc_settings=RCSettings.from_policy(
-        "epsm_rc_5r1c_v1", airflow_policy="sensible_only_unlimited_supply",
+    rc_settings=RCSettings(
+        airflow_policy="sensible_only_unlimited_supply",
         ground_policy="conductance_multiplier", self_shadowing_policy="ignore",
     ),
 )
@@ -234,8 +233,8 @@ from epsm_rc import RCSettings, simulate_building
 
 building = Building(preset="illustrative-reference")  # Explicit illustrative inputs.
 weather = Weather.from_epw("weather.epw")
-settings = RCSettings.from_policy(
-    "epsm_rc_5r1c_v1", airflow_policy="sensible_only_unlimited_supply",
+settings = RCSettings(
+    airflow_policy="sensible_only_unlimited_supply",
     ground_policy="conductance_multiplier",
 )
 result = simulate_building(building, weather=weather, settings=settings)
@@ -279,9 +278,10 @@ cold-attic buffer adds a finite quasi-steady boundary. Each conditioned domain
 uses area-weighted thermal conductance and the first 0.1 m of construction from
 the room side for effective mass. Explicit `settings` are required; missing
 settings fail before input I/O.
-`RCSettings.from_policy("epsm_rc_5r1c_v1", ...)` selects the versioned baseline
-profile. `RCSettings(...)` also explicitly selects that baseline. Both retain
-caller overrides as the effective configuration. The profile identifies model
+`RCSettings(...)` records every choice as the effective configuration. Physics
+choices are named enums (`epsm_rc.options`), defaulting to the options closest to
+EnergyPlus; `RCSettings.from_policy` and the former `epsm_rc_5r1c_v1`/`v2`
+profile names remain as deprecated aliases. The settings identify model
 assumptions, including internal-area and mass-area ratios, capacity thresholds,
 internal gain split, air heat capacity, node transfer coefficients, outside film
 resistances and sky-exchange coefficients. These assumptions are separate from
@@ -371,7 +371,7 @@ Bundled weather inputs retain their source headers.
 This section describes the original 0.3.0 API transition. For current package
 versions, use the [EPSM supported combination](https://github.com/SB-Chalmers/epsm/blob/main/compatibility.json).
 
-Select explicit `RCSettings.from_policy(...)`, weather and physical authoring
+Select explicit `RCSettings(...)`, weather and physical authoring
 inputs. Courtyard, concave and multipart geometry requires an explicit
 self-shadowing omission; unsupported airflow and ground behavior need the
 corresponding reduction policies. The Core-based geometry and shared gain inputs

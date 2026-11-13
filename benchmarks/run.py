@@ -146,8 +146,12 @@ def run(args, cache):
             check=True,
         )
     synthetic = controlled_weather(args.directory / "controlled.epw")
-    settings = RCSettings.from_policy(
-        f"epsm_rc_5r1c_v{args.policy}",
+    angular = args.policy == 2
+    settings = RCSettings(
+        thermal_model="iso13790_5r1c",
+        window_optics="angular" if angular else "constant_shgc",
+        solar_time="midpoint" if angular else "hour_start",
+        heat_recovery="always",
         airflow_policy="sensible_only_unlimited_supply",
         self_shadowing_policy="ignore",
     )

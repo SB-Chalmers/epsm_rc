@@ -121,8 +121,11 @@ def test_public_core_adapter_uses_same_recovery_with_unrecovered_natural_flow(
     result = platform.simulate_building(
         building,
         weather=core.Weather.from_epw(files("epsm_rc").joinpath("data/epw/goteborg.epw")),
-        settings=RCSettings.from_policy(
-            "epsm_rc_5r1c_v1",
+        settings=RCSettings(
+            thermal_model="iso13790_5r1c",
+            window_optics="constant_shgc",
+            solar_time="hour_start",
+            heat_recovery="always",
             airflow_policy="sensible_only_unlimited_supply",
             ground_policy="conductance_multiplier",
         ),

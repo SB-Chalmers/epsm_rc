@@ -8,6 +8,7 @@ from epsm_rc import Building5R1C, RCSettings, simulate_building
 
 def simulation_settings():
     return RCSettings(
+        thermal_model="iso13790_5r1c",
         airflow_policy="sensible_only_unlimited_supply",
         ground_policy="conductance_multiplier",
         self_shadowing_policy="ignore",

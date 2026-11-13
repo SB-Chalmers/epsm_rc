@@ -1,5 +1,15 @@
+# File: summarise_stress.py
+# Purpose: Summarise ``stress_energyplus.py`` results as Markdown tables.
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 EPSM Development contributors
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-11-12
+
 """Summarise ``stress_energyplus.py`` results as Markdown tables."""
 
 from __future__ import annotations

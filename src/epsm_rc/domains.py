@@ -128,6 +128,8 @@ def _run_coupled_domains(prepared, conductance):
                 heating_limit_w=[domain.heating_limits_w[hour] for domain in prepared],
                 cooling_limit_w=[domain.cooling_limits_w[hour] for domain in prepared],
             )
+            for model, power in zip(models, solution.power_w):
+                model._last_hvac_power = float(power)  # heat-recovery bypass mode
             powers[:, hour] = solution.power_w
             temperatures[:, hour] = solution.temperature_c
             exchanges[:, hour] = solution.exchange_w

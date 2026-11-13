@@ -29,6 +29,7 @@ def evaluate(building, factor=0.5, **kwargs):
         building,
         weather=Weather.from_epw(files("epsm_rc").joinpath("data/epw/goteborg.epw")),
         settings=RCSettings(
+            thermal_model="iso13790_5r1c",
             airflow_policy="sensible_only_unlimited_supply",
             ground_policy="conductance_multiplier",
             ground_coupling_factor=factor,
@@ -137,7 +138,9 @@ def test_distinct_basement_controls_survive_domain_preparation_and_cached_resump
     )
     cache = PreparationCache()
     settings = RCSettings(
-        airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier"
+        thermal_model="iso13790_5r1c",
+        airflow_policy="sensible_only_unlimited_supply",
+        ground_policy="conductance_multiplier",
     )
     before = building.snapshot().sha256
     results = [
@@ -209,7 +212,9 @@ def test_coupled_basement_preserves_leap_day_and_zone_reference_areas(tmp_path, 
         building,
         weather=Weather.from_epw(leap, calendar_year=2016),
         settings=RCSettings(
-            airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier"
+            thermal_model="iso13790_5r1c",
+            airflow_policy="sensible_only_unlimited_supply",
+            ground_policy="conductance_multiplier",
         ),
     )
     assert len(result.time_axis) == 8784

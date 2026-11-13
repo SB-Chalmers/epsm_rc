@@ -1,8 +1,15 @@
-# File: src/epsm_rc/iso52016.py
-# Purpose: ISO 52016-1:2017 hourly multi-node zone network (Clause 6.5) on shared RC forcing.
+# File: iso52016.py
+# Purpose: ISO 52016-1:2017 hourly zone network (Clause 6.5) with element node chains.
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 EPSM Development contributors
-# License: See LICENSE at the project root.
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-11-12
+
 """ISO 52016-1 hourly zone model with element node chains.
 
 Each construction element is a chain of nodes: five for opaque elements and two
@@ -386,7 +393,7 @@ class Zone52016:
     def summary(self) -> dict:
         """Detached description of the assembled network."""
         return {
-            "method": "iso52016_1_hourly",
+            "method": "iso52016_1",
             "node_count": self.node_count,
             "element_count": len(self.elements),
             "control": self.control,

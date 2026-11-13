@@ -1,8 +1,15 @@
-# File: src/epsm_rc/_iso52016_platform.py
+# File: _iso52016_platform.py
 # Purpose: Reduce Core elements to an ISO 52016-1 zone and run it on the shared RC forcing.
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 EPSM Development contributors
-# License: See LICENSE at the project root.
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-11-12
+
 """Shared-Building adapter for the ISO 52016-1 hourly zone.
 
 The 5R1C preparation (weather, solar per orientation, context shading, window
@@ -293,7 +300,7 @@ def build_zone(domain_inputs):
         air_volume_m3=volume,
         thermal_bridge_w_k=bridge,
         air_volumetric_heat_capacity_j_m3_k=settings.air_volumetric_heat_capacity_j_m3_k,
-        control=settings.iso52016_control_temperature,
+        control=settings.control_temperature.value,
         delta_theta_er_k=settings.sky_air_temperature_difference_k,
     )
     return zone, hourly, ground_kinds, notes

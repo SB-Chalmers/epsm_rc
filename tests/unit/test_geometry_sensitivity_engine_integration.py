@@ -29,8 +29,9 @@ def test_warmer_basement_and_greater_attic_exchange_increase_heating(synthetic_w
             pytest.fail("Geometry release requires EnergyPlus 24.2")
         pytest.skip("EnergyPlus 24.2 is required for the geometry release comparison")
     weather = Weather.from_epw(synthetic_weather)
-    settings = RCSettings.from_policy(
-        "epsm_rc_5r1c_v2",
+    settings = RCSettings(
+        thermal_model="iso13790_5r1c",
+        heat_recovery="always",
         airflow_policy="sensible_only_unlimited_supply",
         cold_attic_policy="quasi_steady_buffer",
     )

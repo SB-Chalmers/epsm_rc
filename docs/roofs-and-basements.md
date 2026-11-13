@@ -35,8 +35,8 @@ building.zone_uses = (ZoneUseSpec(
     use=building.operation.updated(heating_setpoint=ScheduleSpec.constant(18)),
     source="declared illustrative basement control",
 ),)
-settings = RCSettings.from_policy(
-    "epsm_rc_5r1c_v2",
+settings = RCSettings(
+    thermal_model="iso13790_5r1c",  # ISO 52016-1 does not yet cover basements or attics
     airflow_policy="sensible_only_unlimited_supply",
     ground_policy="conductance_multiplier",
     cold_attic_policy="quasi_steady_buffer",

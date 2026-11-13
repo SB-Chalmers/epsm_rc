@@ -133,20 +133,28 @@ def test_invalid_elements_are_rejected():
         ZoneElement("w", 1, "window", "adiabatic", "horizontal", 1.0, 0, "D")
 
 
-def test_settings_select_model_by_policy_and_explicit_field():
-    assert RCSettings().thermal_model == "iso13790_5r1c"
-    iso = RCSettings.from_policy("epsm_rc_iso52016_v1")
-    assert iso.thermal_model == "iso52016_1_hourly"
-    assert iso.window_optics_method == "simple_glazing_angular_v1"
-    explicit = RCSettings(thermal_model="iso52016_1_hourly")
-    assert explicit.window_optics_method == "constant_shgc"
-    configuration = explicit.effective_configuration()
-    assert configuration["methods"]["thermal_model"] == "iso52016_1_hourly"
+def test_settings_default_to_the_choices_closest_to_energyplus():
+    from epsm_rc.options import ControlTemperature, HeatRecovery, ThermalModel
+
+    settings = RCSettings()
+    assert settings.thermal_model is ThermalModel.ISO52016_1
+    assert settings.control_temperature is ControlTemperature.AIR
+    assert settings.heat_recovery is HeatRecovery.WHEN_BENEFICIAL
+    assert RCSettings(thermal_model=ThermalModel.ISO13790_5R1C).thermal_model == "iso13790_5r1c"
+    configuration = settings.effective_configuration()
+    assert configuration["methods"]["thermal_model"] == "iso52016_1"
     assert "mass_area_factors" in configuration["inactive_coefficients"]
-    with pytest.raises(ValueError):
+    with pytest.warns(DeprecationWarning):
+        assert RCSettings(thermal_model="iso52016_1_hourly") == settings
+    with pytest.warns(DeprecationWarning):
+        legacy = RCSettings(heat_recovery_control="continuous")
+    assert legacy.heat_recovery is HeatRecovery.ALWAYS
+    with pytest.raises(ValueError, match="choose one of"):
         RCSettings(thermal_model="iso99999")
     with pytest.raises(ValueError):
-        RCSettings(iso52016_control_temperature="radiant")
+        RCSettings(control_temperature="radiant")
+    with pytest.raises(TypeError):
+        RCSettings(heat_recovery="always", heat_recovery_control="continuous")
 
 
 def test_shared_building_runs_both_models(reference_building):
@@ -157,12 +165,12 @@ def test_shared_building_runs_both_models(reference_building):
     common = dict(
         airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier"
     )
-    old = simulate_building(reference_building, weather=weather, settings=RCSettings(**common))
-    new = simulate_building(
+    old = simulate_building(
         reference_building,
         weather=weather,
-        settings=RCSettings(thermal_model="iso52016_1_hourly", **common),
+        settings=RCSettings(thermal_model="iso13790_5r1c", **common),
     )
+    new = simulate_building(reference_building, weather=weather, settings=RCSettings(**common))
     assert old.run_id != new.run_id
     assert set(old.hourly) == set(new.hourly)
     heating = new.scalars["space_heating_demand_kwh"]
@@ -177,24 +185,22 @@ def test_recovery_bypass_only_removes_recovery(reference_building):
     from epsm_rc import simulate_building
 
     with pytest.raises(ValueError):
-        RCSettings(heat_recovery_control="sometimes")
+        RCSettings(heat_recovery="sometimes")
     weather = core.Weather.from_epw(files("epsm_rc").joinpath("data/epw/goteborg.epw"))
     common = dict(
         airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier"
     )
     assert reference_building.hvac.airflow.sensible_recovery_effectiveness > 0
-    for model in ("iso13790_5r1c", "iso52016_1_hourly"):
+    for model in ("iso13790_5r1c", "iso52016_1"):
         continuous = simulate_building(
             reference_building,
             weather=weather,
-            settings=RCSettings(thermal_model=model, **common),
+            settings=RCSettings(thermal_model=model, heat_recovery="always", **common),
         )
         bypass = simulate_building(
             reference_building,
             weather=weather,
-            settings=RCSettings(
-                thermal_model=model, heat_recovery_control="load_dependent_bypass", **common
-            ),
+            settings=RCSettings(thermal_model=model, **common),
         )
         old = continuous.scalars["space_heating_demand_kwh"]
         new = bypass.scalars["space_heating_demand_kwh"]
@@ -212,10 +218,8 @@ def test_native_kernel_matches_python_recurrence(reference_building, monkeypatch
         pytest.skip("native extension without the ISO 52016-1 kernel")
     weather = core.Weather.from_epw(files("epsm_rc").joinpath("data/epw/goteborg.epw"))
     settings = RCSettings(
-        thermal_model="iso52016_1_hourly",
         airflow_policy="sensible_only_unlimited_supply",
         ground_policy="conductance_multiplier",
-        heat_recovery_control="load_dependent_bypass",
     )
     original = adapter.run_zone
     results = {}
@@ -237,9 +241,9 @@ def test_native_5r1c_bypass_matches_python_recurrence(reference_building, monkey
     pytest.importorskip("epsm_rc._core_rs")
     weather = core.Weather.from_epw(files("epsm_rc").joinpath("data/epw/goteborg.epw"))
     settings = RCSettings(
+        thermal_model="iso13790_5r1c",
         airflow_policy="sensible_only_unlimited_supply",
         ground_policy="conductance_multiplier",
-        heat_recovery_control="load_dependent_bypass",
     )
     calls = []
     original = iso13790._can_use_native

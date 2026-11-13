@@ -7,33 +7,33 @@ Latent cooling, 7% of the E+ total, is excluded.
 
 | Model | Total / E+ | Median case ratio | Cases within ±20 % | Mean abs error kWh/m² | Median peak ratio | Median hourly CV(RMSE) % | Median hourly r | Median hours ratio |
 |---|---|---|---|---|---|---|---|---|
-| 5R1C v1 | 7.32 | 7.72 | 0/38 | 3.78 | 1.58 | 2285 | 0.62 | 2.92 |
-| 5R1C v2 | 5.74 | 5.63 | 0/38 | 2.83 | 1.50 | 1933 | 0.64 | 2.42 |
-| 52016 v1 | 6.39 | 5.87 | 2/38 | 3.23 | 1.48 | 2036 | 0.63 | 2.31 |
-| 52016 v2 | 4.84 | 4.66 | 2/38 | 2.33 | 1.40 | 1739 | 0.67 | 1.99 |
-| 5R1C v1 +HR bypass | 2.70 | 2.84 | 0/38 | 1.02 | 1.56 | 1004 | 0.86 | 1.40 |
-| 5R1C v2 +HR bypass | 1.91 | 2.03 | 0/38 | 0.54 | 1.48 | 716 | 0.89 | 1.01 |
-| 52016 v1 +HR bypass | 1.90 | 1.82 | 2/38 | 0.54 | 1.41 | 722 | 0.92 | 0.89 |
-| 52016 v1 air ctrl +HR bypass | 1.62 | 1.59 | 7/38 | 0.37 | 1.19 | 458 | 0.95 | 1.01 |
-| 52016 v2 +HR bypass | 1.21 | 0.89 | 8/38 | 0.19 | 1.23 | 470 | 0.93 | 0.48 |
+| 5R1C, constant SHGC | 7.32 | 7.72 | 0/38 | 3.78 | 1.58 | 2285 | 0.62 | 2.92 |
+| 5R1C, angular optics | 5.74 | 5.63 | 0/38 | 2.83 | 1.50 | 1933 | 0.64 | 2.42 |
+| 52016, constant SHGC | 6.39 | 5.87 | 2/38 | 3.23 | 1.48 | 2036 | 0.63 | 2.31 |
+| 52016, angular optics | 4.84 | 4.66 | 2/38 | 2.33 | 1.40 | 1739 | 0.67 | 1.99 |
+| 5R1C, constant SHGC, HR when beneficial | 2.70 | 2.84 | 0/38 | 1.02 | 1.56 | 1004 | 0.86 | 1.40 |
+| 5R1C, angular optics, HR when beneficial | 1.91 | 2.03 | 0/38 | 0.54 | 1.48 | 716 | 0.89 | 1.01 |
+| 52016, constant SHGC, HR when beneficial | 1.90 | 1.82 | 2/38 | 0.54 | 1.41 | 722 | 0.92 | 0.89 |
+| 52016 air control, constant SHGC, HR when beneficial | 1.62 | 1.59 | 7/38 | 0.37 | 1.19 | 458 | 0.95 | 1.01 |
+| 52016, angular optics, HR when beneficial | 1.21 | 0.89 | 8/38 | 0.19 | 1.23 | 470 | 0.93 | 0.48 |
 
 ## Heating
 
 | Model | Total / E+ | Median case ratio | Cases within ±20 % | Mean abs error kWh/m² | Median peak ratio | Median hourly CV(RMSE) % | Median hourly r | Median hours ratio |
 |---|---|---|---|---|---|---|---|---|
-| 5R1C v1 | 0.90 | 0.85 | 30/38 | 5.56 | 1.05 | 31 | 0.97 | 0.82 |
-| 5R1C v2 | 0.92 | 0.88 | 36/38 | 4.53 | 1.05 | 28 | 0.98 | 0.84 |
-| 52016 v1 | 0.93 | 0.87 | 34/38 | 5.08 | 1.05 | 26 | 0.98 | 0.81 |
-| 52016 v2 | 0.95 | 0.90 | 36/38 | 4.19 | 1.05 | 23 | 0.98 | 0.84 |
-| 5R1C v1 +HR bypass | 0.94 | 0.94 | 38/38 | 3.27 | 1.05 | 31 | 0.96 | 0.91 |
-| 5R1C v2 +HR bypass | 0.96 | 0.96 | 38/38 | 2.38 | 1.05 | 30 | 0.97 | 0.94 |
-| 52016 v1 +HR bypass | 0.95 | 0.92 | 38/38 | 3.92 | 1.05 | 27 | 0.98 | 0.87 |
-| 52016 v1 air ctrl +HR bypass | 0.94 | 0.93 | 38/38 | 3.46 | 1.01 | 26 | 0.98 | 0.93 |
-| 52016 v2 +HR bypass | 0.97 | 0.94 | 38/38 | 3.07 | 1.05 | 23 | 0.98 | 0.90 |
+| 5R1C, constant SHGC | 0.90 | 0.85 | 30/38 | 5.56 | 1.05 | 31 | 0.97 | 0.82 |
+| 5R1C, angular optics | 0.92 | 0.88 | 36/38 | 4.53 | 1.05 | 28 | 0.98 | 0.84 |
+| 52016, constant SHGC | 0.93 | 0.87 | 34/38 | 5.08 | 1.05 | 26 | 0.98 | 0.81 |
+| 52016, angular optics | 0.95 | 0.90 | 36/38 | 4.19 | 1.05 | 23 | 0.98 | 0.84 |
+| 5R1C, constant SHGC, HR when beneficial | 0.94 | 0.94 | 38/38 | 3.27 | 1.05 | 31 | 0.96 | 0.91 |
+| 5R1C, angular optics, HR when beneficial | 0.96 | 0.96 | 38/38 | 2.38 | 1.05 | 30 | 0.97 | 0.94 |
+| 52016, constant SHGC, HR when beneficial | 0.95 | 0.92 | 38/38 | 3.92 | 1.05 | 27 | 0.98 | 0.87 |
+| 52016 air control, constant SHGC, HR when beneficial | 0.94 | 0.93 | 38/38 | 3.46 | 1.01 | 26 | 0.98 | 0.93 |
+| 52016, angular optics, HR when beneficial | 0.97 | 0.94 | 38/38 | 3.07 | 1.05 | 23 | 0.98 | 0.90 |
 
 ## Cooling total / E+ by group
 
-| Group | E+ kWh/m² | 5R1C v1 | 5R1C v2 | 52016 v1 | 52016 v2 | 5R1C v1 +HR bypass | 5R1C v2 +HR bypass | 52016 v1 +HR bypass | 52016 v1 air ctrl +HR bypass | 52016 v2 +HR bypass |
+| Group | E+ kWh/m² | 5R1C, constant SHGC | 5R1C, angular optics | 52016, constant SHGC | 52016, angular optics | 5R1C, constant SHGC, HR when beneficial | 5R1C, angular optics, HR when beneficial | 52016, constant SHGC, HR when beneficial | 52016 air control, constant SHGC, HR when beneficial | 52016, angular optics, HR when beneficial |
 |---|---|---|---|---|---|---|---|---|---|---|
 | mf | 0.0 | 39.27 | 27.38 | 30.69 | 20.61 | 7.97 | 3.92 | 2.15 | 1.84 | 0.47 |
 | office | 0.9 | 6.17 | 5.10 | 5.07 | 4.04 | 2.71 | 1.99 | 1.87 | 1.60 | 1.24 |
@@ -44,7 +44,7 @@ Latent cooling, 7% of the E+ total, is excluded.
 
 ## Per case cooling (kWh/m²)
 
-| Case | E+ | 5R1C v1 | 5R1C v2 | 52016 v1 | 52016 v2 | 5R1C v1 +HR bypass | 5R1C v2 +HR bypass | 52016 v1 +HR bypass | 52016 v1 air ctrl +HR bypass | 52016 v2 +HR bypass |
+| Case | E+ | 5R1C, constant SHGC | 5R1C, angular optics | 52016, constant SHGC | 52016, angular optics | 5R1C, constant SHGC, HR when beneficial | 5R1C, angular optics, HR when beneficial | 52016, constant SHGC, HR when beneficial | 52016 air control, constant SHGC, HR when beneficial | 52016, angular optics, HR when beneficial |
 |---|---|---|---|---|---|---|---|---|---|---|
 | mf_se02-advanced-000 | 0.08 | 3.92 | 2.73 | 3.20 | 2.08 | 0.54 | 0.28 | 0.19 | 0.15 | 0.01 |
 | mf_se02-advanced-090 | 0.15 | 4.67 | 3.49 | 3.94 | 2.79 | 0.78 | 0.44 | 0.33 | 0.27 | 0.11 |

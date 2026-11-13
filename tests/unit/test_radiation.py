@@ -101,7 +101,7 @@ def test_policy_samples_midpoint_but_preserves_output_labels(
     for name, values in old.hourly.items():
         np.testing.assert_array_equal(values, new.hourly[name])
     assert new.run_id != old.run_id
-    assert new.diagnostics["radiation"]["window_optics_method"] == "simple_glazing_angular_v1"
+    assert new.diagnostics["radiation"]["window_optics"] == "angular"
 
 
 def test_angular_channels_account_for_inward_absorption_and_cache(reference_building):

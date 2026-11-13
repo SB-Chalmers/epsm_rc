@@ -52,13 +52,13 @@ def output_capabilities(building=None, *, settings=None):
     for name, unit in BASE_OUTPUT_UNITS.items():
         add(name, unit)
     outputs.extend(delivery_output_capabilities(building))
-    angular = settings is not None and settings.window_optics_method == "simple_glazing_angular_v1"
+    angular = settings is not None and settings.window_optics == "angular"
     for name in (*ANGULAR_WINDOW_OUTPUTS, *ANGULAR_DERIVED_OUTPUTS):
         add(
             name,
             "W",
             available=angular,
-            reason=None if angular else "Requires simple_glazing_angular_v1 optics",
+            reason=None if angular else "Requires angular window optics",
         )
     geometry = getattr(building, "geometry", None)
     basement = geometry is not None and geometry.basement_conditioned

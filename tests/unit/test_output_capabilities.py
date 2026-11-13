@@ -9,10 +9,20 @@ def test_rc_output_discovery_tracks_selected_optics_and_basement(reference_build
     from epsm_rc import RCSettings, output_capabilities
 
     ordinary = output_capabilities(
-        reference_building, settings=RCSettings.from_policy("epsm_rc_5r1c_v1")
+        reference_building,
+        settings=RCSettings(
+            thermal_model="iso13790_5r1c",
+            window_optics="constant_shgc",
+            solar_time="hour_start",
+            heat_recovery="always",
+        ),
     )
     angular = output_capabilities(
-        reference_building, settings=RCSettings.from_policy("epsm_rc_5r1c_v2")
+        reference_building,
+        settings=RCSettings(
+            thermal_model="iso13790_5r1c",
+            heat_recovery="always",
+        ),
     )
 
     def row(result, name):

@@ -1,5 +1,15 @@
+# File: compare_energyplus.py
+# Purpose: Compare 5R1C, ISO 52016-1 and EnergyPlus over Studio-style building options.
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 EPSM Development contributors
+# Copyright (c) 2026 Sanjay Somanath
+# License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+# Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+# Project PI: Alexander Hollberg
+# Computational Sustainable Design Group
+# Research Area of Sustainable Built Environments
+# Chalmers University of Technology, Gothenburg
+# Date created: 2026-11-12
+
 """Compare 5R1C, ISO 52016-1 and EnergyPlus over Studio-style building options.
 
 The option grid follows the parameters exposed by EPSM Studio: building function
@@ -90,22 +100,23 @@ def make_building(archetype, state, orientation):
 def rc_variants():
     from epsm_rc import RCSettings
 
-    base = RCSettings.from_policy(
-        "epsm_rc_5r1c_v1",
+    # Keys keep the labels of the stored results: "v1" is constant SHGC with
+    # hour-start solar time, "v2" angular optics with midpoint solar time.
+    base = RCSettings(
+        thermal_model="iso13790_5r1c",
+        window_optics="constant_shgc",
+        solar_time="hour_start",
+        heat_recovery="always",
+        control_temperature="operative",
         airflow_policy="sensible_only_unlimited_supply",
         ground_policy="iso13370_periodic_approximation",
         iso13370_wall_thickness_m=0.3,
         iso13370_wall_thickness_source="ASSUMED 0.3 m wall at ground level for this comparison",
         self_shadowing_policy="ignore",
     )
-    v2 = replace(
-        base,
-        policy_version="epsm_rc_5r1c_v2",
-        solar_time_reference="interval_midpoint",
-        window_optics_method="simple_glazing_angular_v1",
-    )
-    iso = dict(thermal_model="iso52016_1_hourly")
-    bypass = dict(heat_recovery_control="load_dependent_bypass")
+    v2 = replace(base, solar_time="midpoint", window_optics="angular")
+    iso = dict(thermal_model="iso52016_1")
+    bypass = dict(heat_recovery="when_beneficial")
     return {
         "5r1c_v1": base,
         "5r1c_v2": v2,
@@ -114,9 +125,7 @@ def rc_variants():
         "5r1c_v1_bypass": replace(base, **bypass),
         "5r1c_v2_bypass": replace(v2, **bypass),
         "iso52016_v1_bypass": replace(base, **iso, **bypass),
-        "iso52016_v1_air_bypass": replace(
-            base, iso52016_control_temperature="air", **iso, **bypass
-        ),
+        "iso52016_v1_air_bypass": replace(base, control_temperature="air", **iso, **bypass),
         "iso52016_v2_bypass": replace(v2, **iso, **bypass),
     }
 

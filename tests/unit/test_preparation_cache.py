@@ -11,8 +11,11 @@ from epsm_rc import PreparationCache, RCSettings, simulate_building
 
 
 def settings():
-    return RCSettings.from_policy(
-        "epsm_rc_5r1c_v1",
+    return RCSettings(
+        thermal_model="iso13790_5r1c",
+        window_optics="constant_shgc",
+        solar_time="hour_start",
+        heat_recovery="always",
         airflow_policy="sensible_only_unlimited_supply",
         ground_policy="conductance_multiplier",
     )

@@ -28,8 +28,11 @@ def calculate(building, **changes):
     return simulate_building(
         building,
         weather=Weather.from_epw(files("epsm_rc") / "data/epw/goteborg.epw"),
-        settings=RCSettings.from_policy(
-            "epsm_rc_5r1c_v1",
+        settings=RCSettings(
+            thermal_model="iso13790_5r1c",
+            window_optics="constant_shgc",
+            solar_time="hour_start",
+            heat_recovery="always",
             airflow_policy="sensible_only_unlimited_supply",
             ground_policy="conductance_multiplier",
         ),

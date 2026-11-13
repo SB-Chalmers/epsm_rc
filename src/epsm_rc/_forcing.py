@@ -127,11 +127,13 @@ class HourlyInputs:
             # warmer. The mode is judged one hour lagged, from the previous hour's
             # HVAC power or its air temperature against the setpoints, so a zone
             # that needs heat but has none available still counts as heating.
+            # Tolerances keep the decision identical in the Python and Rust loops
+            # when the air sits on a setpoint to rounding precision.
             last = getattr(model, "_last_hvac_power", 0.0)
-            heating = last > 0 or model.t_air <= float(self.heating_setpoints[hour]) + 1e-9
-            cooling = last < 0 or model.t_air >= float(self.cooling_setpoints[hour]) - 1e-9
-            active = (heating and temperature < model.t_air) or (
-                cooling and temperature > model.t_air
+            heating = last > 1e-3 or model.t_air <= float(self.heating_setpoints[hour]) + 1e-6
+            cooling = last < -1e-3 or model.t_air >= float(self.cooling_setpoints[hour]) - 1e-6
+            active = (heating and temperature < model.t_air - 1e-6) or (
+                cooling and temperature > model.t_air + 1e-6
             )
             model.heat_recovery_efficiency = self.recovery_effectiveness if active else 0.0
         if not isfinite(model.ach_infiltration) or model.ach_infiltration < 0:

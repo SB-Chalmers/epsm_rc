@@ -1,3 +1,15 @@
+// File: bindings.rs
+// Purpose: Python and NumPy conversion for the 5R1C kernels, outside numerical loops.
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Sanjay Somanath
+// License: MIT; see the project-root LICENSE for the full permission and warranty terms.
+// Author: Sanjay Somanath <sanjay.somanath@chalmers.se>
+// Project PI: Alexander Hollberg
+// Computational Sustainable Design Group
+// Research Area of Sustainable Built Environments
+// Chalmers University of Technology, Gothenburg
+// Date created: 2026-10-29
+
 //! Python/NumPy conversion and model synchronization, outside numerical loops.
 use numpy::{PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyUntypedArray};
 use pyo3::exceptions::PyValueError;
@@ -182,6 +194,7 @@ impl<'py> Parameters<'py> {
 }
 
 impl Core5R1C {
+    /// Read every named native parameter of a Python `Building5R1C`.
     pub fn from_py(model: &Bound<'_, PyAny>) -> PyResult<Self> {
         let p = Parameters::read(model)?;
         let prepared_hourly: bool = p.get("prepared_hourly")?.extract()?;
@@ -332,6 +345,8 @@ struct PyForcing<'py> {
     month_hours: Option<PyReadonlyArray1<'py, i64>>,
     coefficients: (f64, f64, f64, f64),
     aggregate_split: bool,
+    /// Effectiveness when `HourlyInputs.recovery_bypass` selects recovery only
+    /// when beneficial; `None` for recovery in every hour.
     recovery_bypass: Option<f64>,
 }
 
@@ -437,6 +452,8 @@ fn with_domain_arrays<'py, R>(
     Ok(result)
 }
 
+/// Standalone `Building5R1C.simulate` loop: copy the forcing, release the GIL and
+/// run [`crate::iso13790::simulate`]; the advanced state is written back to the model.
 #[pyfunction]
 #[pyo3(signature = (
     model,
@@ -523,6 +540,8 @@ pub fn simulate_5r1c_hourly<'py>(
     Ok(result)
 }
 
+/// One thermostat hour (`Building5R1C.calc_heating_demand`): returns power in W
+/// and writes the controlled node temperatures back to the model.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 #[pyo3(signature = (
@@ -590,6 +609,8 @@ pub fn calc_heating_demand_5r1c<'py>(
     Ok(q)
 }
 
+/// Platform loop for one domain from a `HourlyInputs` forcing object, including
+/// the heat-recovery rule; returns hourly power (W) and air temperature (°C).
 #[pyfunction]
 #[pyo3(signature = (model, forcing, heating_limits_w, cooling_limits_w))]
 pub fn run_single_domain_hourly<'py>(
@@ -612,6 +633,8 @@ pub fn run_single_domain_hourly<'py>(
     ))
 }
 
+/// Coupled control solve for two domains from free temperatures and unit
+/// responses; exposed for the Python reference tests.
 #[pyfunction]
 #[pyo3(signature = (
     free_c,
@@ -672,6 +695,8 @@ pub fn solve_controls_rs(
     ))
 }
 
+/// Platform loop for a main zone and a conditioned basement coupled through the
+/// floor; returns powers, temperatures, exchanges and balance residuals.
 #[pyfunction]
 #[pyo3(signature = (
     model0,

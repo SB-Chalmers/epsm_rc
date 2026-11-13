@@ -30,8 +30,9 @@ def contact(facade_id="main.r0.e0", **extent):
 
 
 def evaluate(building, **kwargs):
-    settings = RCSettings.from_policy(
-        "epsm_rc_5r1c_v2",
+    settings = RCSettings(
+        thermal_model="iso13790_5r1c",
+        heat_recovery="always",
         airflow_policy="sensible_only_unlimited_supply",
         ground_policy="conductance_multiplier",
     )
@@ -91,8 +92,9 @@ def test_fully_shared_walls_receive_no_opaque_solar_gain_or_sky_loss():
         contacts=tuple(contact(facade.facade_id) for facade in geometry.facades())
     )
     # Remove the roof's outside film contribution to isolate the four walls.
-    settings = RCSettings.from_policy(
-        "epsm_rc_5r1c_v2",
+    settings = RCSettings(
+        thermal_model="iso13790_5r1c",
+        heat_recovery="always",
         airflow_policy="sensible_only_unlimited_supply",
         ground_policy="conductance_multiplier",
         outside_roof_resistance_m2_k_w=0,
@@ -155,8 +157,9 @@ def test_same_domain_attached_parts_count_shared_material_once_and_remove_both_e
             simulate_building(
                 building,
                 weather=weather,
-                settings=RCSettings.from_policy(
-                    "epsm_rc_5r1c_v2",
+                settings=RCSettings(
+                    thermal_model="iso13790_5r1c",
+                    heat_recovery="always",
                     airflow_policy="sensible_only_unlimited_supply",
                     ground_policy="conductance_multiplier",
                     self_shadowing_policy="ignore",

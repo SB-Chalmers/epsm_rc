@@ -1,3 +1,26 @@
+# Unreleased — ISO 52016-1 model and named defaults matching EnergyPlus
+
+**Default results change.** `RCSettings()` now selects the options that agreed
+best with EnergyPlus (`docs/iso52016.md`, `benchmarks/iso52016/`): the ISO
+52016-1 hourly model with air-temperature control, angular window optics,
+midpoint solar time and heat recovery only when it reduces the load. Each is a
+named setting with a string enum in `epsm_rc.options` (`ThermalModel`,
+`ControlTemperature`, `WindowOptics`, `SolarTime`, `HeatRecovery`, plus enums for
+the airflow, ground, self-shadowing, cold-attic and context-shading policies).
+
+Conditioned basements and cold attics require `thermal_model="iso13790_5r1c"`.
+The heat-recovery rule runs in Python and in both Rust kernels, including coupled
+basement domains. Diagnostics report `window_optics` and `solar_time`.
+
+Deprecated, with a `DeprecationWarning`: `RCSettings.from_policy` and the profile
+names `epsm_rc_5r1c_v1`/`v2` (expanded to explicit choices), the keywords
+`window_optics_method`, `solar_time_reference`, `heat_recovery_control` and
+`iso52016_control_temperature`, and the values `simple_glazing_angular_v1`,
+`interval_midpoint`, `continuous`, `load_dependent_bypass` and
+`iso52016_1_hourly`. To reproduce earlier results, pass
+`thermal_model="iso13790_5r1c", window_optics="constant_shgc",
+solar_time="hour_start", heat_recovery="always"`.
+
 # Release 0.11.0 — thermal-bridge surcharge and clearer errors
 
 RC reads Core 0.9.0's per-role thermal-bridge uplifts
