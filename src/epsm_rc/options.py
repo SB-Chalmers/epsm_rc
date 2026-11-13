@@ -169,6 +169,13 @@ class ContextShading(_Choice):
     REJECT = "reject"
 
 
+class ContextSkyDiffuse(_Choice):
+    """Whether context buildings also hide diffuse sky radiation."""
+
+    UNOBSTRUCTED = "unobstructed"
+    ISOTROPIC_HORIZON = "isotropic_horizon"
+
+
 class OverhangShading(_Choice):
     """Shading from horizontal overhangs above windows."""
 
@@ -196,6 +203,7 @@ __all__ = [
     "AirflowPolicy",
     "ColdAtticPolicy",
     "ContextShading",
+    "ContextSkyDiffuse",
     "ControlTemperature",
     "GroundPolicy",
     "HeatRecovery",

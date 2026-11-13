@@ -1,4 +1,4 @@
-# Release 0.12.1 — overhang shading (13 November 2026)
+# Release 0.12.1 — overhang shading and sky-diffuse context obstruction (13 November 2026)
 
 Overhangs above windows are supported. `overhang_shading_method` (enum
 `OverhangShading`, default `"iso13790_hourly_overhang"`) applies the hourly
@@ -15,6 +15,13 @@ overhangs give bit-identical results. Previously RC rejected any overhang;
 facade-shading restriction for RC. In three Swedish climates the overhang changes
 heating and cooling in the same direction as EnergyPlus in every case
 (`benchmarks/iso52016/results/overhang_summary.md`).
+
+`context_sky_diffuse` (enum `ContextSkyDiffuse`) adds an opt-in
+`"isotropic_horizon"`: context buildings then also hide sky-diffuse radiation
+behind each receiver's average horizon angle (`1 − sin α` for walls and windows,
+`cos² α` for roofs), assuming an isotropic sky. ISO 13790 G.3 reduces direct
+radiation only, so the default `"unobstructed"` keeps that rule and gives
+bit-identical results. See [radiation](docs/radiation.md#context-building-shading).
 
 # Release 0.12.0 — ISO 52016-1 model and named defaults matching EnergyPlus
 

@@ -210,11 +210,36 @@ def prepare_horizons(receivers, edges, step_deg):
     }
 
 
-def shade_irradiance(channels, solar_altitude_deg, horizon_angle_deg):
-    """Apply G.3 without dividing by irradiance, including at night/zero totals."""
+def sky_diffuse_fraction(horizon_angle_deg, tilt_deg):
+    """Share of isotropic sky radiance a surface still sees behind a uniform horizon.
+
+    A vertical surface sees the sky above elevation ``alpha`` with view factor
+    ``(1 - sin(alpha)) / 2`` against ``1/2`` unobstructed, so ``1 - sin(alpha)``.
+    A horizontal surface keeps ``cos(alpha)**2``. Inclined surfaces interpolate
+    linearly in tilt between those two limits (an explicit approximation).
+    """
+    alpha = np.radians(np.clip(horizon_angle_deg, 0.0, 90.0))
+    vertical, horizontal = 1.0 - np.sin(alpha), np.cos(alpha) ** 2
+    weight = float(np.clip(tilt_deg, 0.0, 90.0)) / 90.0
+    return weight * vertical + (1.0 - weight) * horizontal
+
+
+def shade_irradiance(channels, solar_altitude_deg, horizon_angle_deg, *, tilt_deg=None):
+    """Apply G.3 without dividing by irradiance, including at night/zero totals.
+
+    With ``tilt_deg`` the sky-diffuse part is also reduced by
+    :func:`sky_diffuse_fraction` (an extension beyond G.3); ground reflection
+    is unchanged either way.
+    """
     blocked = np.asarray(solar_altitude_deg) < horizon_angle_deg
     direct = np.where(blocked, 0.0, channels["poa_direct"])
     result = dict(channels)
     result["poa_direct"] = direct
-    result["poa_global"] = direct + channels["poa_sky_diffuse"] + channels["poa_ground_diffuse"]
+    sky = channels["poa_sky_diffuse"]
+    if tilt_deg is not None:
+        sky = sky * sky_diffuse_fraction(horizon_angle_deg, tilt_deg)
+        result["poa_sky_diffuse"] = sky
+        if "poa_diffuse" in channels:
+            result["poa_diffuse"] = sky + channels["poa_ground_diffuse"]
+    result["poa_global"] = direct + sky + channels["poa_ground_diffuse"]
     return result

@@ -136,6 +136,18 @@ shading details are not resolved by this method. National provisions may require
 different inputs or methods; implementing this clause does not establish
 whole-standard or regulatory certification.
 
+`context_sky_diffuse="isotropic_horizon"` is an opt-in extension beyond G.3. It
+also removes the sky-diffuse radiation hidden behind each receiver's average horizon
+angle α, assuming an isotropic sky and a uniform horizon. Walls and windows keep
+`1 − sin(α)` of their sky diffuse, because a vertical surface's view factor to the
+sky above elevation α is `(1 − sin α)/2` instead of 1/2. Horizontal roofs keep
+`cos²(α)`, and inclined attic faces interpolate linearly in tilt between the two.
+Direct radiation follows G.3 and ground reflection is unchanged. The default,
+`"unobstructed"`, keeps the standard's rule. In a comparison of eight teaching
+buildings in Göteborg with neighbours to the south, east and west, the standard rule
+gave 6 to 25 % of EnergyPlus's cooling reduction and the extension 50 to 100 %, with
+heating in the same direction in every case.
+
 Use the existing explicit settings alongside the context method:
 
 ```python
