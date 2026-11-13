@@ -31,7 +31,8 @@ The selected airflow and ground policies are explicit approximations in this
 example, not measurements. A supplied monthly ground boundary is preserved.
 Self-shadowing is rejected by default; selecting `ignore` records its omission.
 Context buildings use the ISO 13790 hourly horizon approximation described below.
-Overhang, reveal and balcony shading remain unsupported.
+Overhangs above windows use the ISO 13790 hourly overhang method, also described
+below. Reveal, fin and balcony shading remain unsupported.
 
 ## Reproducibility and migration
 
@@ -166,6 +167,44 @@ unsupported readiness checks remain required. This keeps the central pinned
 Core combination usable without silently selecting a different dependency.
 `self_shadowing_policy` remains a separate decision for the target's concave,
 courtyard or multipart geometry.
+
+## Overhang shading
+
+`overhang_shading_method="iso13790_hourly_overhang"` (default) implements the
+hourly method of ISO 13790:2008 Annex G.5.4.3 for overhangs above windows. For
+each window pane, direct radiation is multiplied by
+
+    F_ov,dir = max(0, 1 - 0.5 tan(α) / tan(90° - S_h))        (G.4)
+
+and sky-diffuse radiation by
+
+    F_ov,dif = 1 - α / 90°                                    (G.5)
+
+Ground-reflected radiation is unchanged, so the total factor is equation G.6.
+`S_h` is the solar height at the same instant as the solar geometry (interval
+midpoint by default). The factors are applied before either window optics method,
+so 5R1C and ISO 52016-1 receive the same shaded irradiance.
+
+The overhang angle α follows Figure G.2: it is seen from the pane mid-height, so
+`tan(α) = depth / (overhang height − pane mid-height)`. The overhang is the
+nearest Core overhang surface above the pane, on the same facade, that spans the
+pane centre; Core resolves per-window and continuous overhangs, including their
+offset above the window head. A physical window element with several panes uses
+the area-weighted mean of their factors. That mean is exact because the panes of
+one element share a plane and its irradiance. As in the standard, the overhang
+is treated as infinitely wide: side extensions and finite-width end effects are
+not resolved. Only windows are shaded; opaque wall solar is unchanged.
+
+Diagnostics report each element's overhang angles under
+`result.diagnostics["overhang_shading"]`. A building without overhangs keeps
+bit-identical results. `overhang_shading_method="reject"` refuses overhangs,
+as before.
+
+Core reports facade shading geometry as unsupported for RC. With the method
+enabled and overhangs as the facade's only shading detail, the RC adapter removes
+only that restriction, in the same way as for context buildings; reveals, fins
+and balconies keep it. Like the horizon method, this implements one shading
+clause, not whole-standard or national certification.
 
 ## Cache ownership
 

@@ -17,6 +17,11 @@ Chicago, Golden, Tampa), three archetypes, two forms (3 storeys and 20 % glazing
 `summarise_stress.py` writes `results/stress_summary.md`. `benchmark_speed.py`
 times the Python and Rust recurrences (`results/speed.md`).
 
+`overhang_energyplus.py` runs the conditioned stress buildings in the three bundled
+Swedish climates with a per-window overhang of 0, 0.5 or 1.0 m (54 cases). It
+compares the change each overhang makes to heating and cooling in EnergyPlus and
+in RC's ISO 13790 hourly overhang method (`results/overhang_summary.md`).
+
 ```sh
 python benchmarks/iso52016/compare_energyplus.py --directory outputs/iso52016 \
     --energyplus /path/to/energyplus --workers 4
@@ -25,4 +30,8 @@ python benchmarks/iso52016/stress_energyplus.py --directory outputs/stress \
     --energyplus /path/to/energyplus --workers 4
 python benchmarks/iso52016/summarise_stress.py outputs/stress/results.json --output outputs/stress
 python benchmarks/iso52016/benchmark_speed.py --repeats 5
+python benchmarks/iso52016/overhang_energyplus.py --directory outputs/overhang \
+    --energyplus /path/to/energyplus --workers 4
+python benchmarks/iso52016/overhang_energyplus.py --directory outputs/overhang \
+    --summary benchmarks/iso52016/results/overhang_summary.md
 ```
