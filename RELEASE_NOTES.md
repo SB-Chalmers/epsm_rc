@@ -1,4 +1,4 @@
-# Unreleased — overhang shading and sky-diffuse context obstruction
+# Release 0.12.1 — overhang shading and sky-diffuse context obstruction (13 November 2026)
 
 Overhangs above windows are supported. `overhang_shading_method` (enum
 `OverhangShading`, default `"iso13790_hourly_overhang"`) applies the hourly
@@ -11,7 +11,7 @@ overhangs give bit-identical results. Previously RC rejected any overhang;
 `"reject"` keeps that. Reveals, fins and balconies remain unsupported. See
 [radiation](docs/radiation.md#overhang-shading). `epsm_rc.simulate_building` and
 `preflight` accept overhangs now; a platform call that asks Core's readiness first
-(`epsm.Building.simulate(engine="epsm_rc")`) still stops there until Core lifts its
+(`epsm.Building.simulate(engine="epsm_rc")`) stops there unless Core 0.10.1 or later lifts its
 facade-shading restriction for RC. In three Swedish climates the overhang changes
 heating and cooling in the same direction as EnergyPlus in every case
 (`benchmarks/iso52016/results/overhang_summary.md`).

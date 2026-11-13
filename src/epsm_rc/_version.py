@@ -26,4 +26,4 @@ Example::
     print(epsm_rc.__version__)
 """
 
-__version__ = "0.12.0"
+__version__ = "0.12.1"
