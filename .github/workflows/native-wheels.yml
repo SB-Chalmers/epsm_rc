@@ -62,3 +62,30 @@ jobs:
         name: wheel-${{ matrix.os }}-cp${{ matrix.python }}
         path: dist/*.whl
         if-no-files-found: error
+
+  # Tagged builds attach every wheel to the GitHub release, so users install a
+  # prebuilt wheel by URL instead of compiling the Rust kernels themselves.
+  release-assets:
+    name: Attach wheels to release
+    needs: wheels
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        pattern: wheel-*
+        merge-multiple: true
+        path: dist
+    - name: Upload wheels to the tag's release
+      env:
+        GH_TOKEN: ${{ github.token }}
+        GH_REPO: ${{ github.repository }}
+      run: |
+        # A release made with `gh release create` already exists; a bare tag push does not.
+        if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "epsm_rc ${GITHUB_REF_NAME#v}" --notes ""
+        fi
+        gh release upload "$GITHUB_REF_NAME" dist/*.whl --clobber
