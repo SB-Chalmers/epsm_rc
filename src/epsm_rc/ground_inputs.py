@@ -123,8 +123,11 @@ def _floor_polygon(face):
 def resolve_ground_inputs(building, spec, resolved, settings, *, domain=None):
     """Resolve one slab or fully heated basement, or None for a domain without soil.
 
-    Supported foundations have one simple connected floor, one physical building
-    part and uniform floor/buried-wall material resistances. Footing blocks,
+    Supported foundations have one simple connected floor and uniform
+    floor/buried-wall material resistances. Several building parts are accepted
+    when their ground floors are coplanar and touch: they are treated as one
+    slab whose exposed perimeter excludes the edges the parts share. A heated
+    basement must still belong to a single building part. Footing blocks,
     nonzero plinths, extra buried footing-wall depth, groundwater and party-wall
     assumptions are rejected rather than silently discarded. Required wall width
     and its source are independent of Core's footing-block width field.
@@ -153,8 +156,6 @@ def resolve_ground_inputs(building, spec, resolved, settings, *, domain=None):
         raise ValueError("ISO13370 requires explicit positive iso13370_wall_thickness_m")
     if not isinstance(source, str) or not source.strip():
         raise ValueError("ISO13370 requires an explicit iso13370_wall_thickness_source")
-    if len(spec.geometry.parts) != 1:
-        raise ValueError("ISO13370 currently supports one physical foundation part/domain")
     if spec.geometry.party_walls:
         raise ValueError("ISO13370 party-wall foundation exposure is not yet supported")
     if spec.geometry.basement_depth_m and not spec.geometry.basement_conditioned:
@@ -184,8 +185,9 @@ def resolve_ground_inputs(building, spec, resolved, settings, *, domain=None):
     ]
     if not faces:
         raise ValueError("ISO13370 soil floor is absent from resolved Core geometry")
-    if len({face["zone"] for face in faces}) != 1:
-        raise ValueError("ISO13370 currently supports one physical foundation part/domain")
+    parts = len(spec.geometry.parts)
+    if parts > 1 and spec.geometry.basement_depth_m:
+        raise ValueError("ISO13370 heated basements are supported under one building part only")
     heights = {round(point[2], 8) for face in faces for point in face["vertices"]}
     if len(heights) != 1:
         raise ValueError("ISO13370 ground floor must be coplanar")
@@ -195,8 +197,12 @@ def resolve_ground_inputs(building, spec, resolved, settings, *, domain=None):
 
     pieces = [_floor_polygon(face) for face in faces]
     floor = unary_union(pieces)
-    if floor.geom_type != "Polygon" or floor.interiors:
-        raise ValueError("ISO13370 foundation floor cannot contain holes/disconnected pieces")
+    # Touching parts form one slab: ISO 13370 B' uses the whole floor's area and
+    # exposed perimeter, so the edges shared between parts are not exposure.
+    if floor.geom_type != "Polygon":
+        raise ValueError("ISO13370 building parts must touch to form one connected foundation slab")
+    if floor.interiors:
+        raise ValueError("ISO13370 foundation floor cannot contain holes")
     area = floor.area
     if not isclose(area, sum(piece.area for piece in pieces), rel_tol=1e-9, abs_tol=1e-7):
         raise ValueError("ISO13370 resolved foundation floors overlap")
@@ -246,6 +252,8 @@ def resolve_ground_inputs(building, spec, resolved, settings, *, domain=None):
     report = {
         "source": "Core resolved physical ground geometry and nominal material assemblies",
         "kind": "heated_basement" if depth else "slab_on_ground",
+        "building_parts": parts,
+        "part_treatment": "Touching parts combined into one slab; shared edges are not exposed",
         "foundation_method_requested": foundation.method,
         "floor_area_m2": area,
         "geometric_exterior_perimeter_m": geometric_perimeter,

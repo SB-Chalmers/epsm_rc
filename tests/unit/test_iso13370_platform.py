@@ -186,3 +186,29 @@ def test_ground_assumptions_do_not_reuse_stale_cached_models(reference_building,
         outputs[0].diagnostics["reduced_properties"]["effective_ground_conductance_w_k"]
         > (outputs[1].diagnostics["reduced_properties"]["effective_ground_conductance_w_k"])
     )
+
+
+@pytest.mark.parametrize("model", ["iso52016_1", "iso13790_5r1c"])
+def test_touching_building_parts_simulate_on_one_iso_slab(synthetic_weather, model):
+    from epsm_core import Building, BuildingPart, Footprint, GeometrySpec, Weather
+
+    main = GeometrySpec.from_footprint(Footprint.rectangle(10, 8), storeys=2, storey_height_m=2.5)
+    wing = BuildingPart(
+        identifier="wing",
+        footprint=Footprint(exterior=((10, 0), (16, 0), (16, 5), (10, 5))),
+        storey_elevations_m=(0, 2.5),
+    )
+    building = Building(
+        preset="illustrative-reference", geometry=main.updated(parts=(*main.parts, wing))
+    )
+    result = simulate_building(
+        building,
+        weather=Weather.from_epw(synthetic_weather),
+        settings=settings(thermal_model=model),
+    )
+    ground = result.diagnostics["ground_reduction"]
+    assert ground["physical_inputs"]["building_parts"] == 2
+    assert ground["physical_inputs"]["exposed_perimeter_m"] == pytest.approx(48)
+    assert ground["steady_conductance_w_k"] > 0
+    heating = np.asarray(result.hourly["space_heating_demand_kwh"])
+    assert np.isfinite(heating).all() and heating.sum() > 0

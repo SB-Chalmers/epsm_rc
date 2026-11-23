@@ -177,16 +177,33 @@ def test_unconditioned_basement_and_second_soil_boundary_are_rejected(synthetic_
         )
 
 
-def test_multiple_foundation_parts_are_rejected(synthetic_weather):
+def two_part_house(synthetic_weather, x0, *, basement=0):
     from epsm_core import BuildingPart, Footprint
 
-    building, _, _ = capture(synthetic_weather)
+    building, _, _ = capture(synthetic_weather, basement=basement)
     wing = BuildingPart(
         identifier="wing",
-        footprint=Footprint(exterior=((12, 0), (18, 0), (18, 5), (12, 5))),
+        footprint=Footprint(exterior=((x0, 0), (x0 + 6, 0), (x0 + 6, 5), (x0, 5))),
         storey_elevations_m=(0, 2.5),
     )
     building.geometry = building.geometry.updated(parts=(*building.geometry.parts, wing))
-    building, spec, resolved = capture(synthetic_weather, building=building)
-    with pytest.raises(ValueError, match="one physical foundation"):
+    return capture(synthetic_weather, building=building)
+
+
+def test_touching_parts_form_one_slab_without_their_shared_edge(synthetic_weather):
+    building, spec, resolved = two_part_house(synthetic_weather, 10)
+    inputs = resolve_ground_inputs(building, spec, resolved, settings())
+    # 10 x 8 main part plus a 6 x 5 wing against its east wall: an L-shaped slab.
+    assert inputs.kind == "slab_on_ground"
+    assert inputs.area_m2 == pytest.approx(80 + 30)
+    assert inputs.exposed_perimeter_m == pytest.approx(16 + 5 + 6 + 3 + 10 + 8)
+    assert inputs.report["building_parts"] == 2
+
+
+def test_separate_parts_and_multipart_basements_are_rejected(synthetic_weather):
+    building, spec, resolved = two_part_house(synthetic_weather, 12)
+    with pytest.raises(ValueError, match="must touch"):
+        resolve_ground_inputs(building, spec, resolved, settings())
+    building, spec, resolved = two_part_house(synthetic_weather, 10, basement=2.5)
+    with pytest.raises(ValueError, match="one building part"):
         resolve_ground_inputs(building, spec, resolved, settings())
