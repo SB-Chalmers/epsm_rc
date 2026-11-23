@@ -62,6 +62,28 @@ class ResolvedGroundInputs:
     basement_depth_m: float
     basement_wall_resistance_m2k_w: float | None
     report: dict
+    slabs: tuple = ()
+
+    def coefficients(self):
+        """Return ISO 13370 coefficients, summed over separate slabs when there are several.
+
+        Returns
+        -------
+        GroundCoefficients
+            One slab's coefficients, or the sum over ``slabs`` (area m², exposed
+            perimeter m), each slab keeping its own characteristic dimension.
+        """
+        from .ground import combine_ground_coefficients, ground_coefficients
+
+        inputs = self.coefficient_inputs()
+        if len(self.slabs) <= 1:
+            return ground_coefficients(**inputs)
+        return combine_ground_coefficients(
+            [
+                ground_coefficients(**{**inputs, "area_m2": area, "exposed_perimeter_m": perimeter})
+                for area, perimeter in self.slabs
+            ]
+        )
 
     def coefficient_inputs(self):
         """Return independent keyword inputs for ``ground.ground_coefficients``."""
@@ -120,14 +142,101 @@ def _floor_polygon(face):
     return Polygon([(point[0], point[1]) for point in face["vertices"]])
 
 
+SNAP_TOLERANCE_M = 0.02
+"""Gap (m) below which the ground floors of two building parts count as touching."""
+
+MINIMUM_JOINED_EDGE_M = 0.1
+"""Edge length (m) two parts must run side by side, within the snap, to join one slab."""
+
+
+def _closed(polygons, tolerance):
+    """Union of polygons with gaps narrower than ``2 * tolerance`` closed (mitred buffers)."""
+    from shapely.ops import unary_union
+
+    grown = unary_union([polygon.buffer(tolerance, join_style="mitre") for polygon in polygons])
+    return grown.buffer(-tolerance, join_style="mitre")
+
+
+def _multipart_slabs(part_floors, tolerance=SNAP_TOLERANCE_M, joined=MINIMUM_JOINED_EDGE_M):
+    """Group coplanar part floors into slabs and measure each slab's outer edge.
+
+    Parameters
+    ----------
+    part_floors : list of shapely.geometry.Polygon
+        One ground floor per building part, in local metres.
+    tolerance : float
+        Snap distance. Footprints traced separately rarely share an edge exactly:
+        neighbours are often apart by floating-point noise up to about a
+        centimetre, or meet at one corner while their walls diverge slightly.
+    joined : float
+        Two parts join when either one has at least this much boundary within
+        ``tolerance`` of the other. Parts that meet only at a corner do not.
+
+    Returns
+    -------
+    tuple of (float, float, int)
+        Per slab: exact floor area (m²), outer perimeter (m) of the snapped union,
+        and the number of parts. Area is the parts' own area, not the snapped
+        shape's, so closing a hairline gap adds no floor.
+
+    Notes
+    -----
+    ISO 13370 characterises a floor by B' = A / (0.5 P) of the whole slab, so
+    the edges joined parts share are not exposed perimeter. Separate slabs keep
+    their own B' and their coefficients are summed, which is exact for the
+    monthly method because its heat flows are linear in the coefficients.
+    """
+    count = len(part_floors)
+    for floor in part_floors:
+        if floor.geom_type != "Polygon":
+            raise ValueError("ISO13370 building part floor cannot contain disconnected pieces")
+        if floor.interiors:
+            raise ValueError("ISO13370 foundation floor cannot contain holes")
+    group = list(range(count))
+
+    def root(index):
+        while group[index] != index:
+            group[index] = group[group[index]]
+            index = group[index]
+        return index
+
+    for i in range(count):
+        for j in range(i + 1, count):
+            a, b = part_floors[i], part_floors[j]
+            if a.distance(b) > tolerance:
+                continue
+            side_by_side = max(
+                a.boundary.intersection(b.buffer(tolerance)).length,
+                b.boundary.intersection(a.buffer(tolerance)).length,
+            )
+            if side_by_side >= joined:
+                group[root(i)] = root(j)
+    members = {}
+    for index in range(count):
+        members.setdefault(root(index), []).append(part_floors[index])
+    slabs = []
+    for floors in members.values():
+        if len(floors) == 1:
+            slabs.append((floors[0].area, floors[0].exterior.length, 1))
+            continue
+        shape = _closed(floors, tolerance)
+        if shape.geom_type != "Polygon":
+            raise ValueError("ISO13370 joined building parts do not form one slab")
+        if shape.interiors:
+            raise ValueError("ISO13370 foundation floor cannot contain holes")
+        slabs.append((sum(floor.area for floor in floors), shape.exterior.length, len(floors)))
+    return tuple(slabs)
+
+
 def resolve_ground_inputs(building, spec, resolved, settings, *, domain=None):
     """Resolve one slab or fully heated basement, or None for a domain without soil.
 
-    Supported foundations have one simple connected floor and uniform
-    floor/buried-wall material resistances. Several building parts are accepted
-    when their ground floors are coplanar and touch: they are treated as one
-    slab whose exposed perimeter excludes the edges the parts share. A heated
-    basement must still belong to a single building part. Footing blocks,
+    Supported foundations have coplanar floors without holes and uniform
+    floor/buried-wall material resistances. With several building parts, parts
+    whose floors run side by side within ``SNAP_TOLERANCE_M`` form one slab whose
+    exposed perimeter excludes the edges they share; parts that do not (apart,
+    or meeting only at a corner) are separate slabs whose coefficients are summed.
+    A heated basement must belong to a single building part. Footing blocks,
     nonzero plinths, extra buried footing-wall depth, groundwater and party-wall
     assumptions are rejected rather than silently discarded. Required wall width
     and its source are independent of Core's footing-block width field.
@@ -196,25 +305,41 @@ def resolve_ground_inputs(building, spec, resolved, settings, *, domain=None):
     from shapely.ops import unary_union
 
     pieces = [_floor_polygon(face) for face in faces]
-    floor = unary_union(pieces)
-    # Touching parts form one slab: ISO 13370 B' uses the whole floor's area and
-    # exposed perimeter, so the edges shared between parts are not exposure.
-    if floor.geom_type != "Polygon":
-        raise ValueError("ISO13370 building parts must touch to form one connected foundation slab")
-    if floor.interiors:
-        raise ValueError("ISO13370 foundation floor cannot contain holes")
-    area = floor.area
-    if not isclose(area, sum(piece.area for piece in pieces), rel_tol=1e-9, abs_tol=1e-7):
+    union = unary_union(pieces)
+    if not isclose(union.area, sum(piece.area for piece in pieces), rel_tol=1e-9, abs_tol=1e-7):
         raise ValueError("ISO13370 resolved foundation floors overlap")
+    area = union.area
     if not isclose(area, sum(element.area_m2 for element in floors), rel_tol=1e-9, abs_tol=1e-6):
         raise ValueError("ISO13370 physical/resolved foundation floor areas disagree")
-    footprints = [shape(footprint) for footprint in resolved.geometry["local_footprints"]]
-    exterior = unary_union(footprints).boundary
-    # Match Core Kiva's resolved exterior, without treating zone partitions as exposure.
-    geometric_perimeter = min(exterior.intersection(floor.buffer(1e-8)).length, floor.length)
+    if parts == 1:
+        if union.geom_type != "Polygon":
+            raise ValueError("ISO13370 foundation floor cannot contain disconnected pieces")
+        if union.interiors:
+            raise ValueError("ISO13370 foundation floor cannot contain holes")
+        footprints = [shape(footprint) for footprint in resolved.geometry["local_footprints"]]
+        exterior = unary_union(footprints).boundary
+        # Match Core Kiva's resolved exterior, without treating zone partitions as exposure.
+        geometric_perimeter = min(exterior.intersection(union.buffer(1e-8)).length, union.length)
+        slabs = ((area, geometric_perimeter, 1),)
+    else:
+        by_element = {}
+        for face, piece in zip(faces, pieces):
+            by_element.setdefault(face["physical_element_id"], []).append(piece)
+        part_floors = [unary_union(group) for group in by_element.values()]
+        slabs = _multipart_slabs(part_floors)
+        geometric_perimeter = sum(perimeter for _, perimeter, _ in slabs)
     perimeter = geometric_perimeter * foundation.exposed_perimeter_fraction
     if not isfinite(perimeter) or perimeter <= 0:
         raise ValueError("ISO13370 requires a positive exposed foundation perimeter")
+    slab_report = [
+        {
+            "building_parts": count,
+            "area_m2": slab_area,
+            "geometric_exterior_perimeter_m": slab_perimeter,
+            "exposed_perimeter_m": slab_perimeter * foundation.exposed_perimeter_fraction,
+        }
+        for slab_area, slab_perimeter, count in slabs
+    ]
     depth = max(0.0, -next(iter(heights)))
     expected_depth = spec.geometry.basement_depth_m if spec.geometry.basement_conditioned else 0.0
     if not isclose(depth, expected_depth, abs_tol=1e-7):
@@ -253,7 +378,12 @@ def resolve_ground_inputs(building, spec, resolved, settings, *, domain=None):
         "source": "Core resolved physical ground geometry and nominal material assemblies",
         "kind": "heated_basement" if depth else "slab_on_ground",
         "building_parts": parts,
-        "part_treatment": "Touching parts combined into one slab; shared edges are not exposed",
+        "part_treatment": (
+            "Parts side by side within the snap tolerance form one slab whose shared "
+            "edges are not exposed; other parts are separate slabs with summed coefficients"
+        ),
+        "snap_tolerance_m": SNAP_TOLERANCE_M,
+        "slabs": slab_report,
         "foundation_method_requested": foundation.method,
         "floor_area_m2": area,
         "geometric_exterior_perimeter_m": geometric_perimeter,
@@ -289,4 +419,5 @@ def resolve_ground_inputs(building, spec, resolved, settings, *, domain=None):
         depth,
         wall_r,
         report,
+        tuple((slab["area_m2"], slab["exposed_perimeter_m"]) for slab in slab_report),
     )

@@ -703,7 +703,7 @@ def _iso13370_reduction(
     prescribed soil boundary. Existing prescribed boundaries take precedence in
     ``_ground_reduction`` and retain their original raw assembly conductance.
     """
-    from .ground import ground_coefficients, monthly_ground_temperatures
+    from .ground import monthly_ground_temperatures
     from .ground_inputs import resolve_ground_inputs
 
     if building is None or spec is None or resolved is None:
@@ -727,7 +727,7 @@ def _iso13370_reduction(
     if inputs is None:
         report.update(ground_contact=False, steady_conductance_w_k=0.0)
         return None, 1.0, report
-    coefficients = ground_coefficients(**inputs.coefficient_inputs())
+    coefficients = inputs.coefficients()
     report.update(
         ground_contact=True,
         physical_inputs=inputs.report,

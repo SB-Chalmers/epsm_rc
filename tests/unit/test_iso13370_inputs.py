@@ -177,33 +177,112 @@ def test_unconditioned_basement_and_second_soil_boundary_are_rejected(synthetic_
         )
 
 
-def two_part_house(synthetic_weather, x0, *, basement=0):
+def multipart_house(synthetic_weather, footprints, *, basement=0):
+    """Reference house whose ground floor is the given footprints, in local metres."""
     from epsm_core import BuildingPart, Footprint
 
     building, _, _ = capture(synthetic_weather, basement=basement)
-    wing = BuildingPart(
-        identifier="wing",
-        footprint=Footprint(exterior=((x0, 0), (x0 + 6, 0), (x0 + 6, 5), (x0, 5))),
-        storey_elevations_m=(0, 2.5),
+    first = building.geometry.parts[0]
+    parts = tuple(
+        BuildingPart(
+            identifier=f"part{index}",
+            footprint=Footprint(exterior=exterior),
+            storey_elevations_m=elevations,
+        )
+        for index, (exterior, elevations) in enumerate(footprints)
     )
-    building.geometry = building.geometry.updated(parts=(*building.geometry.parts, wing))
+    if basement:
+        parts = (first, *parts[1:])
+    building.geometry = building.geometry.updated(parts=parts)
     return capture(synthetic_weather, building=building)
 
 
-def test_touching_parts_form_one_slab_without_their_shared_edge(synthetic_weather):
-    building, spec, resolved = two_part_house(synthetic_weather, 10)
+def rectangle(x0, y0, x1, y1):
+    return ((x0, y0), (x1, y0), (x1, y1), (x0, y1))
+
+
+MAIN = (rectangle(0, 0, 10, 8), (0, 2.5))
+
+# House 28235f44 (single-family, SE.06), one of 16 houses RC refused in the
+# calibration of #102: two parts side by side for 5.9 m, apart by 8.9e-16 m.
+# Runner's local metres at full precision; rounding would hide or create the gap.
+HOUSE_28235F44 = (
+    (
+        (
+            (2.900000000023283, 17.229000000283122),
+            (2.9039999592352186, 13.60603695738741),
+            (8.758999252347767, 13.613541763211796),
+            (8.754000000015367, 17.235999999567866),
+        ),
+        (0.0, 3.085),
+    ),
+    (
+        (
+            (0.0, 9.773000000044703),
+            (0.008000000030733645, 3.843999999575317),
+            (2.01400000002468, 3.8459999999031425),
+            (2.0190000000293367, 0.0),
+            (11.474000000045635, 0.012000000104308128),
+            (11.457000000053085, 13.61699999962002),
+            (2.095000000030268, 13.604999999515712),
+            (2.1000000000349246, 9.775000000372529),
+        ),
+        (0.0, 2.317436294271008, 4.634872588542016),
+    ),
+)
+
+
+@pytest.mark.parametrize("gap", [0.0, 1e-9, 0.0005, 0.013])
+def test_parts_side_by_side_form_one_slab_without_their_shared_edge(synthetic_weather, gap):
+    wing = (rectangle(10 + gap, 0, 16, 5), (0, 2.5))
+    building, spec, resolved = multipart_house(synthetic_weather, (MAIN, wing))
     inputs = resolve_ground_inputs(building, spec, resolved, settings())
     # 10 x 8 main part plus a 6 x 5 wing against its east wall: an L-shaped slab.
     assert inputs.kind == "slab_on_ground"
-    assert inputs.area_m2 == pytest.approx(80 + 30)
-    assert inputs.exposed_perimeter_m == pytest.approx(16 + 5 + 6 + 3 + 10 + 8)
     assert inputs.report["building_parts"] == 2
+    assert len(inputs.slabs) == 1
+    assert inputs.area_m2 == pytest.approx(80 + (6 - gap) * 5)
+    assert inputs.exposed_perimeter_m == pytest.approx(16 + 5 + 6 + 3 + 10 + 8, abs=1e-6)
 
 
-def test_separate_parts_and_multipart_basements_are_rejected(synthetic_weather):
-    building, spec, resolved = two_part_house(synthetic_weather, 12)
-    with pytest.raises(ValueError, match="must touch"):
-        resolve_ground_inputs(building, spec, resolved, settings())
-    building, spec, resolved = two_part_house(synthetic_weather, 10, basement=2.5)
+def test_house_28235f44_from_the_calibration_is_one_slab(synthetic_weather):
+    building, spec, resolved = multipart_house(synthetic_weather, HOUSE_28235F44)
+    inputs = resolve_ground_inputs(building, spec, resolved, settings())
+    assert len(inputs.slabs) == 1
+    assert inputs.area_m2 == pytest.approx(161.3843, abs=1e-3)
+    # The parts' perimeters (18.954 + 50.133 m) less the 5.895 m they share, twice.
+    assert inputs.exposed_perimeter_m == pytest.approx(57.377, abs=0.01)
+
+
+def test_parts_apart_or_meeting_at_a_corner_are_separate_slabs(synthetic_weather):
+    from epsm_rc.ground import ground_coefficients
+
+    for wing in (rectangle(12, 0, 18, 5), rectangle(10, 8, 16, 13)):
+        building, spec, resolved = multipart_house(synthetic_weather, (MAIN, (wing, (0, 2.5))))
+        inputs = resolve_ground_inputs(building, spec, resolved, settings())
+        assert [slab for slab in inputs.slabs] == [pytest.approx(s) for s in ((80, 36), (30, 22))]
+        assert inputs.exposed_perimeter_m == pytest.approx(58)
+        combined = inputs.coefficients()
+        alone = [
+            ground_coefficients(
+                **{**inputs.coefficient_inputs(), "area_m2": a, "exposed_perimeter_m": p}
+            )
+            for a, p in inputs.slabs
+        ]
+        for name in ("steady_conductance_w_k", "periodic_internal_w_k", "periodic_external_w_k"):
+            assert getattr(combined, name) == pytest.approx(sum(getattr(c, name) for c in alone))
+
+
+def test_three_parts_chain_into_one_slab(synthetic_weather):
+    parts = (MAIN, (rectangle(10, 0, 16, 5), (0, 2.5)), (rectangle(16.0005, 0, 20, 5), (0, 2.5)))
+    building, spec, resolved = multipart_house(synthetic_weather, parts)
+    inputs = resolve_ground_inputs(building, spec, resolved, settings())
+    assert len(inputs.slabs) == 1
+    assert inputs.exposed_perimeter_m == pytest.approx(20 + 5 + 10 + 3 + 10 + 8, abs=0.01)
+
+
+def test_multipart_basements_are_rejected(synthetic_weather):
+    wing = (rectangle(10, 0, 16, 5), (0, 2.5))
+    building, spec, resolved = multipart_house(synthetic_weather, (MAIN, wing), basement=2.5)
     with pytest.raises(ValueError, match="one building part"):
         resolve_ground_inputs(building, spec, resolved, settings())

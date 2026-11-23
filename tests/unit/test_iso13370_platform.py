@@ -189,26 +189,40 @@ def test_ground_assumptions_do_not_reuse_stale_cached_models(reference_building,
 
 
 @pytest.mark.parametrize("model", ["iso52016_1", "iso13790_5r1c"])
-def test_touching_building_parts_simulate_on_one_iso_slab(synthetic_weather, model):
+@pytest.mark.parametrize(
+    "house, perimeter",
+    [("l_shape", 48.0), ("house_28235f44", 57.377)],
+)
+def test_multipart_houses_simulate_on_one_iso_slab(synthetic_weather, model, house, perimeter):
     from epsm_core import Building, BuildingPart, Footprint, GeometrySpec, Weather
 
-    main = GeometrySpec.from_footprint(Footprint.rectangle(10, 8), storeys=2, storey_height_m=2.5)
-    wing = BuildingPart(
-        identifier="wing",
-        footprint=Footprint(exterior=((10, 0), (16, 0), (16, 5), (10, 5))),
-        storey_elevations_m=(0, 2.5),
-    )
-    building = Building(
-        preset="illustrative-reference", geometry=main.updated(parts=(*main.parts, wing))
+    from .test_iso13370_inputs import HOUSE_28235F44, MAIN, rectangle
+
+    footprints = {
+        "l_shape": (MAIN, (rectangle(10, 0, 16, 5), (0, 2.5))),
+        "house_28235f44": HOUSE_28235F44,
+    }[house]
+    geometry = GeometrySpec.from_footprint(
+        Footprint.rectangle(10, 8), storeys=2, storey_height_m=2.5
+    ).updated(
+        parts=tuple(
+            BuildingPart(
+                identifier=f"part{index}",
+                footprint=Footprint(exterior=exterior),
+                storey_elevations_m=elevations,
+            )
+            for index, (exterior, elevations) in enumerate(footprints)
+        )
     )
     result = simulate_building(
-        building,
+        Building(preset="illustrative-reference", geometry=geometry),
         weather=Weather.from_epw(synthetic_weather),
         settings=settings(thermal_model=model),
     )
     ground = result.diagnostics["ground_reduction"]
     assert ground["physical_inputs"]["building_parts"] == 2
-    assert ground["physical_inputs"]["exposed_perimeter_m"] == pytest.approx(48)
+    assert len(ground["physical_inputs"]["slabs"]) == 1
+    assert ground["physical_inputs"]["exposed_perimeter_m"] == pytest.approx(perimeter, abs=0.01)
     assert ground["steady_conductance_w_k"] > 0
     heating = np.asarray(result.hourly["space_heating_demand_kwh"])
     assert np.isfinite(heating).all() and heating.sum() > 0
