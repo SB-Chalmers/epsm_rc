@@ -1,0 +1,138 @@
+{
+  "case": "ASHRAE 140 Case 600",
+  "weather": "USA_CO_Denver.Intl.AP.725650_TMY3.epw",
+  "inputs": {
+    "window_u_w_m2k": 2.1,
+    "window_shgc": 0.769,
+    "infiltration_ach": 0.5,
+    "air_heat_capacity_j_m3_k": 992.400242231767,
+    "internal_gains_w": 200.0,
+    "setpoints_c": [
+      20.0,
+      27.0
+    ]
+  },
+  "reference_range": {
+    "annual_heating_mwh": [
+      4.296,
+      5.709
+    ],
+    "annual_cooling_mwh": [
+      6.137,
+      8.448
+    ],
+    "peak_heating_kw": [
+      3.437,
+      4.354
+    ],
+    "peak_cooling_kw": [
+      5.965,
+      7.188
+    ]
+  },
+  "energyplus_standard140_example": {
+    "annual_heating_mwh": 4.673,
+    "annual_cooling_mwh": 6.792,
+    "peak_heating_kw": 3.838,
+    "peak_cooling_kw": 6.664
+  },
+  "models": {
+    "energyplus": {
+      "annual_heating_mwh": 3.863897744119795,
+      "annual_cooling_mwh": 6.8096814975205815,
+      "peak_heating_kw": 2.993388476065636,
+      "peak_cooling_kw": 6.753939916909259,
+      "peak_heating_hour": 8759,
+      "peak_cooling_hour": 6780,
+      "air_temperature_c": {
+        "min": 19.999999999999996,
+        "max": 27.000000000000004,
+        "mean": 23.278332978183464
+      },
+      "annual_cooling_total_mwh": 6.81356129474343,
+      "acceptance": "rejected by Core warning review (psychrometric warnings); read from SQL",
+      "within_reference": {
+        "annual_heating_mwh": false,
+        "annual_cooling_mwh": true,
+        "peak_heating_kw": false,
+        "peak_cooling_kw": true
+      }
+    },
+    "iso13790_5r1c": {
+      "annual_heating_mwh": 4.174781413472706,
+      "annual_cooling_mwh": 6.591388792139555,
+      "peak_heating_kw": 3.0982406124301534,
+      "peak_cooling_kw": 6.7123791790930145,
+      "peak_heating_hour": 8759,
+      "peak_cooling_hour": 517,
+      "air_temperature_c": {
+        "min": 20.0,
+        "max": 27.0,
+        "mean": 23.261470374677454
+      },
+      "reduced_properties": {
+        "internal_surface_area_m2": 216.0,
+        "effective_mass_area_m2": 120.0,
+        "thermal_capacitance_j_k": 2287325.808,
+        "surface_air_conductance_w_k": 745.2,
+        "mass_surface_conductance_w_k": 1092.0,
+        "opaque_transmission_conductance_w_k": 49.52325931793055,
+        "effective_ground_conductance_w_k": 1.8880116876914006,
+        "mass_exterior_conductance_w_k": 51.8758808372043,
+        "mass_exterior_coupling_fallback": false,
+        "sky_radiation_loss_w": 69.09065452039414
+      },
+      "within_reference": {
+        "annual_heating_mwh": false,
+        "annual_cooling_mwh": true,
+        "peak_heating_kw": false,
+        "peak_cooling_kw": true
+      },
+      "vs_energyplus": {
+        "annual_heating_mwh": 0.08045856540226093,
+        "annual_cooling_mwh": -0.0320562283948973,
+        "peak_heating_kw": 0.03502790807236944,
+        "peak_cooling_kw": -0.00615355456630462
+      },
+      "air_temperature_rmse_k": 0.31511567652868466
+    },
+    "iso52016_1": {
+      "annual_heating_mwh": 3.95622828106367,
+      "annual_cooling_mwh": 6.169962013259255,
+      "peak_heating_kw": 3.041301104436711,
+      "peak_cooling_kw": 6.242548530543209,
+      "peak_heating_hour": 8759,
+      "peak_cooling_hour": 517,
+      "air_temperature_c": {
+        "min": 20.0,
+        "max": 27.0,
+        "mean": 23.357199873786055
+      },
+      "reduced_properties": {
+        "internal_surface_area_m2": 216.0,
+        "effective_mass_area_m2": 120.0,
+        "thermal_capacitance_j_k": 2287325.808,
+        "surface_air_conductance_w_k": 745.2,
+        "mass_surface_conductance_w_k": 1092.0,
+        "opaque_transmission_conductance_w_k": 49.52325931793055,
+        "effective_ground_conductance_w_k": 1.8880116876914006,
+        "mass_exterior_conductance_w_k": 51.8758808372043,
+        "mass_exterior_coupling_fallback": false,
+        "sky_radiation_loss_w": 69.09065452039414
+      },
+      "within_reference": {
+        "annual_heating_mwh": false,
+        "annual_cooling_mwh": true,
+        "peak_heating_kw": false,
+        "peak_cooling_kw": true
+      },
+      "vs_energyplus": {
+        "annual_heating_mwh": 0.02389569886635501,
+        "annual_cooling_mwh": -0.09394264393925755,
+        "peak_heating_kw": 0.016006151140813163,
+        "peak_cooling_kw": -0.07571749122104621
+      },
+      "air_temperature_rmse_k": 0.37286568095775696
+    }
+  }
+}
