@@ -49,3 +49,22 @@ warnings (a wet-bulb iteration in very dry air at 82.6 kPa) that it cannot
 waive. EnergyPlus completes with no severe errors, so the script reads the
 ideal-loads energies from `eplusout.sql` and records the rejection in
 `results/case600.json`.
+
+## Section 5.2 case family
+
+`ashrae140.py` runs 14 variations of Case 600 on the same three engines:
+600, 610 (south overhang), 620 (east/west glazing), 640 (heating setback),
+650 (night ventilation, cooling by day), the heavyweight 900, 910, 920, 940
+and 950, and the free-float cases 600FF, 650FF, 900FF and 950FF. Cases 630
+and 930 (side fins) and 960 (sunspace) are not run: RC does not model fins
+or a sunspace. Results are in `results/ashrae140.md`.
+
+```sh
+python benchmarks/bestest/ashrae140.py --epw USA_CO_Denver.Intl.AP.725650_TMY3.epw \
+    --energyplus /path/to/energyplus --output outputs/ashrae140
+```
+
+EnergyPlus heating and cooling are the ideal-loads supply-air (coil) sensible
+energies, so the free cooling of night ventilation air is not counted as load.
+These runs compare engines; they are not yet checked against the Standard 140
+acceptance criteria.

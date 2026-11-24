@@ -310,7 +310,7 @@ def run_energyplus(building, weather, energyplus, directory):
     Returns
     -------
     dict
-        Hourly zone sensible heating and cooling in kWh, zone air temperature in
+        Hourly supply-air (coil) sensible heating and cooling in kWh, which excludes the free cooling of night ventilation air, zone air temperature in
         °C, total cooling coil energy in kWh and the Core acceptance outcome.
     """
     from epsm_core.runner import EnergyPlusRunner, SimulationError
@@ -330,10 +330,12 @@ def run_energyplus(building, weather, energyplus, directory):
     joules = 3.6e6
     return {
         "space_heating_demand_kwh": _sql_hourly(
-            sql, "Zone Ideal Loads Zone Sensible Heating Energy"
+            sql, "Zone Ideal Loads Supply Air Sensible Heating Energy"
         )
         / joules,
-        "cooling_demand_kwh": _sql_hourly(sql, "Zone Ideal Loads Zone Sensible Cooling Energy")
+        "cooling_demand_kwh": _sql_hourly(
+            sql, "Zone Ideal Loads Supply Air Sensible Cooling Energy"
+        )
         / joules,
         "cooling_total_kwh": _sql_hourly(sql, "Zone Ideal Loads Supply Air Total Cooling Energy")
         / joules,
