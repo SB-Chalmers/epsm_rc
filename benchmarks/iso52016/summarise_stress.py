@@ -20,8 +20,13 @@ from pathlib import Path
 
 import numpy as np
 
-VARIANTS = ("5r1c", "iso52016", "iso52016_air")
-LABELS = {"5r1c": "5R1C", "iso52016": "52016 (operative)", "iso52016_air": "52016 (air)"}
+VARIANTS = ("5r1c", "iso52016", "iso52016_air", "iso52016_air_beam")
+LABELS = {
+    "5r1c": "5R1C",
+    "iso52016": "52016 (operative)",
+    "iso52016_air": "52016 (air)",
+    "iso52016_air_beam": "52016 (air, beam to floor)",
+}
 
 
 def _free_row(rows, variant):

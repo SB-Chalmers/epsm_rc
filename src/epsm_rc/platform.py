@@ -88,6 +88,7 @@ from .options import (
     ControlTemperature,
     GroundPolicy,
     HeatRecovery,
+    InteriorSolarDistribution,
     OverhangShading,
     SelfShadowingPolicy,
     SolarTime,
@@ -148,6 +149,15 @@ class RCSettings:
         hour's HVAC power or air temperature against the setpoints. Other hours
         bypass the exchanger, so summer ventilation cools freely, as EnergyPlus
         ideal loads do. ``always`` recovers in every hour.
+    interior_solar_distribution : InteriorSolarDistribution or str
+        ISO 52016-1 only. ``area_weighted`` (default; ISO 52016-1 as written)
+        spreads all window solar gain over the zone's inside surfaces in
+        proportion to area, windows included. ``beam_to_floor`` puts the
+        transmitted beam radiation on the floor surfaces, as EnergyPlus
+        ``FullExterior`` solar distribution does, and spreads the diffuse and
+        inward-absorbed parts by area. The convective fraction goes to the air
+        in both. A zone without a floor surface keeps area weighting. ISO 13790
+        5R1C refuses ``beam_to_floor``.
     internal_surface_area_factor, mass_area_factors : float or tuple
         Ratios to conditioned floor area. Mass-area factors correspond to
         construction capacities below, between and above the two thresholds.
@@ -295,6 +305,7 @@ class RCSettings:
     thermal_model: ThermalModel = ThermalModel.ISO52016_1
     control_temperature: ControlTemperature = ControlTemperature.AIR
     heat_recovery: HeatRecovery = HeatRecovery.WHEN_BENEFICIAL
+    interior_solar_distribution: InteriorSolarDistribution = InteriorSolarDistribution.AREA_WEIGHTED
 
     def __post_init__(self):
         finite("effective_mass_depth_m", self.effective_mass_depth_m, positive=True)
@@ -313,8 +324,17 @@ class RCSettings:
             ("heat_recovery", HeatRecovery),
             ("solar_time", SolarTime),
             ("window_optics", WindowOptics),
+            ("interior_solar_distribution", InteriorSolarDistribution),
         ):
             object.__setattr__(self, name, kind.parse(getattr(self, name), name))
+        if (
+            self.thermal_model == ThermalModel.ISO13790_5R1C
+            and self.interior_solar_distribution != InteriorSolarDistribution.AREA_WEIGHTED
+        ):
+            raise ValueError(
+                "interior_solar_distribution applies to thermal_model='iso52016_1'; "
+                "ISO 13790 5R1C has no floor surface to receive beam radiation"
+            )
         positive = (
             "internal_surface_area_factor",
             "surface_air_coefficient_w_m2_k",
@@ -517,6 +537,7 @@ class RCSettings:
                 "context_shading": self.context_shading_method,
                 "context_sky_diffuse": self.context_sky_diffuse,
                 "overhang_shading": self.overhang_shading_method,
+                "interior_solar_distribution": self.interior_solar_distribution.value,
             },
         }
 
@@ -1403,6 +1424,8 @@ def _prepare_radiation(
         )
 
     solar, opaque = np.zeros(len(axis)), np.zeros(len(axis))
+    # Transmitted beam part of ``solar``, for ISO 52016-1 beam_to_floor distribution.
+    solar_beam = np.zeros(len(axis))
     orientation_irradiance = {}
     from ._results import ANGULAR_WINDOW_OUTPUTS
 
@@ -1468,12 +1491,14 @@ def _prepare_radiation(
             element_irradiance[element.identifier] = poa
         if role == "WINDOW":
             if settings.window_optics == WindowOptics.CONSTANT_SHGC:
-                solar += (
-                    poa
-                    * element.area_m2
-                    * element.construction.shgc
-                    * spec.facade.solar_shading_factor
+                factor = (
+                    element.area_m2 * element.construction.shgc * spec.facade.solar_shading_factor
                 )
+                solar += poa * factor
+                # A constant SHGC cannot separate transmission from absorption,
+                # so the beam share carries the whole beam heat gain. A provider
+                # without a beam channel leaves it all area weighted.
+                solar_beam += channels.get("poa_direct", 0.0) * factor
             else:
                 glazing = (element.construction.u_value, element.construction.shgc)
                 optics = optical_models[glazing]
@@ -1489,6 +1514,7 @@ def _prepare_radiation(
                 diffuse = sky + reflected
                 area, shade = element.area_m2, spec.facade.solar_shading_factor
                 transmitted = (beam * bt + diffuse * dt) * area * shade
+                solar_beam += beam * bt * area * shade
                 absorbed = (beam * ba + diffuse * da) * optics.inward_fraction * area * shade
                 solar += transmitted + absorbed
                 radiation_hourly["window_incident_beam_w"] += beam * area
@@ -1551,7 +1577,7 @@ def _prepare_radiation(
         radiation_hourly["sky_radiation_loss_w"] = np.full(
             len(axis), model.calc_sky_radiation_loss()
         )
-    return solar, opaque, radiation_hourly, times, context_shading, overhang_shading
+    return solar, solar_beam, opaque, radiation_hourly, times, context_shading, overhang_shading
 
 
 @dataclass(frozen=True)
@@ -1840,6 +1866,7 @@ def _domain_forcing(
     month_hours,
     aggregate_split,
     annual,
+    solar_beam=None,
 ):
     """Pack immutable hourly forcing and thermostat availability limits."""
     data = preparation.data
@@ -1883,6 +1910,7 @@ def _domain_forcing(
         aggregate_split,
         preparation.settings.heat_recovery == HeatRecovery.WHEN_BENEFICIAL,
         float(airflow.sensible_recovery_effectiveness),
+        None if solar_beam is None else _immutable_series(solar_beam),
     )
     heating_limits_w = np.where(heating_on != 0.0, np.inf, 0.0)
     cooling_limits_w = (
@@ -1956,7 +1984,15 @@ def _prepare_domain(preparation, *, domain=None):
     )
     iso52016_model = settings.thermal_model == ThermalModel.ISO52016_1
     element_irradiance = {} if iso52016_model else None
-    solar, opaque, radiation_hourly, times, context_shading, overhang_shading = _prepare_radiation(
+    (
+        solar,
+        solar_beam,
+        opaque,
+        radiation_hourly,
+        times,
+        context_shading,
+        overhang_shading,
+    ) = _prepare_radiation(
         preparation, model, scope.elements, attic, areas, optical_models, element_irradiance
     )
     model.t_m = model.t_air = model.t_s = float(heat_set[0])
@@ -2002,6 +2038,7 @@ def _prepare_domain(preparation, *, domain=None):
         _month_hours(ground, times),
         gain_reduction["aggregate_split_applied"],
         annual,
+        solar_beam=solar_beam,
     )
     iso52016_inputs = None
     if iso52016_model:

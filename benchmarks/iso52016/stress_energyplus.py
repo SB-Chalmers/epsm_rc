@@ -113,6 +113,9 @@ def rc_variants():
         "5r1c": v2,
         "iso52016": replace(v2, **iso),
         "iso52016_air": replace(v2, control_temperature="air", **iso),
+        "iso52016_air_beam": replace(
+            v2, control_temperature="air", interior_solar_distribution="beam_to_floor", **iso
+        ),
     }
 
 

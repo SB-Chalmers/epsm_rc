@@ -35,6 +35,12 @@ Standard 140 Section 5.2.1. These are choices of this script:
 - Overhangs (610, 910) use `overhang_shading_method="geometric_profile_angle"`,
   the exact shadow of an infinitely wide overhang. ISO 13790 G.4-G.6 shade too
   much in winter (8 % less transmitted solar than EnergyPlus over the year).
+- ISO 52016-1 puts transmitted beam solar on the floor
+  (`interior_solar_distribution="beam_to_floor"`), as EnergyPlus does. ISO
+  52016-1's own area weighting puts 7 % of the sun on the window, where it
+  leaks straight out, and 28 % on the lightweight roof, so the heavyweight
+  cases store too little winter sun (Case 910 heating 2.40 MWh against a
+  2.30 limit).
 - Films, convection and sky exchange come from each engine.
 
 ## Reference results and acceptance criteria

@@ -195,6 +195,13 @@ class OverhangShading(_Choice):
     REJECT = "reject"
 
 
+class InteriorSolarDistribution(_Choice):
+    """Where ISO 52016-1 places the solar radiation transmitted by windows."""
+
+    AREA_WEIGHTED = "area_weighted"
+    BEAM_TO_FLOOR = "beam_to_floor"
+
+
 # Former named profiles, kept only so older scripts still run.
 LEGACY_PROFILES = {
     "epsm_rc_5r1c_v1": dict(

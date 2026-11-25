@@ -28,9 +28,8 @@ concurrency:
   group: ashrae140-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 env:
-  # Models that must meet every acceptance criterion; others are reported only.
-  GATED_MODELS: iso13790_5r1c
-  REPORTED_MODELS: iso52016_1
+  # Models that must meet every acceptance criterion.
+  GATED_MODELS: iso13790_5r1c iso52016_1
   DENVER_EPW_ZIP: https://energyplus-weather.s3.amazonaws.com/north_and_central_america_wmo_region_4/USA/CO/USA_CO_Denver.Intl.AP.725650_TMY3/USA_CO_Denver.Intl.AP.725650_TMY3.zip
 jobs:
   ashrae140:
@@ -72,19 +71,10 @@ jobs:
         python benchmarks/bestest/ashrae140.py \
           --epw "$RUNNER_TEMP/weather/USA_CO_Denver.Intl.AP.725650_TMY3.epw" \
           --output outputs/ashrae140 --check $GATED_MODELS
-    - name: Report models that are not gated yet
+    - name: Write the results table to the job summary
       if: always()
       continue-on-error: true
-      run: |
-        cat outputs/ashrae140/ashrae140.md >> "$GITHUB_STEP_SUMMARY"
-        python - <<'PY'
-        import json, os, sys
-        sys.path.insert(0, "benchmarks/bestest")
-        from ashrae140 import criteria_failures
-        report = json.load(open("outputs/ashrae140/ashrae140.json"))
-        for model in os.environ["REPORTED_MODELS"].split():
-            print(model, "misses:", criteria_failures(report, model) or "none")
-        PY
+      run: cat outputs/ashrae140/ashrae140.md >> "$GITHUB_STEP_SUMMARY"
     - uses: actions/upload-artifact@v4
       if: always()
       with:
