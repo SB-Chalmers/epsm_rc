@@ -206,6 +206,59 @@ def ground_coefficients(
     )
 
 
+def combine_ground_coefficients(slabs: Sequence[GroundCoefficients]) -> GroundCoefficients:
+    """Sum the coefficients of separate slabs on ground into one set.
+
+    Parameters
+    ----------
+    slabs : sequence of GroundCoefficients
+        Slabs on ground (no basement) with the same construction and soil,
+        each calculated with its own area and exposed perimeter.
+
+    Returns
+    -------
+    GroundCoefficients
+        Steady, periodic and junction conductances summed. Area and perimeter
+        are totals, the floor U value is area-weighted and the characteristic
+        dimension is ``2 A / P`` of the totals, for reporting only.
+
+    Notes
+    -----
+    ISO 13370:2017 C.4 monthly heat flows are linear in the three coefficients,
+    so summing them gives the sum of each slab's heat flow exactly.
+    """
+    slabs = tuple(slabs)
+    if not slabs:
+        raise ValueError("At least one slab is required")
+    if any(slab.basement_depth_m for slab in slabs):
+        raise ValueError("Only slabs on ground can be combined")
+    first = slabs[0]
+    for name in ("equivalent_floor_thickness_m", "penetration_depth_m"):
+        if any(
+            not isfinite(getattr(slab, name))
+            or abs(getattr(slab, name) - getattr(first, name)) > 1e-9
+            for slab in slabs
+        ):
+            raise ValueError("Combined slabs need the same construction and soil")
+    area = fsum(slab.area_m2 for slab in slabs)
+    perimeter = fsum(slab.exposed_perimeter_m for slab in slabs)
+    return GroundCoefficients(
+        steady_conductance_w_k=fsum(slab.steady_conductance_w_k for slab in slabs),
+        periodic_internal_w_k=fsum(slab.periodic_internal_w_k for slab in slabs),
+        periodic_external_w_k=fsum(slab.periodic_external_w_k for slab in slabs),
+        floor_u_w_m2k=fsum(slab.floor_u_w_m2k * slab.area_m2 for slab in slabs) / area,
+        wall_u_w_m2k=0.0,
+        characteristic_dimension_m=2 * area / perimeter,
+        equivalent_floor_thickness_m=first.equivalent_floor_thickness_m,
+        equivalent_wall_thickness_m=None,
+        penetration_depth_m=first.penetration_depth_m,
+        area_m2=area,
+        exposed_perimeter_m=perimeter,
+        basement_depth_m=0.0,
+        junction_conductance_w_k=fsum(slab.junction_conductance_w_k for slab in slabs),
+    )
+
+
 def _months(name: str, values: Sequence[float]) -> tuple[float, ...]:
     try:
         result = tuple(float(value) for value in values)
