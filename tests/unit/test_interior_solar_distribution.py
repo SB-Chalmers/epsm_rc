@@ -47,13 +47,14 @@ def _network(distribution):
     return Network52016(_elements(), (zone,), solar_distribution=distribution)
 
 
-def test_default_is_area_weighted_and_adds_no_column():
+def test_network_default_is_area_weighted_and_adds_no_column():
     default = Network52016(_elements(), (ThermalZone("zone", 48, 130, control="air"),))
     weighted = _network("area_weighted")
     assert default.solar_distribution == "area_weighted"
     assert default.column_count == weighted.column_count == 2 + 3 + 4
     np.testing.assert_array_equal(default._built["mp"], weighted._built["mp"])
-    assert RCSettings().interior_solar_distribution == InteriorSolarDistribution.AREA_WEIGHTED
+    # RCSettings defaults to beam_to_floor, the closer match to EnergyPlus.
+    assert RCSettings().interior_solar_distribution == InteriorSolarDistribution.BEAM_TO_FLOOR
 
 
 def test_beam_column_reaches_floor_and_air_only():
@@ -112,9 +113,14 @@ def test_unknown_distribution_is_refused():
         RCSettings(interior_solar_distribution="everywhere")
 
 
-def test_5r1c_refuses_beam_to_floor():
-    with pytest.raises(ValueError, match="iso52016_1"):
-        RCSettings(thermal_model="iso13790_5r1c", interior_solar_distribution="beam_to_floor")
+def test_5r1c_ignores_the_distribution():
+    settings = {
+        d: RCSettings(thermal_model="iso13790_5r1c", interior_solar_distribution=d)
+        for d in ("area_weighted", "beam_to_floor")
+    }
+    configurations = [s.effective_configuration() for s in settings.values()]
+    assert configurations[0] == configurations[1]
+    assert "interior_solar_distribution" not in configurations[0]["coefficients"]
 
 
 def test_beam_to_floor_runs_on_a_building(reference_building):
@@ -125,12 +131,12 @@ def test_beam_to_floor_runs_on_a_building(reference_building):
     common = dict(
         airflow_policy="sensible_only_unlimited_supply", ground_policy="conductance_multiplier"
     )
-    weighted = simulate_building(reference_building, weather=weather, settings=RCSettings(**common))
-    beam = simulate_building(
+    weighted = simulate_building(
         reference_building,
         weather=weather,
-        settings=RCSettings(interior_solar_distribution="beam_to_floor", **common),
+        settings=RCSettings(interior_solar_distribution="area_weighted", **common),
     )
+    beam = simulate_building(reference_building, weather=weather, settings=RCSettings(**common))
     old = weighted.scalars["space_heating_demand_kwh"]
     new = beam.scalars["space_heating_demand_kwh"]
     assert np.isfinite(new) and new != old

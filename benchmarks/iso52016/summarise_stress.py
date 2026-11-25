@@ -23,8 +23,8 @@ import numpy as np
 VARIANTS = ("5r1c", "iso52016", "iso52016_air", "iso52016_air_beam")
 LABELS = {
     "5r1c": "5R1C",
-    "iso52016": "52016 (operative)",
-    "iso52016_air": "52016 (air)",
+    "iso52016": "52016 (operative, area weighted)",
+    "iso52016_air": "52016 (air, area weighted)",
     "iso52016_air_beam": "52016 (air, beam to floor)",
 }
 

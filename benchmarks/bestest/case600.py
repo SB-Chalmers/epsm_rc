@@ -259,9 +259,8 @@ def make_building():
 def model_settings():
     """RC settings for the two thermal models.
 
-    The two share every setting apart from the network, and ISO 52016-1 also
-    puts transmitted beam solar on the floor as EnergyPlus does
-    (``interior_solar_distribution="beam_to_floor"``); 5R1C has no floor node.
+    The two share every setting apart from the network. ISO 52016-1 uses its
+    default ``interior_solar_distribution="beam_to_floor"``.
 
     Returns
     -------
@@ -280,9 +279,7 @@ def model_settings():
     )
     return {
         "iso13790_5r1c": replace(base, thermal_model="iso13790_5r1c"),
-        "iso52016_1": replace(
-            base, thermal_model="iso52016_1", interior_solar_distribution="beam_to_floor"
-        ),
+        "iso52016_1": replace(base, thermal_model="iso52016_1"),
     }
 
 

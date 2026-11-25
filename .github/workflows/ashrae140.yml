@@ -1,7 +1,8 @@
 name: ASHRAE 140
 # Runs the Standard 140-2020 Section 5.2 cases on both RC models and fails when
-# a gated model misses an Addendum b acceptance criterion. The README badge
-# shows this workflow's status on dev.
+# a model misses an Addendum b acceptance criterion. Pull requests run the same
+# job in Development checks (ci.yml); this workflow runs it after a push to dev
+# or main, and its status on dev is the README badge.
 'on':
   push:
     branches:
@@ -12,15 +13,7 @@ name: ASHRAE 140
     - 'rust/**'
     - 'benchmarks/bestest/**'
     - '.github/workflows/ashrae140.yml'
-  pull_request:
-    branches:
-    - dev
-    - main
-    paths:
-    - 'src/**'
-    - 'rust/**'
-    - 'benchmarks/bestest/**'
-    - '.github/workflows/ashrae140.yml'
+  workflow_call: null
   workflow_dispatch: null
 permissions:
   contents: read

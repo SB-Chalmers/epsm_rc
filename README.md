@@ -55,9 +55,8 @@ reduction settings. Private dependencies need an accessible index or local check
 The [ASHRAE 140 badge](benchmarks/bestest/README.md) reruns the Standard
 140-2020 Section 5.2 cases (600–650, 900–950 and the free-float cases) on every
 solver change. It passes while both thermal models meet all 20 Addendum b
-acceptance criteria: 5R1C with its defaults, and ISO 52016-1 with transmitted
-beam solar on the floor (`interior_solar_distribution="beam_to_floor"`). Both
-use the exact overhang shadow (`overhang_shading_method="geometric_profile_angle"`).
+acceptance criteria with their defaults, apart from the exact overhang shadow
+(`overhang_shading_method="geometric_profile_angle"`) in Cases 610 and 910.
 Cases 630, 930 (side fins) and 960 (sunspace) are not run. These are tests
 against the Standard's reference programs, not an ASHRAE certification.
 

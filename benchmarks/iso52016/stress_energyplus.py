@@ -108,13 +108,18 @@ def rc_variants():
         iso13370_wall_thickness_source="ASSUMED 0.3 m wall at ground level for this comparison",
         self_shadowing_policy="ignore",
     )
-    iso = dict(thermal_model="iso52016_1")
+    # The first two ISO variants keep the area-weighted interior solar of the
+    # original comparison; the beam variant is the current default.
+    iso = dict(thermal_model="iso52016_1", interior_solar_distribution="area_weighted")
     return {
         "5r1c": v2,
         "iso52016": replace(v2, **iso),
         "iso52016_air": replace(v2, control_temperature="air", **iso),
         "iso52016_air_beam": replace(
-            v2, control_temperature="air", interior_solar_distribution="beam_to_floor", **iso
+            v2,
+            control_temperature="air",
+            thermal_model="iso52016_1",
+            interior_solar_distribution="beam_to_floor",
         ),
     }
 

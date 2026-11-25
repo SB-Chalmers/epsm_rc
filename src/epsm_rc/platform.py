@@ -150,14 +150,16 @@ class RCSettings:
         bypass the exchanger, so summer ventilation cools freely, as EnergyPlus
         ideal loads do. ``always`` recovers in every hour.
     interior_solar_distribution : InteriorSolarDistribution or str
-        ISO 52016-1 only. ``area_weighted`` (default; ISO 52016-1 as written)
-        spreads all window solar gain over the zone's inside surfaces in
-        proportion to area, windows included. ``beam_to_floor`` puts the
-        transmitted beam radiation on the floor surfaces, as EnergyPlus
-        ``FullExterior`` solar distribution does, and spreads the diffuse and
-        inward-absorbed parts by area. The convective fraction goes to the air
-        in both. A zone without a floor surface keeps area weighting. ISO 13790
-        5R1C refuses ``beam_to_floor``.
+        ISO 52016-1 only; ISO 13790 5R1C has no floor surface and ignores it.
+        ``beam_to_floor`` (default) puts the transmitted beam radiation on the
+        floor surfaces, as EnergyPlus ``FullExterior`` solar distribution does,
+        and spreads the diffuse and inward-absorbed parts by area. It meets all
+        20 ASHRAE 140 acceptance criteria and agrees slightly better with
+        EnergyPlus in ``benchmarks/iso52016``. ``area_weighted`` (ISO 52016-1
+        as written) spreads all window solar gain over the zone's inside
+        surfaces in proportion to area, windows included. The convective
+        fraction goes to the air in both. A zone without a floor surface keeps
+        area weighting.
     internal_surface_area_factor, mass_area_factors : float or tuple
         Ratios to conditioned floor area. Mass-area factors correspond to
         construction capacities below, between and above the two thresholds.
@@ -305,7 +307,7 @@ class RCSettings:
     thermal_model: ThermalModel = ThermalModel.ISO52016_1
     control_temperature: ControlTemperature = ControlTemperature.AIR
     heat_recovery: HeatRecovery = HeatRecovery.WHEN_BENEFICIAL
-    interior_solar_distribution: InteriorSolarDistribution = InteriorSolarDistribution.AREA_WEIGHTED
+    interior_solar_distribution: InteriorSolarDistribution = InteriorSolarDistribution.BEAM_TO_FLOOR
 
     def __post_init__(self):
         finite("effective_mass_depth_m", self.effective_mass_depth_m, positive=True)
@@ -327,14 +329,6 @@ class RCSettings:
             ("interior_solar_distribution", InteriorSolarDistribution),
         ):
             object.__setattr__(self, name, kind.parse(getattr(self, name), name))
-        if (
-            self.thermal_model == ThermalModel.ISO13790_5R1C
-            and self.interior_solar_distribution != InteriorSolarDistribution.AREA_WEIGHTED
-        ):
-            raise ValueError(
-                "interior_solar_distribution applies to thermal_model='iso52016_1'; "
-                "ISO 13790 5R1C has no floor surface to receive beam radiation"
-            )
         positive = (
             "internal_surface_area_factor",
             "surface_air_coefficient_w_m2_k",
@@ -448,9 +442,12 @@ class RCSettings:
         """Return model assumptions, distinct from the supplied physical evidence."""
         if self.thermal_model == ThermalModel.ISO52016_1:
             return self._iso52016_configuration()
+        coefficients = asdict(self)
+        # ISO 52016-1 only: 5R1C has no floor surface, so it is not part of a 5R1C run.
+        coefficients.pop("interior_solar_distribution")
         return {
             "origin": "explicit_reduction_policy",
-            "coefficients": asdict(self),
+            "coefficients": coefficients,
             "model_constants": {
                 "timestep_hours": 1.0,
                 "crank_nicolson_weight": 0.5,
