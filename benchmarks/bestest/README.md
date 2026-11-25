@@ -22,11 +22,14 @@ Geometry, layer materials, south glazing (12 m²), 0.5 ACH infiltration,
 200 W of continuous gains (60 % radiative) and the 20/27 °C thermostat follow
 Standard 140 Section 5.2.1. These are choices of this script:
 
-- Window: Core simple glazing with U 2.74 W/(m² K) and SHGC 0.760. Those are
-  the values EnergyPlus 24.2 computes for the Standard 140 double clear pane
-  (two 3.048 mm panes, 12 mm air gap).
-- Floor: constant 10 °C ground boundary in all engines, as in the Modelica
-  Buildings Library Case 600.
+- Window: Core simple glazing with U 2.82 W/(m² K) and SHGC 0.75, the simple
+  glazing that best reproduces EnergyPlus 24.2 running the layered Standard 140
+  double clear pane (two 3.048 mm panes, 12 mm air gap) in Cases 600 and 900.
+  The pane's NFRC rating (U 2.74, SHGC 0.760) gives 4 % more Case 900 cooling
+  than the layered pane.
+- Floor: the underside sees outdoor air, as in Standard 140-2020 and the
+  Modelica Buildings Library. Core takes a monthly boundary, so all engines use
+  the monthly mean dry-bulb of the Denver TMY3 file.
 - RC infiltration uses the air heat capacity at 1650 m (992 J/(m³ K)).
   EnergyPlus applies the site elevation itself.
 - Overhangs (610, 910) use `overhang_shading_method="geometric_profile_angle"`,
