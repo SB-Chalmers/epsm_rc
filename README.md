@@ -14,7 +14,7 @@ available alongside the results.
 **[Explore the EPSM platform →](https://github.com/SB-Chalmers/epsm/blob/main/docs/platform.md)**
 <!-- /EPSM introduction -->
 
-[![CI](https://img.shields.io/badge/CI-GitHub_Actions-2088FF?logo=githubactions&logoColor=white)](https://github.com/SB-Chalmers/epsm_rc/actions/workflows/ci.yml) [![Releases](https://img.shields.io/badge/releases-GitHub-181717?logo=github&logoColor=white)](https://github.com/SB-Chalmers/epsm_rc/releases) [![Issues](https://img.shields.io/badge/issues-GitHub-181717?logo=github&logoColor=white)](https://github.com/SB-Chalmers/epsm_rc/issues)
+[![CI](https://img.shields.io/badge/CI-GitHub_Actions-2088FF?logo=githubactions&logoColor=white)](https://github.com/SB-Chalmers/epsm_rc/actions/workflows/ci.yml) [![ASHRAE 140](https://github.com/SB-Chalmers/epsm_rc/actions/workflows/ashrae140.yml/badge.svg?branch=dev)](benchmarks/bestest/README.md) [![Releases](https://img.shields.io/badge/releases-GitHub-181717?logo=github&logoColor=white)](https://github.com/SB-Chalmers/epsm_rc/releases) [![Issues](https://img.shields.io/badge/issues-GitHub-181717?logo=github&logoColor=white)](https://github.com/SB-Chalmers/epsm_rc/issues)
 
 ## Getting started
 
@@ -49,6 +49,15 @@ python -m pip install -e ".[platform]"
 Use the [supported EPSM package combination](https://github.com/SB-Chalmers/epsm/blob/main/compatibility.json)
 and the [Building quick start](docs/quickstart.rst) with explicit weather and
 reduction settings. Private dependencies need an accessible index or local checkouts.
+
+## ASHRAE 140 tests
+
+The [ASHRAE 140 badge](benchmarks/bestest/README.md) reruns the Standard
+140-2020 Section 5.2 cases (600–650, 900–950 and the free-float cases) on every
+solver change. It passes while the 5R1C model meets all 20 Addendum b
+acceptance criteria. ISO 52016-1 meets 19 of 20 and is reported alongside.
+Cases 630, 930 (side fins) and 960 (sunspace) are not run. These are tests
+against the Standard's reference programs, not an ASHRAE certification.
 
 ## Documentation
 
