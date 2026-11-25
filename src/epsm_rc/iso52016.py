@@ -83,6 +83,7 @@ SOIL_THICKNESS_M = 0.5
 SOIL_CONDUCTIVITY_W_M_K = 2.0
 SOIL_VOLUMETRIC_CAPACITY_J_M3_K = 2.0e6
 MASS_CLASSES = frozenset({"I", "E", "IE", "D", "M"})
+SOLAR_DISTRIBUTIONS = frozenset({"area_weighted", "beam_to_floor"})
 DIRECTIONS = frozenset(H_CI)
 BOUNDARIES = frozenset({"exterior", "ground", "adiabatic", "zone"})
 TIMESTEP_S = 3600.0
@@ -385,13 +386,20 @@ class Network52016:
         Convective fractions of internal gains, window solar and HVAC power.
     delta_theta_er_k : float
         Mean difference between outdoor air and apparent sky temperature.
+    solar_distribution : {'area_weighted', 'beam_to_floor'}
+        ``area_weighted`` (ISO 52016-1) spreads the radiative part of window
+        solar over all faces of the zone by area. ``beam_to_floor`` adds one
+        forcing column per zone for transmitted beam radiation, whose radiative
+        part goes to the zone's floor faces (``direction == "downwards"``) by
+        area; the per-zone window solar column then carries the rest.
 
     Notes
     -----
     Nodes: one air node per zone (in zone order), then each element's chain,
     outer node first. Forcing columns: outdoor air, sky constant, then per zone
     ground boundary temperature, internal gains and window solar, then absorbed
-    solar per element (W/m²). See :meth:`forcing_vector`.
+    solar per element (W/m²), then, with ``beam_to_floor``, transmitted beam
+    solar per zone. See :meth:`forcing_vector`.
     """
 
     def __init__(
@@ -405,7 +413,11 @@ class Network52016:
         f_sol_c=F_SOL_C,
         f_hc_c=F_HC_C,
         delta_theta_er_k=DELTA_THETA_ER_K,
+        solar_distribution="area_weighted",
     ):
+        if solar_distribution not in SOLAR_DISTRIBUTIONS:
+            raise ValueError(f"Unknown solar distribution {solar_distribution!r}")
+        self.solar_distribution = solar_distribution
         self.elements = tuple(elements)
         self.zones = tuple(zones)
         self.zone_bridges = tuple((int(i), int(j), float(h)) for i, j, h in zone_bridges)
@@ -441,7 +453,8 @@ class Network52016:
 
     @property
     def column_count(self) -> int:
-        return 2 + 3 * self.zone_count + len(self.elements)
+        beam = self.zone_count if self.solar_distribution == "beam_to_floor" else 0
+        return 2 + 3 * self.zone_count + len(self.elements) + beam
 
     # ------------------------------------------------------------------ assembly
     def _build(self):
@@ -493,6 +506,14 @@ class Network52016:
                 share = area / a_tot
                 p[node, 3 + 3 * index] += (1 - self.f_int_c) * share
                 p[node, 4 + 3 * index] += (1 - self.f_sol_c) * share
+            if self.solar_distribution == "beam_to_floor":
+                column = 2 + 3 * z + len(elements) + index
+                p[index, column] += self.f_sol_c
+                floors = [(node, area) for node, area, d in faces[index] if d == "downwards"]
+                targets = floors or [(node, area) for node, area, _ in faces[index]]
+                a_target = sum(area for _, area in targets)
+                for node, area in targets:
+                    p[node, column] += (1 - self.f_sol_c) * area / a_target
                 if zone.conditioned:
                     hvac[node, index] += (1 - self.f_hc_c) * share
             operative[index, index] = 0.5
@@ -555,15 +576,25 @@ class Network52016:
         )
 
     # ------------------------------------------------------------------ stepping
-    def forcing_vector(self, theta_e, theta_gr, phi_int, phi_sol, absorbed_w_m2):
-        """Pack one hour of forcing; ``theta_gr``, ``phi_int``, ``phi_sol`` are per zone."""
+    def forcing_vector(self, theta_e, theta_gr, phi_int, phi_sol, absorbed_w_m2, phi_sol_beam=0.0):
+        """Pack one hour of forcing; ``theta_gr``, ``phi_int``, ``phi_sol`` are per zone.
+
+        With ``beam_to_floor``, ``phi_sol`` is the total window solar gain and
+        ``phi_sol_beam`` its transmitted beam part, per zone; the solar column
+        receives the difference.
+        """
+        z = self.zone_count
+        beam = np.broadcast_to(np.asarray(phi_sol_beam, float), (z,))
+        solar = np.broadcast_to(np.asarray(phi_sol, float), (z,))
+        split = self.solar_distribution == "beam_to_floor"
         per_zone = np.column_stack(
             [
-                np.broadcast_to(np.asarray(v, float), (self.zone_count,))
-                for v in (theta_gr, phi_int, phi_sol)
+                np.broadcast_to(np.asarray(v, float), (z,))
+                for v in (theta_gr, phi_int, solar - beam if split else solar)
             ]
         ).ravel()
-        return np.concatenate(([theta_e, 1.0], per_zone, absorbed_w_m2))
+        tail = (beam,) if split else ()
+        return np.concatenate(([theta_e, 1.0], per_zone, absorbed_w_m2, *tail))
 
     def step(self, state, forcing, h_ve, set_heating, set_cooling, heat_limit, cool_limit):
         """Advance one hour; returns (new state, HVAC power, air, operative), per zone in W/°C.
@@ -671,6 +702,8 @@ class Zone52016:
         Controlled temperature; the standard controls operative temperature.
     delta_theta_er_k : float
         Mean difference between outdoor air and apparent sky temperature.
+    solar_distribution : {'area_weighted', 'beam_to_floor'}
+        See :class:`Network52016`.
     """
 
     elements: tuple
@@ -684,6 +717,7 @@ class Zone52016:
     f_hc_c: float = F_HC_C
     control: str = "operative"
     delta_theta_er_k: float = DELTA_THETA_ER_K
+    solar_distribution: str = "area_weighted"
     network: Network52016 = field(default=None, init=False, repr=False)
 
     def __post_init__(self):
@@ -709,6 +743,7 @@ class Zone52016:
             f_sol_c=self.f_sol_c,
             f_hc_c=self.f_hc_c,
             delta_theta_er_k=self.delta_theta_er_k,
+            solar_distribution=self.solar_distribution,
         )
 
     @property
@@ -722,9 +757,11 @@ class Zone52016:
     def steady_conductance_w_k(self) -> float:
         return self.network.steady_conductance_w_k()
 
-    def forcing_vector(self, theta_e, theta_gr, phi_int, phi_sol, absorbed_w_m2):
+    def forcing_vector(self, theta_e, theta_gr, phi_int, phi_sol, absorbed_w_m2, phi_sol_beam=0.0):
         """Pack one hour of forcing in the network column order."""
-        return self.network.forcing_vector(theta_e, theta_gr, phi_int, phi_sol, absorbed_w_m2)
+        return self.network.forcing_vector(
+            theta_e, theta_gr, phi_int, phi_sol, absorbed_w_m2, phi_sol_beam
+        )
 
     def step(self, state, forcing, h_ve, set_heating, set_cooling, heat_limit, cool_limit):
         """Advance one hour; returns (new state, HVAC power W, air, operative)."""

@@ -191,7 +191,15 @@ class OverhangShading(_Choice):
     """Shading from horizontal overhangs above windows."""
 
     ISO13790_HOURLY_OVERHANG = "iso13790_hourly_overhang"
+    GEOMETRIC_PROFILE_ANGLE = "geometric_profile_angle"
     REJECT = "reject"
+
+
+class InteriorSolarDistribution(_Choice):
+    """Where ISO 52016-1 places the solar radiation transmitted by windows."""
+
+    AREA_WEIGHTED = "area_weighted"
+    BEAM_TO_FLOOR = "beam_to_floor"
 
 
 # Former named profiles, kept only so older scripts still run.

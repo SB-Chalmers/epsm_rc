@@ -557,6 +557,7 @@ def build_network(parts):
         zone_bridges=zone_bridges,
         air_volumetric_heat_capacity_j_m3_k=settings.air_volumetric_heat_capacity_j_m3_k,
         delta_theta_er_k=settings.sky_air_temperature_difference_k,
+        solar_distribution=settings.interior_solar_distribution.value,
     )
     return network, hourly, kinds, attic_zones, tuple(notes)
 
@@ -586,6 +587,10 @@ def _forcing_matrix(network, domains, hourly, kinds, parts):
         matrix[:, 2 + 3 * index] = ground
         matrix[:, 3 + 3 * index] = forcing.gains
         matrix[:, 4 + 3 * index] = forcing.solar
+        if network.solar_distribution == "beam_to_floor":
+            beam = np.asarray(forcing.solar_beam, float)
+            matrix[:, 4 + 3 * index] -= beam
+            matrix[:, 2 + 3 * z + len(network.elements) + index] = beam
     for index, (element, series) in enumerate(zip(network.elements, hourly)):
         if series is not None and element.kind == "opaque" and element.boundary == "exterior":
             matrix[:, 2 + 3 * z + index] = series

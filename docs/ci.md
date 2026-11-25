@@ -8,6 +8,14 @@ builds a wheel. The Rust job runs `cargo fmt --all --check`,
 The executable commands are in [.github/workflows/ci.yml](../.github/workflows/ci.yml).
 These development checks do not certify the entire EPSM ecosystem.
 
+The same pull requests run the ASHRAE 140 job
+([.github/workflows/ashrae140.yml](../.github/workflows/ashrae140.yml), called
+from `ci.yml`). It installs Core and Data, downloads the Denver TMY3 weather and
+runs the 14 Standard 140-2020 Section 5.2 cases on both thermal models without
+EnergyPlus, failing when either misses an Addendum b acceptance criterion.
+After a push to `dev` or `main` that touches the solver or the benchmark, the
+same workflow runs on its own; its status on `dev` is the README badge.
+
 The Python job builds the release wheel once and tests that installed wheel, so
 the native extension is not compiled twice. Both jobs cache Cargo dependencies.
 Pull requests that change only Markdown, `docs/` or the licence skip both

@@ -127,6 +127,8 @@ class HourlyInputs:
     aggregate_split: bool
     recovery_bypass: bool = False
     recovery_effectiveness: float = 0.0
+    # Transmitted beam part of ``solar`` (W); read only by ISO 52016-1 beam_to_floor.
+    solar_beam: np.ndarray | None = None
 
     def __post_init__(self):
         # The native kernels read these fields by name; fix their types once here.
