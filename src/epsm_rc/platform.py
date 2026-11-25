@@ -218,7 +218,12 @@ class RCSettings:
         G.4 to G.6 to each window pane below a Core overhang: beam radiation is
         reduced from the solar height and the overhang angle, sky-diffuse
         radiation by the overhang angle, and ground-reflected radiation is
-        unchanged. ``reject`` refuses overhangs. Reveals, fins and balconies
+        unchanged. ``geometric_profile_angle`` instead shades beam radiation by the
+        exact shadow of an infinitely wide overhang, from the profile angle and
+        each pane's head gap and height, and keeps the isotropic sky view factor
+        of sky-diffuse radiation. In the ASHRAE 140 overhang cases it matches
+        EnergyPlus transmitted solar within 1 %, where G.4-G.6 give 8 % less
+        (``benchmarks/bestest``). ``reject`` refuses overhangs. Reveals, fins and balconies
         remain unsupported.
     horizon_azimuth_step_deg : float
         Maximum midpoint-quadrature spacing for the average horizon angle,
@@ -1275,9 +1280,33 @@ def _overhang_shading(preparation):
             "method": settings.overhang_shading_method,
             "implementation": preparation.implementation,
         }
-        panes = preparation.prepared(
-            "overhang_panes", key, lambda: overhang_panes(preparation.resolved)
-        )
+        if settings.overhang_shading_method == OverhangShading.GEOMETRIC_PROFILE_ANGLE:
+            from .overhang import overhang_pane_geometry
+
+            panes = preparation.prepared(
+                "overhang_pane_geometry",
+                key,
+                lambda: overhang_pane_geometry(preparation.resolved),
+            )
+        else:
+            panes = preparation.prepared(
+                "overhang_panes", key, lambda: overhang_panes(preparation.resolved)
+            )
+    if settings.overhang_shading_method == OverhangShading.GEOMETRIC_PROFILE_ANGLE:
+        return panes, {
+            "method": settings.overhang_shading_method,
+            "applied": bool(panes),
+            "standard": "geometric shadow of an infinitely wide overhang (EPSM extension)",
+            "direct": "sunlit pane fraction from the profile angle, head gap and pane height",
+            "sky_diffuse": "isotropic view factor averaged over the pane height",
+            "overhang_width": "infinite; side extension and end effects not resolved",
+            "ground_reflection": "unchanged",
+            "receivers": "windows_only",
+            "overhang_geometry_m": {
+                element: [[round(v, 6) for v in row[1:]] for row in rows]
+                for element, rows in panes.items()
+            },
+        }
     report = {
         "method": settings.overhang_shading_method,
         "applied": bool(panes),
@@ -1424,9 +1453,16 @@ def _prepare_radiation(
             orientation_irradiance[orientation] = channels
         channels = shaded(channels, element.identifier, orientation[0], azimuth)
         if role == "WINDOW" and element.identifier in overhangs:
-            from .overhang import shade_irradiance as shade_overhang
+            if settings.overhang_shading_method == OverhangShading.GEOMETRIC_PROFILE_ANGLE:
+                from .overhang import shade_irradiance_geometric
 
-            channels = shade_overhang(channels, 90 - zenith, overhangs[element.identifier])
+                channels = shade_irradiance_geometric(
+                    channels, 90 - zenith, sun_azimuth, azimuth, overhangs[element.identifier]
+                )
+            else:
+                from .overhang import shade_irradiance as shade_overhang
+
+                channels = shade_overhang(channels, 90 - zenith, overhangs[element.identifier])
         poa = channels["poa_global"]
         if element_irradiance is not None and role != "WINDOW":
             element_irradiance[element.identifier] = poa

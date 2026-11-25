@@ -171,3 +171,141 @@ def shade_irradiance(channels, solar_altitude_deg, panes):
         result["poa_direct"] + result["poa_sky_diffuse"] + channels["poa_ground_diffuse"]
     )
     return result
+
+
+def overhang_geometry(pane, overhangs):
+    """Depth, head gap and height of the nearest overhang over one pane.
+
+    Parameters
+    ----------
+    pane : mapping
+        A Core resolved opening, as for :func:`overhang_angle_deg`.
+    overhangs : sequence of mapping
+        Core resolved shading surfaces of kind ``overhang``.
+
+    Returns
+    -------
+    tuple of float or None
+        ``(depth_m, gap_m, height_m)``: outward depth of the overhang, vertical
+        distance from the pane head to the overhang, and pane height. None when
+        no overhang covers the pane centre.
+    """
+    vertices = np.asarray(pane["vertices"], dtype=float)
+    top, bottom = vertices[:, 2].max(), vertices[:, 2].min()
+    alpha = overhang_angle_deg(pane, overhangs)
+    if alpha <= 0.0:
+        return None
+    mid = 0.5 * (top + bottom)
+    # Recover the matched overhang from its angle at mid-height: tan(alpha) = depth / (h - mid).
+    origin, along, outward = _pane_frame(pane)
+    centre = float(np.dot(vertices.mean(axis=0) - origin, along))
+    for shade in overhangs:
+        if shade.get("facade_id") != pane["metadata"].get("facade_id"):
+            continue
+        points = np.asarray(shade["vertices"], dtype=float)
+        height = points[:, 2].mean()
+        span = (points - origin) @ along
+        depth = float(((points - origin) @ outward).max())
+        if (
+            height >= top - TOLERANCE_M
+            and span.min() - TOLERANCE_M <= centre <= span.max() + TOLERANCE_M
+            and depth > TOLERANCE_M
+            and np.isclose(
+                np.degrees(np.arctan2(depth, max(height - mid, TOLERANCE_M))), alpha, atol=1e-9
+            )
+        ):
+            return depth, max(height - top, 0.0), top - bottom
+    return None
+
+
+def overhang_pane_geometry(resolved):
+    """Area and overhang geometry of each outdoor window pane, per physical element.
+
+    Returns
+    -------
+    dict
+        ``{physical_element_id: ((area_m2, depth_m, gap_m, height_m), ...)}`` for
+        elements with at least one covered pane; uncovered panes carry zero depth.
+    """
+    overhangs = [shade for shade in resolved.shading if shade.get("kind") == "overhang"]
+    if not overhangs:
+        return {}
+    outdoor = {face["name"] for face in resolved.surfaces if face["boundary"] == "Outdoors"}
+    panes = {}
+    for pane in resolved.openings:
+        if pane["parent"] in outdoor and pane["area_m2"] > 0:
+            geometry = overhang_geometry(pane, overhangs) or (0.0, 0.0, 1.0)
+            panes.setdefault(pane["physical_element_id"], []).append(
+                (float(pane["area_m2"]), *map(float, geometry))
+            )
+    return {element: tuple(rows) for element, rows in panes.items() if any(r[1] > 0 for r in rows)}
+
+
+def geometric_factors(solar_altitude_deg, solar_azimuth_deg, facade_azimuth_deg, panes):
+    """Sunlit beam fraction and sky-diffuse view fraction under infinite overhangs.
+
+    Parameters
+    ----------
+    solar_altitude_deg, solar_azimuth_deg : array_like
+        Hourly solar position in degrees (azimuth clockwise from north).
+    facade_azimuth_deg : float
+        Outward facade normal, clockwise from north.
+    panes : sequence of tuple
+        ``(area_m2, depth_m, gap_m, height_m)`` from :func:`overhang_pane_geometry`.
+
+    Returns
+    -------
+    direct : ndarray
+        Area-weighted sunlit fraction of the panes per hour. The shadow edge
+        lies ``depth · tan(profile angle)`` below the overhang, with
+        ``tan(profile) = tan(altitude) / cos(azimuth difference)``.
+    diffuse : float
+        Area-weighted share of the isotropic sky-diffuse irradiance a vertical
+        pane keeps. A point ``y`` below an infinitely long overhang of depth
+        ``d`` keeps ``y / sqrt(y² + d²)``; the pane mean is
+        ``(sqrt((g + H)² + d²) - sqrt(g² + d²)) / H``.
+
+    Notes
+    -----
+    Exact for an overhang that is infinitely wide relative to the pane, which
+    is the same width assumption as ISO 13790 Annex G.5.4.3. Unlike equations
+    G.4 and G.5, the beam uses the profile angle and the pane's head gap and
+    height, and the diffuse share is the isotropic view factor.
+    """
+    rows = np.asarray(panes, dtype=float)
+    areas, depth, gap, height = rows.T
+    weights = areas / areas.sum()
+    altitude = np.radians(np.clip(np.asarray(solar_altitude_deg, dtype=float), 0.0, 90.0))
+    relative = np.radians(np.asarray(solar_azimuth_deg, dtype=float) - facade_azimuth_deg)
+    facing = np.cos(relative)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        tan_profile = np.where(
+            facing > 1e-9, np.tan(np.minimum(altitude, np.radians(89.999))) / facing, np.inf
+        )
+    shadow = depth[:, None] * tan_profile[None, :]
+    shaded = np.clip((shadow - gap[:, None]) / height[:, None], 0.0, 1.0)
+    # Sun behind the facade gives no beam; keep the factor at 1 so zero stays zero.
+    shaded = np.where(facing[None, :] > 1e-9, shaded, 0.0)
+    direct = weights @ (1.0 - shaded)
+    sky = np.where(
+        depth > 0,
+        (np.hypot(gap + height, depth) - np.hypot(gap, depth)) / height,
+        1.0,
+    )
+    return direct, float(weights @ sky)
+
+
+def shade_irradiance_geometric(
+    channels, solar_altitude_deg, solar_azimuth_deg, facade_azimuth_deg, panes
+):
+    """Apply :func:`geometric_factors` to one element's plane irradiance."""
+    direct_factor, diffuse_factor = geometric_factors(
+        solar_altitude_deg, solar_azimuth_deg, facade_azimuth_deg, panes
+    )
+    result = dict(channels)
+    result["poa_direct"] = channels["poa_direct"] * direct_factor
+    result["poa_sky_diffuse"] = channels["poa_sky_diffuse"] * diffuse_factor
+    result["poa_global"] = (
+        result["poa_direct"] + result["poa_sky_diffuse"] + channels["poa_ground_diffuse"]
+    )
+    return result

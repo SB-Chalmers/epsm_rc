@@ -1,284 +1,740 @@
 {
   "600": {
     "energyplus": {
-      "annual_heating_mwh": 3.8637851436139865,
-      "annual_cooling_mwh": 6.810780268434995,
-      "peak_heating_kw": 2.9932390589228035,
-      "peak_cooling_kw": 6.755166900706382,
-      "acceptance": "rejected by Core warning review (psychrometric warnings); read from SQL"
+      "annual_heating_mwh": 4.208148666275936,
+      "annual_cooling_mwh": 6.503278766920816,
+      "peak_heating_kw": 3.158753052377813,
+      "peak_cooling_kw": 6.603093801300655,
+      "acceptance": "rejected by Core warning review (psychrometric warnings); read from SQL",
+      "assessment": {
+        "in_range": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": false,
+          "peak_heating_kw": true,
+          "peak_cooling_kw": false
+        },
+        "meets_criteria": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true
+        }
+      }
     },
     "iso13790_5r1c": {
-      "annual_heating_mwh": 4.174781413472705,
-      "annual_cooling_mwh": 6.591388792139558,
-      "peak_heating_kw": 3.0982406124301534,
-      "peak_cooling_kw": 6.71237917909302
+      "annual_heating_mwh": 4.660191370202918,
+      "annual_cooling_mwh": 6.208948961707911,
+      "peak_heating_kw": 3.3440766807408755,
+      "peak_cooling_kw": 6.453369176361851,
+      "assessment": {
+        "in_range": {
+          "annual_heating_mwh": false,
+          "annual_cooling_mwh": false,
+          "peak_heating_kw": true,
+          "peak_cooling_kw": true
+        },
+        "meets_criteria": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true
+        }
+      }
     },
     "iso52016_1": {
-      "annual_heating_mwh": 3.95622828106367,
-      "annual_cooling_mwh": 6.169962013259258,
-      "peak_heating_kw": 3.041301104436713,
-      "peak_cooling_kw": 6.242548530543212
+      "annual_heating_mwh": 4.45196324877654,
+      "annual_cooling_mwh": 5.768869992766946,
+      "peak_heating_kw": 3.289259424969596,
+      "peak_cooling_kw": 5.979981809399463,
+      "assessment": {
+        "in_range": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true,
+          "peak_heating_kw": true,
+          "peak_cooling_kw": true
+        },
+        "meets_criteria": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true
+        }
+      }
     }
   },
   "610": {
     "energyplus": {
-      "annual_heating_mwh": 3.903544419401598,
-      "annual_cooling_mwh": 4.9727555522568885,
-      "peak_heating_kw": 2.980516306837026,
-      "peak_cooling_kw": 6.4325301816561495,
-      "acceptance": "rejected by Core warning review (psychrometric warnings); read from SQL"
+      "annual_heating_mwh": 4.246146070572624,
+      "annual_cooling_mwh": 4.7190623525441415,
+      "peak_heating_kw": 3.144138963860173,
+      "peak_cooling_kw": 6.23763377054917,
+      "acceptance": "rejected by Core warning review (psychrometric warnings); read from SQL",
+      "assessment": {
+        "in_range": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": false,
+          "peak_heating_kw": true,
+          "peak_cooling_kw": true
+        },
+        "meets_criteria": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true
+        }
+      }
     },
     "iso13790_5r1c": {
-      "annual_heating_mwh": 4.33701125877071,
-      "annual_cooling_mwh": 4.399892836109084,
-      "peak_heating_kw": 3.1010946543158866,
-      "peak_cooling_kw": 5.366133472711722
+      "annual_heating_mwh": 4.762234096459668,
+      "annual_cooling_mwh": 4.516112052537534,
+      "peak_heating_kw": 3.3450166352788293,
+      "peak_cooling_kw": 6.133929666459259,
+      "assessment": {
+        "in_range": {
+          "annual_heating_mwh": false,
+          "annual_cooling_mwh": false,
+          "peak_heating_kw": true,
+          "peak_cooling_kw": true
+        },
+        "meets_criteria": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true
+        }
+      }
     },
     "iso52016_1": {
-      "annual_heating_mwh": 4.1560875822273395,
-      "annual_cooling_mwh": 4.078291121847903,
-      "peak_heating_kw": 3.0597237095391137,
-      "peak_cooling_kw": 4.9997273237781075
+      "annual_heating_mwh": 4.577957283045138,
+      "annual_cooling_mwh": 4.152802250021548,
+      "peak_heating_kw": 3.2951575666891046,
+      "peak_cooling_kw": 5.693847913815104,
+      "assessment": {
+        "in_range": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true,
+          "peak_heating_kw": true,
+          "peak_cooling_kw": true
+        },
+        "meets_criteria": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true
+        }
+      }
     }
   },
   "620": {
     "energyplus": {
-      "annual_heating_mwh": 3.843611283682859,
-      "annual_cooling_mwh": 3.641328629473536,
-      "peak_heating_kw": 2.891249311558642,
-      "peak_cooling_kw": 4.137177162192162,
-      "acceptance": "rejected by Core warning review (psychrometric warnings); read from SQL"
+      "annual_heating_mwh": 4.321232618757774,
+      "annual_cooling_mwh": 4.413060357555726,
+      "peak_heating_kw": 3.1859681661218153,
+      "peak_cooling_kw": 4.846625408689231,
+      "acceptance": "rejected by Core warning review (psychrometric warnings); read from SQL",
+      "assessment": {
+        "in_range": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": false,
+          "peak_heating_kw": true,
+          "peak_cooling_kw": false
+        },
+        "meets_criteria": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true
+        }
+      }
     },
     "iso13790_5r1c": {
-      "annual_heating_mwh": 4.106126584038626,
-      "annual_cooling_mwh": 3.4631516758413934,
-      "peak_heating_kw": 2.9146096242351915,
-      "peak_cooling_kw": 3.982968154583648
+      "annual_heating_mwh": 4.7998855260212405,
+      "annual_cooling_mwh": 4.250715203589639,
+      "peak_heating_kw": 3.351740013297308,
+      "peak_cooling_kw": 4.71010787455672,
+      "assessment": {
+        "in_range": {
+          "annual_heating_mwh": false,
+          "annual_cooling_mwh": true,
+          "peak_heating_kw": true,
+          "peak_cooling_kw": true
+        },
+        "meets_criteria": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true
+        }
+      }
     },
     "iso52016_1": {
-      "annual_heating_mwh": 4.0143751656998035,
-      "annual_cooling_mwh": 3.314118410052581,
-      "peak_heating_kw": 2.909751278627875,
-      "peak_cooling_kw": 3.9090823197790723
+      "annual_heating_mwh": 4.711360684099369,
+      "annual_cooling_mwh": 4.017297406527056,
+      "peak_heating_kw": 3.3395164809032845,
+      "peak_cooling_kw": 4.596013267225706,
+      "assessment": {
+        "in_range": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true,
+          "peak_heating_kw": true,
+          "peak_cooling_kw": true
+        },
+        "meets_criteria": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true
+        }
+      }
     }
   },
   "640": {
     "energyplus": {
-      "annual_heating_mwh": 2.4850213908590835,
-      "annual_cooling_mwh": 6.589571017266659,
-      "peak_heating_kw": 5.513133732777958,
-      "peak_cooling_kw": 6.671694400454052,
-      "acceptance": "rejected by Core warning review (psychrometric warnings); read from SQL"
+      "annual_heating_mwh": 2.723769410049638,
+      "annual_cooling_mwh": 6.289064087751629,
+      "peak_heating_kw": 5.671543374404854,
+      "peak_cooling_kw": 6.520083757484262,
+      "acceptance": "rejected by Core warning review (psychrometric warnings); read from SQL",
+      "assessment": {
+        "in_range": {
+          "annual_heating_mwh": false,
+          "annual_cooling_mwh": false,
+          "peak_heating_kw": false,
+          "peak_cooling_kw": false
+        },
+        "meets_criteria": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true
+        }
+      }
     },
     "iso13790_5r1c": {
-      "annual_heating_mwh": 2.712540111838699,
-      "annual_cooling_mwh": 6.39253486851003,
-      "peak_heating_kw": 5.608013225880303,
-      "peak_cooling_kw": 6.682148514143094
+      "annual_heating_mwh": 3.059645129158149,
+      "annual_cooling_mwh": 6.021452559011364,
+      "peak_heating_kw": 5.794306641799011,
+      "peak_cooling_kw": 6.4203589044340905,
+      "assessment": {
+        "in_range": {
+          "annual_heating_mwh": false,
+          "annual_cooling_mwh": false,
+          "peak_heating_kw": false,
+          "peak_cooling_kw": true
+        },
+        "meets_criteria": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true
+        }
+      }
     },
     "iso52016_1": {
-      "annual_heating_mwh": 2.5384382153901623,
-      "annual_cooling_mwh": 5.927443638959337,
-      "peak_heating_kw": 6.197940210999085,
-      "peak_cooling_kw": 6.164328795418123
+      "annual_heating_mwh": 2.895846225186953,
+      "annual_cooling_mwh": 5.537216388703278,
+      "peak_heating_kw": 6.392551125951455,
+      "peak_cooling_kw": 5.8976582242265865,
+      "assessment": {
+        "in_range": {
+          "annual_heating_mwh": false,
+          "annual_cooling_mwh": true,
+          "peak_heating_kw": false,
+          "peak_cooling_kw": true
+        },
+        "meets_criteria": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true
+        }
+      }
     }
   },
   "650": {
     "energyplus": {
       "annual_heating_mwh": 0.0,
-      "annual_cooling_mwh": 5.4658681872588195,
+      "annual_cooling_mwh": 5.233953655595364,
       "peak_heating_kw": 0.0,
-      "peak_cooling_kw": 6.491326271366907,
-      "acceptance": "rejected by Core warning review (psychrometric warnings); read from SQL"
+      "peak_cooling_kw": 6.343729270730701,
+      "acceptance": "rejected by Core warning review (psychrometric warnings); read from SQL",
+      "assessment": {
+        "in_range": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": false,
+          "peak_heating_kw": true,
+          "peak_cooling_kw": false
+        },
+        "meets_criteria": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true
+        }
+      }
     },
     "iso13790_5r1c": {
       "annual_heating_mwh": 0.0,
-      "annual_cooling_mwh": 5.237280926828338,
+      "annual_cooling_mwh": 4.951648050074829,
       "peak_heating_kw": 0.0,
-      "peak_cooling_kw": 6.431463346842896
+      "peak_cooling_kw": 6.17275570955305,
+      "assessment": {
+        "in_range": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": false,
+          "peak_heating_kw": true,
+          "peak_cooling_kw": true
+        },
+        "meets_criteria": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true
+        }
+      }
     },
     "iso52016_1": {
       "annual_heating_mwh": 0.0,
-      "annual_cooling_mwh": 4.666552856097472,
+      "annual_cooling_mwh": 4.378379385287093,
       "peak_heating_kw": 0.0,
-      "peak_cooling_kw": 5.811405602849647
+      "peak_cooling_kw": 5.550055494443403,
+      "assessment": {
+        "in_range": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true,
+          "peak_heating_kw": true,
+          "peak_cooling_kw": true
+        },
+        "meets_criteria": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true
+        }
+      }
     }
   },
   "600FF": {
     "energyplus": {
-      "max_temperature_c": 68.5963118431581,
-      "min_temperature_c": -11.909083902082473,
-      "mean_temperature_c": 27.1091031960901,
-      "acceptance": "rejected by Core warning review (psychrometric warnings); read from SQL"
+      "max_temperature_c": 66.34679243850645,
+      "min_temperature_c": -12.362464009872214,
+      "mean_temperature_c": 25.924244913652625,
+      "acceptance": "rejected by Core warning review (psychrometric warnings); read from SQL",
+      "assessment": {
+        "in_range": {
+          "min_temperature_c": true,
+          "max_temperature_c": true,
+          "mean_temperature_c": true
+        },
+        "meets_criteria": {}
+      }
     },
     "iso13790_5r1c": {
-      "max_temperature_c": 66.76130506971688,
-      "min_temperature_c": -10.88956715779307,
-      "mean_temperature_c": 26.49039535092019
+      "max_temperature_c": 63.971093025271706,
+      "min_temperature_c": -11.453135280445245,
+      "mean_temperature_c": 25.09067658593608,
+      "assessment": {
+        "in_range": {
+          "min_temperature_c": true,
+          "max_temperature_c": true,
+          "mean_temperature_c": true
+        },
+        "meets_criteria": {}
+      }
     },
     "iso52016_1": {
-      "max_temperature_c": 63.66811809473479,
-      "min_temperature_c": -10.448199116843773,
-      "mean_temperature_c": 26.32704868722626
+      "max_temperature_c": 61.27277168515801,
+      "min_temperature_c": -11.120065610352722,
+      "mean_temperature_c": 24.882696685554862,
+      "assessment": {
+        "in_range": {
+          "min_temperature_c": true,
+          "max_temperature_c": false,
+          "mean_temperature_c": true
+        },
+        "meets_criteria": {}
+      }
     }
   },
   "650FF": {
     "energyplus": {
-      "max_temperature_c": 66.55820313428922,
-      "min_temperature_c": -16.613536547232364,
-      "mean_temperature_c": 19.360843993454008,
-      "acceptance": "rejected by Core warning review (psychrometric warnings); read from SQL"
+      "max_temperature_c": 64.75768969337983,
+      "min_temperature_c": -16.709228550114428,
+      "mean_temperature_c": 18.991895108950107,
+      "acceptance": "rejected by Core warning review (psychrometric warnings); read from SQL",
+      "assessment": {
+        "in_range": {
+          "min_temperature_c": true,
+          "max_temperature_c": true,
+          "mean_temperature_c": false
+        },
+        "meets_criteria": {}
+      }
     },
     "iso13790_5r1c": {
-      "max_temperature_c": 64.74519857636551,
-      "min_temperature_c": -16.92979857750705,
-      "mean_temperature_c": 18.9504943108049
+      "max_temperature_c": 62.477454425893825,
+      "min_temperature_c": -17.05830017381237,
+      "mean_temperature_c": 18.509237710176237,
+      "assessment": {
+        "in_range": {
+          "min_temperature_c": true,
+          "max_temperature_c": true,
+          "mean_temperature_c": true
+        },
+        "meets_criteria": {}
+      }
     },
     "iso52016_1": {
-      "max_temperature_c": 60.79973605066669,
-      "min_temperature_c": -16.62514989605226,
-      "mean_temperature_c": 18.426291642037818
+      "max_temperature_c": 58.94506719677396,
+      "min_temperature_c": -16.74979935897457,
+      "mean_temperature_c": 17.98521056007756,
+      "assessment": {
+        "in_range": {
+          "min_temperature_c": true,
+          "max_temperature_c": false,
+          "mean_temperature_c": true
+        },
+        "meets_criteria": {}
+      }
     }
   },
   "900": {
     "energyplus": {
-      "annual_heating_mwh": 1.4108931649338576,
-      "annual_cooling_mwh": 2.1962627914354877,
-      "peak_heating_kw": 2.3785655276160997,
-      "peak_cooling_kw": 2.613557059187817,
-      "acceptance": "rejected by Core warning review (psychrometric warnings); read from SQL"
+      "annual_heating_mwh": 1.483689679620062,
+      "annual_cooling_mwh": 2.801664263986948,
+      "peak_heating_kw": 2.617819090590609,
+      "peak_cooling_kw": 3.2851651959325663,
+      "acceptance": "rejected by Core warning review (psychrometric warnings); read from SQL",
+      "assessment": {
+        "in_range": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": false,
+          "peak_heating_kw": true,
+          "peak_cooling_kw": true
+        },
+        "meets_criteria": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": false
+        }
+      }
     },
     "iso13790_5r1c": {
-      "annual_heating_mwh": 1.587115259540292,
-      "annual_cooling_mwh": 2.0191462692445747,
-      "peak_heating_kw": 2.500414915270939,
-      "peak_cooling_kw": 2.6444342048824825
+      "annual_heating_mwh": 1.795865115298538,
+      "annual_cooling_mwh": 2.557992450935147,
+      "peak_heating_kw": 2.8719210230233307,
+      "peak_cooling_kw": 3.229246911284909,
+      "assessment": {
+        "in_range": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true,
+          "peak_heating_kw": false,
+          "peak_cooling_kw": true
+        },
+        "meets_criteria": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true
+        }
+      }
     },
     "iso52016_1": {
-      "annual_heating_mwh": 1.6460257939246254,
-      "annual_cooling_mwh": 2.0814923934811786,
-      "peak_heating_kw": 2.406696247838847,
-      "peak_cooling_kw": 2.617883292300272
+      "annual_heating_mwh": 1.9019075925609523,
+      "annual_cooling_mwh": 2.611715759781249,
+      "peak_heating_kw": 2.7624027967097846,
+      "peak_cooling_kw": 3.149734563431835,
+      "assessment": {
+        "in_range": {
+          "annual_heating_mwh": false,
+          "annual_cooling_mwh": true,
+          "peak_heating_kw": true,
+          "peak_cooling_kw": true
+        },
+        "meets_criteria": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": false
+        }
+      }
     }
   },
   "910": {
     "energyplus": {
-      "annual_heating_mwh": 1.6633100330173207,
-      "annual_cooling_mwh": 1.2534444608682327,
-      "peak_heating_kw": 2.3866555100572118,
-      "peak_cooling_kw": 2.0512740304608466,
-      "acceptance": "rejected by Core warning review (psychrometric warnings); read from SQL"
+      "annual_heating_mwh": 1.7484962044785934,
+      "annual_cooling_mwh": 1.5856589519319417,
+      "peak_heating_kw": 2.625729814096677,
+      "peak_cooling_kw": 2.64234979928547,
+      "acceptance": "rejected by Core warning review (psychrometric warnings); read from SQL",
+      "assessment": {
+        "in_range": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": false,
+          "peak_heating_kw": true,
+          "peak_cooling_kw": true
+        },
+        "meets_criteria": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true
+        }
+      }
     },
     "iso13790_5r1c": {
-      "annual_heating_mwh": 2.15718032663883,
-      "annual_cooling_mwh": 1.1029306696930599,
-      "peak_heating_kw": 2.5308223237321608,
-      "peak_cooling_kw": 1.8732620488101963
+      "annual_heating_mwh": 2.1758868233143267,
+      "annual_cooling_mwh": 1.438478241528156,
+      "peak_heating_kw": 2.8911250387159564,
+      "peak_cooling_kw": 2.4173167683551653,
+      "assessment": {
+        "in_range": {
+          "annual_heating_mwh": false,
+          "annual_cooling_mwh": true,
+          "peak_heating_kw": false,
+          "peak_cooling_kw": true
+        },
+        "meets_criteria": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true
+        }
+      }
     },
     "iso52016_1": {
-      "annual_heating_mwh": 2.2097156012819146,
-      "annual_cooling_mwh": 1.1447137607898776,
-      "peak_heating_kw": 2.4481957746262997,
-      "peak_cooling_kw": 1.8725866668748747
+      "annual_heating_mwh": 2.2782154779637405,
+      "annual_cooling_mwh": 1.4964961093013622,
+      "peak_heating_kw": 2.7879621472895066,
+      "peak_cooling_kw": 2.330218036177102,
+      "assessment": {
+        "in_range": {
+          "annual_heating_mwh": false,
+          "annual_cooling_mwh": false,
+          "peak_heating_kw": true,
+          "peak_cooling_kw": true
+        },
+        "meets_criteria": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true
+        }
+      }
     }
   },
   "920": {
     "energyplus": {
-      "annual_heating_mwh": 2.8055032171914744,
-      "annual_cooling_mwh": 2.4528558106996807,
-      "peak_heating_kw": 2.453388575952008,
-      "peak_cooling_kw": 2.7871193562872207,
-      "acceptance": "rejected by Core warning review (psychrometric warnings); read from SQL"
+      "annual_heating_mwh": 3.062630616445643,
+      "annual_cooling_mwh": 2.9316031916722607,
+      "peak_heating_kw": 2.711067217925077,
+      "peak_cooling_kw": 3.2918443989237303,
+      "acceptance": "rejected by Core warning review (psychrometric warnings); read from SQL",
+      "assessment": {
+        "in_range": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true,
+          "peak_heating_kw": true,
+          "peak_cooling_kw": true
+        },
+        "meets_criteria": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true
+        }
+      }
     },
     "iso13790_5r1c": {
-      "annual_heating_mwh": 3.123816472201189,
-      "annual_cooling_mwh": 2.3837884011680597,
-      "peak_heating_kw": 2.5428400647098193,
-      "peak_cooling_kw": 2.8562055719878328
+      "annual_heating_mwh": 3.5765385041346756,
+      "annual_cooling_mwh": 2.8748518798787206,
+      "peak_heating_kw": 2.9237480542964898,
+      "peak_cooling_kw": 3.376928902179153,
+      "assessment": {
+        "in_range": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true,
+          "peak_heating_kw": false,
+          "peak_cooling_kw": true
+        },
+        "meets_criteria": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true
+        }
+      }
     },
     "iso52016_1": {
-      "annual_heating_mwh": 3.147868417518228,
-      "annual_cooling_mwh": 2.371189301175991,
-      "peak_heating_kw": 2.4701824194019646,
-      "peak_cooling_kw": 2.844038440326285
+      "annual_heating_mwh": 3.634545691796238,
+      "annual_cooling_mwh": 2.818481354715912,
+      "peak_heating_kw": 2.8390691059200726,
+      "peak_cooling_kw": 3.348059881751867,
+      "assessment": {
+        "in_range": {
+          "annual_heating_mwh": false,
+          "annual_cooling_mwh": true,
+          "peak_heating_kw": true,
+          "peak_cooling_kw": true
+        },
+        "meets_criteria": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true
+        }
+      }
     }
   },
   "940": {
     "energyplus": {
-      "annual_heating_mwh": 1.005511058347122,
-      "annual_cooling_mwh": 2.161851568472673,
-      "peak_heating_kw": 4.225153353485989,
-      "peak_cooling_kw": 2.6135570591878055,
-      "acceptance": "rejected by Core warning review (psychrometric warnings); read from SQL"
+      "annual_heating_mwh": 1.0169147423748013,
+      "annual_cooling_mwh": 2.734416753033267,
+      "peak_heating_kw": 4.395230715043442,
+      "peak_cooling_kw": 3.2831038032841025,
+      "acceptance": "rejected by Core warning review (psychrometric warnings); read from SQL",
+      "assessment": {
+        "in_range": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": false,
+          "peak_heating_kw": false,
+          "peak_cooling_kw": true
+        },
+        "meets_criteria": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true
+        }
+      }
     },
     "iso13790_5r1c": {
-      "annual_heating_mwh": 1.2894678163934203,
-      "annual_cooling_mwh": 1.9995262129578382,
-      "peak_heating_kw": 6.036757416888286,
-      "peak_cooling_kw": 2.6444342048824825
+      "annual_heating_mwh": 1.4151391671386833,
+      "annual_cooling_mwh": 2.5170066803968845,
+      "peak_heating_kw": 6.236484266425396,
+      "peak_cooling_kw": 3.2290829668922743,
+      "assessment": {
+        "in_range": {
+          "annual_heating_mwh": false,
+          "annual_cooling_mwh": true,
+          "peak_heating_kw": false,
+          "peak_cooling_kw": true
+        },
+        "meets_criteria": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true
+        }
+      }
     },
     "iso52016_1": {
-      "annual_heating_mwh": 1.211017567626337,
-      "annual_cooling_mwh": 2.0382756560196382,
-      "peak_heating_kw": 5.157862630776693,
-      "peak_cooling_kw": 2.617883292300272
+      "annual_heating_mwh": 1.3471637703024493,
+      "annual_cooling_mwh": 2.5319300653130195,
+      "peak_heating_kw": 5.503124263347694,
+      "peak_cooling_kw": 3.149375134467419,
+      "assessment": {
+        "in_range": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true,
+          "peak_heating_kw": false,
+          "peak_cooling_kw": true
+        },
+        "meets_criteria": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true
+        }
+      }
     }
   },
   "950": {
     "energyplus": {
       "annual_heating_mwh": 0.0,
-      "annual_cooling_mwh": 0.5261605831745595,
+      "annual_cooling_mwh": 0.7675921727677414,
       "peak_heating_kw": 0.0,
-      "peak_cooling_kw": 1.807988341167757,
-      "acceptance": "rejected by Core warning review (psychrometric warnings); read from SQL"
+      "peak_cooling_kw": 2.35460963838721,
+      "acceptance": "rejected by Core warning review (psychrometric warnings); read from SQL",
+      "assessment": {
+        "in_range": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": false,
+          "peak_heating_kw": true,
+          "peak_cooling_kw": true
+        },
+        "meets_criteria": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true
+        }
+      }
     },
     "iso13790_5r1c": {
       "annual_heating_mwh": 0.0,
-      "annual_cooling_mwh": 0.2940212543644877,
+      "annual_cooling_mwh": 0.4888724240966266,
       "peak_heating_kw": 0.0,
-      "peak_cooling_kw": 1.8329705625575812
+      "peak_cooling_kw": 2.355224349130564,
+      "assessment": {
+        "in_range": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": false,
+          "peak_heating_kw": true,
+          "peak_cooling_kw": true
+        },
+        "meets_criteria": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true
+        }
+      }
     },
     "iso52016_1": {
       "annual_heating_mwh": 0.0,
-      "annual_cooling_mwh": 0.5273389877463475,
+      "annual_cooling_mwh": 0.7934191141161998,
       "peak_heating_kw": 0.0,
-      "peak_cooling_kw": 2.0081910674622594
+      "peak_cooling_kw": 2.5485349717103456,
+      "assessment": {
+        "in_range": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": false,
+          "peak_heating_kw": true,
+          "peak_cooling_kw": false
+        },
+        "meets_criteria": {
+          "annual_heating_mwh": true,
+          "annual_cooling_mwh": true
+        }
+      }
     }
   },
   "900FF": {
     "energyplus": {
-      "max_temperature_c": 43.45400032062039,
-      "min_temperature_c": 2.4165720072062555,
-      "mean_temperature_c": 25.30072811477501,
-      "acceptance": "rejected by Core warning review (psychrometric warnings); read from SQL"
+      "max_temperature_c": 45.083229911453635,
+      "min_temperature_c": 2.0404399242567677,
+      "mean_temperature_c": 26.022418567240273,
+      "acceptance": "rejected by Core warning review (psychrometric warnings); read from SQL",
+      "assessment": {
+        "in_range": {
+          "min_temperature_c": true,
+          "max_temperature_c": true,
+          "mean_temperature_c": false
+        },
+        "meets_criteria": {}
+      }
     },
     "iso13790_5r1c": {
-      "max_temperature_c": 41.70958918815175,
-      "min_temperature_c": 2.838710176845573,
-      "mean_temperature_c": 24.723929668006424
+      "max_temperature_c": 42.97023982222177,
+      "min_temperature_c": 1.7791919688339128,
+      "mean_temperature_c": 25.15218545517396,
+      "assessment": {
+        "in_range": {
+          "min_temperature_c": true,
+          "max_temperature_c": false,
+          "mean_temperature_c": true
+        },
+        "meets_criteria": {}
+      }
     },
     "iso52016_1": {
-      "max_temperature_c": 42.95199153384035,
-      "min_temperature_c": 2.630581650134033,
-      "mean_temperature_c": 24.57942266634279
+      "max_temperature_c": 44.317963662284235,
+      "min_temperature_c": 1.4899912882007216,
+      "mean_temperature_c": 24.901283521405375,
+      "assessment": {
+        "in_range": {
+          "min_temperature_c": true,
+          "max_temperature_c": true,
+          "mean_temperature_c": true
+        },
+        "meets_criteria": {}
+      }
     }
   },
   "950FF": {
     "energyplus": {
-      "max_temperature_c": 35.576313315004626,
-      "min_temperature_c": -12.407428466444882,
-      "mean_temperature_c": 14.414530824971914,
-      "acceptance": "rejected by Core warning review (psychrometric warnings); read from SQL"
+      "max_temperature_c": 36.78870174730637,
+      "min_temperature_c": -12.386962672199319,
+      "mean_temperature_c": 15.121166945193993,
+      "acceptance": "rejected by Core warning review (psychrometric warnings); read from SQL",
+      "assessment": {
+        "in_range": {
+          "min_temperature_c": false,
+          "max_temperature_c": true,
+          "mean_temperature_c": false
+        },
+        "meets_criteria": {}
+      }
     },
     "iso13790_5r1c": {
-      "max_temperature_c": 33.45011692412187,
-      "min_temperature_c": -12.085550350176593,
-      "mean_temperature_c": 13.3441053301489
+      "max_temperature_c": 34.329988173964516,
+      "min_temperature_c": -12.136135907023764,
+      "mean_temperature_c": 14.047210116634757,
+      "assessment": {
+        "in_range": {
+          "min_temperature_c": false,
+          "max_temperature_c": false,
+          "mean_temperature_c": false
+        },
+        "meets_criteria": {}
+      }
     },
     "iso52016_1": {
-      "max_temperature_c": 35.04941051761249,
-      "min_temperature_c": -12.898321768543044,
-      "mean_temperature_c": 14.101571612202235
+      "max_temperature_c": 37.06391467021549,
+      "min_temperature_c": -12.807645628732194,
+      "mean_temperature_c": 14.823263556488998,
+      "assessment": {
+        "in_range": {
+          "min_temperature_c": true,
+          "max_temperature_c": true,
+          "mean_temperature_c": true
+        },
+        "meets_criteria": {}
+      }
     }
   }
 }

@@ -23,10 +23,9 @@ setting shared, so the two results differ by the thermal network only.
 The same Building also runs in EnergyPlus 24.2 through EPSM Core when an
 executable is given, so all three engines see identical inputs and weather.
 Annual and peak heating and cooling are compared with that EnergyPlus run and
-with the range of the Standard 140 example results. Those ranges come from
-other programs and an older Denver weather file (DRYCOLD.TMY, minimum
--24.4 °C; the TMY3 file reaches -19.4 °C), so they indicate the expected
-magnitude only. Agreement is with other programs, not certification.
+with the range of the Standard 140-2020 example results, which use the same
+Denver TMY3 weather. ``ashrae140.py`` runs the full case family and applies the
+Standard 140-2020 Addendum b acceptance criteria.
 
 Notes
 -----
@@ -71,8 +70,11 @@ RADIATIVE_FRACTION = 0.6
 INFILTRATION_ACH = 0.5
 HEATING_SETPOINT_C = 20.0
 COOLING_SETPOINT_C = 27.0
-WINDOW_U = 2.10  # W/(m² K), Standard 140-2020 accompanying WINDOW 7 file, glazing ID 23
-WINDOW_SHGC = 0.769
+# Standard 140 Case 600 glazing: two 3.048 mm clear panes (tau 0.834, rho 0.075,
+# k 1.0, emissivity 0.84) with a 12 mm air gap. EnergyPlus 24.2 layered glazing
+# reports U 2.74 W/(m² K) and SHGC 0.760 for it (NFRC conditions, eplusout.eio).
+WINDOW_U = 2.74
+WINDOW_SHGC = 0.760
 EXTERIOR_SOLAR_ABSORPTANCE = 0.6
 ALTITUDE_M = 1650.0
 GROUND_TEMPERATURE_C = 10.0
@@ -96,13 +98,13 @@ FLOOR = (
     ("timber flooring", 0.14, 650.0, 1200.0, 0.025),
 )
 
-# Range of the example results in ASHRAE 140-2017 Table B8-2, as retained in
-# docs/history/bestest_case600_validation.py.
+# Range of the ASHRAE 140-2020 example results for Case 600 (Denver TMY3 725650),
+# as published in the Modelica Buildings Library BESTEST validation package.
 REFERENCE = {
-    "annual_heating_mwh": (4.296, 5.709),
-    "annual_cooling_mwh": (6.137, 8.448),
-    "peak_heating_kw": (3.437, 4.354),
-    "peak_cooling_kw": (5.965, 7.188),
+    "annual_heating_mwh": (3.993, 4.504),
+    "annual_cooling_mwh": (5.432, 6.162),
+    "peak_heating_kw": (3.020, 3.359),
+    "peak_cooling_kw": (5.422, 6.481),
 }
 ENERGYPLUS_REFERENCE = {
     "annual_heating_mwh": 4.673,
@@ -260,6 +262,8 @@ def model_settings():
         # No ground_policy: the Building's prescribed 10 °C boundary is used as given.
         air_volumetric_heat_capacity_j_m3_k=air_heat_capacity_j_m3_k(),
         convective_internal_gains_fraction=1 - RADIATIVE_FRACTION,
+        # Cases 610 and 910: exact overhang shadow instead of ISO 13790 G.4-G.6.
+        overhang_shading_method="geometric_profile_angle",
     )
     return {
         "iso13790_5r1c": replace(base, thermal_model="iso13790_5r1c"),
@@ -467,7 +471,7 @@ def markdown(report):
         "# BESTEST Case 600",
         "",
         f"Weather: `{report['weather']}`. All engines run the same EPSM Core Building.",
-        "Range: ASHRAE 140-2017 Table B8-2 example results (older DRYCOLD weather).",
+        "Range: ASHRAE 140-2020 example results (Denver TMY3).",
         "RC cells give the difference from the EnergyPlus run in brackets.",
         "",
         "| Metric | Standard 140 range | " + " | ".join(titles[n] for n in names) + " |",

@@ -112,6 +112,138 @@ def _cases():
 
 CASES = _cases()
 
+# ASHRAE 140-2020 example-result ranges (min, max) on Denver TMY3 725650 and the
+# Addendum b test acceptance criteria for annual heating and cooling, as published
+# in the Modelica Buildings Library BESTEST package (Buildings 11,
+# ThermalZones.Detailed.Validation.BESTEST). Loads in MWh and kW, temperatures in °C.
+REFERENCE = {
+    "600": dict(
+        heat=(3.993, 4.504),
+        cool=(5.432, 6.162),
+        peak_heat=(3.020, 3.359),
+        peak_cool=(5.422, 6.481),
+        heat_criteria=(3.75, 4.98),
+        cool_criteria=(5.00, 6.83),
+    ),
+    "610": dict(
+        heat=(4.066, 4.592),
+        cool=(4.117, 4.382),
+        peak_heat=(3.021, 3.360),
+        peak_cool=(5.331, 6.432),
+        heat_criteria=(3.61, 5.27),
+        cool_criteria=(2.74, 6.03),
+    ),
+    "620": dict(
+        heat=(4.094, 4.719),
+        cool=(3.841, 4.404),
+        peak_heat=(3.038, 3.385),
+        peak_cool=(3.955, 4.797),
+        heat_criteria=(3.67, 5.38),
+        cool_criteria=(2.76, 5.19),
+    ),
+    "640": dict(
+        heat=(2.403, 2.682),
+        cool=(5.237, 5.893),
+        peak_heat=(4.039, 4.658),
+        peak_cool=(5.365, 6.429),
+        heat_criteria=(1.58, 3.76),
+        cool_criteria=(4.44, 6.86),
+    ),
+    "650": dict(
+        heat=(0.0, 0.0),
+        cool=(4.186, 4.945),
+        peak_heat=(0.0, 0.0),
+        peak_cool=(5.045, 6.290),
+        heat_criteria=(0.0, 0.0),
+        cool_criteria=(3.46, 5.88),
+    ),
+    "900": dict(
+        heat=(1.379, 1.814),
+        cool=(2.267, 2.714),
+        peak_heat=(2.443, 2.778),
+        peak_cool=(2.556, 3.376),
+        heat_criteria=(1.04, 2.28),
+        cool_criteria=(2.35, 2.60),
+    ),
+    "910": dict(
+        heat=(1.648, 2.163),
+        cool=(1.191, 1.490),
+        peak_heat=(2.469, 2.799),
+        peak_cool=(2.081, 2.722),
+        heat_criteria=(1.56, 2.30),
+        cool_criteria=(0.86, 2.00),
+    ),
+    "920": dict(
+        heat=(2.956, 3.607),
+        cool=(2.549, 3.128),
+        peak_heat=(2.512, 2.895),
+        peak_cool=(2.710, 3.481),
+        heat_criteria=(2.55, 4.20),
+        cool_criteria=(2.43, 3.08),
+    ),
+    "940": dict(
+        heat=(0.863, 1.389),
+        cool=(2.203, 2.613),
+        peak_heat=(3.052, 3.882),
+        peak_cool=(2.556, 3.376),
+        heat_criteria=(0.22, 1.91),
+        cool_criteria=(2.24, 3.14),
+    ),
+    "950": dict(
+        heat=(0.0, 0.0),
+        cool=(0.586, 0.707),
+        peak_heat=(0.0, 0.0),
+        peak_cool=(2.054, 2.388),
+        heat_criteria=(0.0, 0.0),
+        cool_criteria=(0.43, 1.52),
+    ),
+    "600FF": dict(min_t=(-13.8, -9.9), max_t=(62.4, 68.4), mean_t=(24.3, 26.1)),
+    "650FF": dict(min_t=(-17.8, -16.7), max_t=(61.1, 66.8), mean_t=(17.6, 18.9)),
+    "900FF": dict(min_t=(0.6, 2.2), max_t=(43.3, 46.0), mean_t=(24.5, 25.7)),
+    "950FF": dict(min_t=(-13.4, -12.5), max_t=(36.1, 37.1), mean_t=(14.4, 15.0)),
+}
+METRIC_KEYS = {
+    "annual_heating_mwh": "heat",
+    "annual_cooling_mwh": "cool",
+    "peak_heating_kw": "peak_heat",
+    "peak_cooling_kw": "peak_cool",
+    "min_temperature_c": "min_t",
+    "max_temperature_c": "max_t",
+    "mean_temperature_c": "mean_t",
+}
+CRITERIA_KEYS = {"annual_heating_mwh": "heat_criteria", "annual_cooling_mwh": "cool_criteria"}
+TOLERANCE = 1e-3
+
+
+def assess(name, metrics):
+    """Compare one engine's case result with the Standard 140-2020 tables.
+
+    Parameters
+    ----------
+    name : str
+        Case identifier.
+    metrics : dict
+        Output of :func:`summary`.
+
+    Returns
+    -------
+    dict
+        ``in_range`` per metric (example-result range, informative) and
+        ``meets_criteria`` per annual load (Addendum b acceptance criteria).
+    """
+    table = REFERENCE[name]
+    in_range = {
+        key: bool(table[ref][0] - TOLERANCE <= metrics[key] <= table[ref][1] + TOLERANCE)
+        for key, ref in METRIC_KEYS.items()
+        if key in metrics and ref in table
+    }
+    criteria = {
+        key: bool(table[ref][0] - TOLERANCE <= metrics[key] <= table[ref][1] + TOLERANCE)
+        for key, ref in CRITERIA_KEYS.items()
+        if key in metrics and ref in table
+    }
+    return {"in_range": in_range, "meets_criteria": criteria}
+
 
 def _hourly(on):
     return tuple(1.0 if on(h) else 0.0 for h in HOURS)
@@ -168,6 +300,12 @@ def make_building(case):
             for facade in ("main.r0.e1", "main.r0.e3")
         )
     building.facade = building.facade.updated(overrides=overrides)
+    # Rebuilding the construction set or window layout resets the window
+    # construction, so the Case 600 glazing is assigned again.
+    glazing = building.facade.glazing.model_copy(
+        update={"u_value_w_m2k": base.WINDOW_U, "solar_heat_gain_coefficient": base.WINDOW_SHGC}
+    )
+    building.assign_inputs(facade_properties={"glazing": glazing})
 
     airflow = building.hvac.airflow
     changes = {}
@@ -267,6 +405,8 @@ def run(epw, names, energyplus=None, directory=Path("outputs/ashrae140")):
         for label, settings in base.model_settings().items():
             result = simulate_building(building, weather=weather, settings=settings)
             rows[label] = summary(result.hourly, case.free_float)
+        for engine in rows.values():
+            engine["assessment"] = assess(name, engine)
         report[name] = rows
         print(
             name,
@@ -281,8 +421,44 @@ def run(epw, names, energyplus=None, directory=Path("outputs/ashrae140")):
     return report
 
 
+TITLES = {"energyplus": "EnergyPlus", "iso13790_5r1c": "5R1C", "iso52016_1": "ISO 52016-1"}
+LABELS = {
+    "annual_heating_mwh": "Heating MWh",
+    "annual_cooling_mwh": "Cooling MWh",
+    "peak_heating_kw": "Peak heat kW",
+    "peak_cooling_kw": "Peak cool kW",
+    "max_temperature_c": "Max °C",
+    "min_temperature_c": "Min °C",
+    "mean_temperature_c": "Mean °C",
+}
+
+
+def criteria_failures(report, engine):
+    """List the acceptance-criteria checks an engine fails.
+
+    Parameters
+    ----------
+    report : dict
+        Output of :func:`run`.
+    engine : str
+        Engine label.
+
+    Returns
+    -------
+    list of str
+        ``"<case> <metric>"`` for each failed check.
+    """
+    return [
+        f"{name} {key}"
+        for name, rows in report.items()
+        if engine in rows
+        for key, passed in rows[engine]["assessment"]["meets_criteria"].items()
+        if not passed
+    ]
+
+
 def markdown(report):
-    """Format the case table with RC differences from EnergyPlus.
+    """Format results against the Standard 140-2020 ranges and criteria.
 
     Parameters
     ----------
@@ -292,55 +468,68 @@ def markdown(report):
     Returns
     -------
     str
-        Markdown tables for conditioned and free-float cases.
+        Summary and per-case Markdown tables. ``✓``/``✗`` mark the acceptance
+        criteria (annual loads); ``¹`` marks a value outside the example-result
+        range, which is informative.
     """
-    titles = {"energyplus": "EnergyPlus", "iso13790_5r1c": "5R1C", "iso52016_1": "ISO 52016-1"}
-    loads = [
-        ("annual_heating_mwh", "Heating MWh"),
-        ("annual_cooling_mwh", "Cooling MWh"),
-        ("peak_heating_kw", "Peak heat kW"),
-        ("peak_cooling_kw", "Peak cool kW"),
+    engines = [e for e in TITLES if any(e in rows for rows in report.values())]
+    lines = ["# ASHRAE 140-2020 Section 5.2 cases", ""]
+    for engine in engines:
+        checks = sum(len(r[engine]["assessment"]["meets_criteria"]) for r in report.values())
+        failed = criteria_failures(report, engine)
+        ranges = [v for r in report.values() for v in r[engine]["assessment"]["in_range"].values()]
+        lines.append(
+            f"- **{TITLES[engine]}**: {checks - len(failed)}/{checks} acceptance criteria met, "
+            f"{sum(ranges)}/{len(ranges)} values inside the example-result range."
+        )
+    lines += [
+        "",
+        "✓/✗: Addendum b acceptance criteria (annual loads). ¹: outside the example-result range.",
+        "",
+        "| Case | Metric | 140-2020 range | Criteria | "
+        + " | ".join(TITLES[e] for e in engines)
+        + " |",
+        "|---|---|---|---|" + "---|" * len(engines),
     ]
-    temps = [
-        ("max_temperature_c", "Max °C"),
-        ("min_temperature_c", "Min °C"),
-        ("mean_temperature_c", "Mean °C"),
-    ]
-    lines = ["# ASHRAE 140 Section 5.2 cases", ""]
-    for free, metrics in ((False, loads), (True, temps)):
-        names = [n for n in report if CASES[n].free_float == free]
-        if not names:
-            continue
-        engines = [e for e in titles if e in report[names[0]]]
-        lines += [
-            "| Case | Metric | " + " | ".join(titles[e] for e in engines) + " |",
-            "|---|---|" + "---|" * len(engines),
-        ]
-        for name in names:
-            for key, label in metrics:
-                cells = []
-                for engine in engines:
-                    value = report[name][engine][key]
-                    cell = f"{value:.2f}"
-                    if engine != "energyplus" and "energyplus" in report[name]:
-                        ref = report[name]["energyplus"][key]
-                        if free:
-                            cell += f" ({value - ref:+.1f} K)"
-                        elif abs(ref) > 0.05:
-                            cell += f" ({100 * (value / ref - 1):+.0f} %)"
-                    cells.append(cell)
-                lines.append(f"| {name} | {label} | " + " | ".join(cells) + " |")
-        lines.append("")
-    return "\n".join(lines)
+    for name, rows in report.items():
+        table = REFERENCE[name]
+        for key, label in LABELS.items():
+            if key not in rows[engines[0]]:
+                continue
+            low, high = table[METRIC_KEYS[key]]
+            crit = table.get(CRITERIA_KEYS.get(key, ""), None)
+            cells = []
+            for engine in engines:
+                value = rows[engine][key]
+                assessment = rows[engine]["assessment"]
+                cell = f"{value:.2f}"
+                if key in assessment["meets_criteria"]:
+                    cell += " ✓" if assessment["meets_criteria"][key] else " ✗"
+                if not assessment["in_range"].get(key, True):
+                    cell += " ¹"
+                cells.append(cell)
+            crit_text = f"{crit[0]:.2f} – {crit[1]:.2f}" if crit else ""
+            lines.append(
+                f"| {name} | {label} | {low:.2f} – {high:.2f} | {crit_text} | "
+                + " | ".join(cells)
+                + " |"
+            )
+    return "\n".join(lines) + "\n"
 
 
 def main():
-    """Command-line entry point."""
+    """Command-line entry point; ``--check`` exits non-zero on a failed criterion."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--epw", required=True, type=Path)
     parser.add_argument("--energyplus", default=None)
     parser.add_argument("--output", type=Path, default=Path("outputs/ashrae140"))
     parser.add_argument("--cases", nargs="*", default=list(CASES))
+    parser.add_argument(
+        "--check",
+        nargs="*",
+        default=None,
+        help="engines that must meet every acceptance criterion (default: both RC models)",
+    )
     args = parser.parse_args()
     report = run(args.epw, args.cases, energyplus=args.energyplus, directory=args.output)
     args.output.mkdir(parents=True, exist_ok=True)
@@ -348,6 +537,12 @@ def main():
     text = markdown(report)
     (args.output / "ashrae140.md").write_text(text)
     print(text)
+    if args.check is not None:
+        engines = args.check or ["iso13790_5r1c", "iso52016_1"]
+        failed = {engine: criteria_failures(report, engine) for engine in engines}
+        if any(failed.values()):
+            print("Acceptance criteria not met:", json.dumps(failed, indent=2))
+            raise SystemExit(1)
 
 
 if __name__ == "__main__":

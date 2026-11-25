@@ -21,7 +21,14 @@ from epsm_core import Weather
 from epsm_core.specs.facade import OverhangSpec
 
 from epsm_rc import RCSettings, preflight, simulate_building
-from epsm_rc.overhang import overhang_angle_deg, overhang_factors, overhang_panes, shade_irradiance
+from epsm_rc.overhang import (
+    geometric_factors,
+    overhang_angle_deg,
+    overhang_factors,
+    overhang_geometry,
+    overhang_panes,
+    shade_irradiance,
+)
 
 
 def settings(**overrides):
@@ -233,3 +240,57 @@ def test_reject_and_other_facade_details_remain_unsupported(reference_building):
 def test_unknown_overhang_method_rejected():
     with pytest.raises(ValueError, match="overhang_shading_method"):
         settings(overhang_shading_method="tables")
+
+
+def test_geometric_beam_follows_the_shadow_edge():
+    # 1 m deep overhang 0.5 m above a 2 m pane facing south (azimuth 180).
+    panes = ((1.0, 1.0, 0.5, 2.0),)
+    altitude = np.degrees(np.arctan([0.4, 1.0, 1.5, 3.0]))
+    direct, _ = geometric_factors(altitude, np.full(4, 180.0), 180.0, panes)
+    # Shadow edge d·tan(profile) below the overhang; shaded = (edge - gap) / height.
+    np.testing.assert_allclose(direct, [1.0, 0.75, 0.5, 0.0])
+
+
+def test_geometric_beam_uses_the_profile_angle_off_normal():
+    panes = ((1.0, 1.0, 0.5, 2.0),)
+    # 45° altitude, sun 60° off the facade normal: tan(profile) = 1 / cos(60°) = 2.
+    direct, _ = geometric_factors(np.array([45.0]), np.array([240.0]), 180.0, panes)
+    np.testing.assert_allclose(direct, [1 - (2.0 - 0.5) / 2.0])
+    behind, _ = geometric_factors(np.array([45.0]), np.array([0.0]), 180.0, panes)
+    np.testing.assert_allclose(behind, [1.0])
+
+
+def test_geometric_sky_diffuse_is_the_isotropic_view_factor():
+    d, g, h = 1.0, 0.5, 2.0
+    _, diffuse = geometric_factors(np.array([30.0]), np.array([180.0]), 180.0, ((1.0, d, g, h),))
+    # Mean over the pane of y / sqrt(y² + d²), checked by quadrature.
+    y = np.linspace(g, g + h, 200001)
+    assert diffuse == pytest.approx(np.trapezoid(y / np.hypot(y, d), y) / h, rel=1e-9)
+    _, uncovered = geometric_factors(np.array([30.0]), np.array([180.0]), 180.0, ((1.0, 0, 0, 1),))
+    assert uncovered == 1.0
+
+
+def test_overhang_geometry_reports_depth_gap_and_height():
+    assert overhang_geometry(pane(1.0, 2.0), [overhang(2.5, 0.8)]) == pytest.approx((0.8, 0.5, 1.0))
+    assert overhang_geometry(pane(1.0, 2.0), [overhang(0.5, 0.8)]) is None
+
+
+def test_geometric_method_shades_less_than_g4_g5_in_winter(reference_building):
+    reference_building.facade = reference_building.facade.updated(
+        overhang=OverhangSpec(depth_m=0.6)
+    )
+    iso = simulate_building(reference_building, weather=weather(), settings=settings())
+    geometric = simulate_building(
+        reference_building,
+        weather=weather(),
+        settings=settings(overhang_shading_method="geometric_profile_angle"),
+    )
+    report = geometric.diagnostics["overhang_shading"]
+    assert report["applied"] and report["method"] == "geometric_profile_angle"
+    geometry = [row for rows in report["overhang_geometry_m"].values() for row in rows]
+    assert geometry and any(depth > 0 for depth, _, _ in geometry)
+    winter = slice(0, 24 * 59)
+    assert (
+        geometric.hourly["window_solar_heat_gain_w"][winter].sum()
+        > iso.hourly["window_solar_heat_gain_w"][winter].sum()
+    )

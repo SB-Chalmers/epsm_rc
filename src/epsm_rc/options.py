@@ -191,6 +191,7 @@ class OverhangShading(_Choice):
     """Shading from horizontal overhangs above windows."""
 
     ISO13790_HOURLY_OVERHANG = "iso13790_hourly_overhang"
+    GEOMETRIC_PROFILE_ANGLE = "geometric_profile_angle"
     REJECT = "reject"
 
 
