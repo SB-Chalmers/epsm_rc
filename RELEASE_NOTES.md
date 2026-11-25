@@ -1,3 +1,36 @@
+# Release 0.12.3 — ASHRAE 140 tests, beam-to-floor solar and multi-part ground (25 November 2026)
+
+**Default ISO 52016-1 results change slightly.** `interior_solar_distribution`
+(enum `InteriorSolarDistribution`) now defaults to `"beam_to_floor"`: the
+radiative part of transmitted beam solar goes to the zone's floor faces, as
+EnergyPlus `FullExterior` does, and diffuse and inward-absorbed solar are spread
+by area. `"area_weighted"` keeps ISO 52016-1 as written, which puts part of the
+sun on the windows (where it leaks straight out) and on lightweight roofs. Across
+144 EnergyPlus stress cases in six climates the default is slightly closer
+(heating 1.055 vs 1.057 × EnergyPlus, sensible cooling 0.996 vs 1.000 ×,
+free-float RMSE 0.984 vs 0.987 K); the EPSM illustrative reference in
+Gothenburg needs 0.6 % less heating. ISO 13790 5R1C ignores the setting and its
+results and run identity are unchanged.
+
+Both thermal models meet all 20 ASHRAE Standard 140-2020 Addendum b acceptance
+criteria in the Section 5.2 cases (600–650, 900–950 and the free-float cases;
+`benchmarks/bestest/`). Pull requests run the cases in Development checks, and
+the README badge shows their status on `dev`. These are tests against the
+Standard's reference programs, not an ASHRAE certification.
+
+New opt-in `overhang_shading_method="geometric_profile_angle"` shades beam
+radiation by the exact shadow of an infinitely wide overhang (profile angle,
+head gap and pane height) and keeps the isotropic sky view factor for
+sky-diffuse radiation. In the ASHRAE 140 overhang cases it matches EnergyPlus
+transmitted solar within 1 %, where ISO 13790 G.4–G.6 give 8 % less. The default
+is unchanged.
+
+ISO 13370 ground reduction accepts buildings with several coplanar parts. Parts
+whose floors run side by side within 2 cm for at least 0.1 m join one slab, with
+the outer perimeter of the union; other parts become separate slabs whose
+coefficients are summed. Heated basements under several parts and floors with
+holes are still refused. Single-part buildings are unchanged.
+
 # Release 0.12.2 — self-shading of concave, courtyard and multi-part buildings (13 November 2026)
 
 **Default results change for concave, courtyard and multi-part buildings only.**
