@@ -88,6 +88,7 @@ from .options import (
     ControlTemperature,
     GroundPolicy,
     HeatRecovery,
+    InteriorSolarDistribution,
     OverhangShading,
     SelfShadowingPolicy,
     SolarTime,
@@ -148,6 +149,17 @@ class RCSettings:
         hour's HVAC power or air temperature against the setpoints. Other hours
         bypass the exchanger, so summer ventilation cools freely, as EnergyPlus
         ideal loads do. ``always`` recovers in every hour.
+    interior_solar_distribution : InteriorSolarDistribution or str
+        ISO 52016-1 only; ISO 13790 5R1C has no floor surface and ignores it.
+        ``beam_to_floor`` (default) puts the transmitted beam radiation on the
+        floor surfaces, as EnergyPlus ``FullExterior`` solar distribution does,
+        and spreads the diffuse and inward-absorbed parts by area. It meets all
+        20 ASHRAE 140 acceptance criteria and agrees slightly better with
+        EnergyPlus in ``benchmarks/iso52016``. ``area_weighted`` (ISO 52016-1
+        as written) spreads all window solar gain over the zone's inside
+        surfaces in proportion to area, windows included. The convective
+        fraction goes to the air in both. A zone without a floor surface keeps
+        area weighting.
     internal_surface_area_factor, mass_area_factors : float or tuple
         Ratios to conditioned floor area. Mass-area factors correspond to
         construction capacities below, between and above the two thresholds.
@@ -218,7 +230,12 @@ class RCSettings:
         G.4 to G.6 to each window pane below a Core overhang: beam radiation is
         reduced from the solar height and the overhang angle, sky-diffuse
         radiation by the overhang angle, and ground-reflected radiation is
-        unchanged. ``reject`` refuses overhangs. Reveals, fins and balconies
+        unchanged. ``geometric_profile_angle`` instead shades beam radiation by the
+        exact shadow of an infinitely wide overhang, from the profile angle and
+        each pane's head gap and height, and keeps the isotropic sky view factor
+        of sky-diffuse radiation. In the ASHRAE 140 overhang cases it matches
+        EnergyPlus transmitted solar within 1 %, where G.4-G.6 give 8 % less
+        (``benchmarks/bestest``). ``reject`` refuses overhangs. Reveals, fins and balconies
         remain unsupported.
     horizon_azimuth_step_deg : float
         Maximum midpoint-quadrature spacing for the average horizon angle,
@@ -290,6 +307,7 @@ class RCSettings:
     thermal_model: ThermalModel = ThermalModel.ISO52016_1
     control_temperature: ControlTemperature = ControlTemperature.AIR
     heat_recovery: HeatRecovery = HeatRecovery.WHEN_BENEFICIAL
+    interior_solar_distribution: InteriorSolarDistribution = InteriorSolarDistribution.BEAM_TO_FLOOR
 
     def __post_init__(self):
         finite("effective_mass_depth_m", self.effective_mass_depth_m, positive=True)
@@ -308,6 +326,7 @@ class RCSettings:
             ("heat_recovery", HeatRecovery),
             ("solar_time", SolarTime),
             ("window_optics", WindowOptics),
+            ("interior_solar_distribution", InteriorSolarDistribution),
         ):
             object.__setattr__(self, name, kind.parse(getattr(self, name), name))
         positive = (
@@ -423,9 +442,12 @@ class RCSettings:
         """Return model assumptions, distinct from the supplied physical evidence."""
         if self.thermal_model == ThermalModel.ISO52016_1:
             return self._iso52016_configuration()
+        coefficients = asdict(self)
+        # ISO 52016-1 only: 5R1C has no floor surface, so it is not part of a 5R1C run.
+        coefficients.pop("interior_solar_distribution")
         return {
             "origin": "explicit_reduction_policy",
-            "coefficients": asdict(self),
+            "coefficients": coefficients,
             "model_constants": {
                 "timestep_hours": 1.0,
                 "crank_nicolson_weight": 0.5,
@@ -512,6 +534,7 @@ class RCSettings:
                 "context_shading": self.context_shading_method,
                 "context_sky_diffuse": self.context_sky_diffuse,
                 "overhang_shading": self.overhang_shading_method,
+                "interior_solar_distribution": self.interior_solar_distribution.value,
             },
         }
 
@@ -703,7 +726,7 @@ def _iso13370_reduction(
     prescribed soil boundary. Existing prescribed boundaries take precedence in
     ``_ground_reduction`` and retain their original raw assembly conductance.
     """
-    from .ground import ground_coefficients, monthly_ground_temperatures
+    from .ground import monthly_ground_temperatures
     from .ground_inputs import resolve_ground_inputs
 
     if building is None or spec is None or resolved is None:
@@ -727,7 +750,7 @@ def _iso13370_reduction(
     if inputs is None:
         report.update(ground_contact=False, steady_conductance_w_k=0.0)
         return None, 1.0, report
-    coefficients = ground_coefficients(**inputs.coefficient_inputs())
+    coefficients = inputs.coefficients()
     report.update(
         ground_contact=True,
         physical_inputs=inputs.report,
@@ -1275,9 +1298,33 @@ def _overhang_shading(preparation):
             "method": settings.overhang_shading_method,
             "implementation": preparation.implementation,
         }
-        panes = preparation.prepared(
-            "overhang_panes", key, lambda: overhang_panes(preparation.resolved)
-        )
+        if settings.overhang_shading_method == OverhangShading.GEOMETRIC_PROFILE_ANGLE:
+            from .overhang import overhang_pane_geometry
+
+            panes = preparation.prepared(
+                "overhang_pane_geometry",
+                key,
+                lambda: overhang_pane_geometry(preparation.resolved),
+            )
+        else:
+            panes = preparation.prepared(
+                "overhang_panes", key, lambda: overhang_panes(preparation.resolved)
+            )
+    if settings.overhang_shading_method == OverhangShading.GEOMETRIC_PROFILE_ANGLE:
+        return panes, {
+            "method": settings.overhang_shading_method,
+            "applied": bool(panes),
+            "standard": "geometric shadow of an infinitely wide overhang (EPSM extension)",
+            "direct": "sunlit pane fraction from the profile angle, head gap and pane height",
+            "sky_diffuse": "isotropic view factor averaged over the pane height",
+            "overhang_width": "infinite; side extension and end effects not resolved",
+            "ground_reflection": "unchanged",
+            "receivers": "windows_only",
+            "overhang_geometry_m": {
+                element: [[round(v, 6) for v in row[1:]] for row in rows]
+                for element, rows in panes.items()
+            },
+        }
     report = {
         "method": settings.overhang_shading_method,
         "applied": bool(panes),
@@ -1374,6 +1421,8 @@ def _prepare_radiation(
         )
 
     solar, opaque = np.zeros(len(axis)), np.zeros(len(axis))
+    # Transmitted beam part of ``solar``, for ISO 52016-1 beam_to_floor distribution.
+    solar_beam = np.zeros(len(axis))
     orientation_irradiance = {}
     from ._results import ANGULAR_WINDOW_OUTPUTS
 
@@ -1424,20 +1473,29 @@ def _prepare_radiation(
             orientation_irradiance[orientation] = channels
         channels = shaded(channels, element.identifier, orientation[0], azimuth)
         if role == "WINDOW" and element.identifier in overhangs:
-            from .overhang import shade_irradiance as shade_overhang
+            if settings.overhang_shading_method == OverhangShading.GEOMETRIC_PROFILE_ANGLE:
+                from .overhang import shade_irradiance_geometric
 
-            channels = shade_overhang(channels, 90 - zenith, overhangs[element.identifier])
+                channels = shade_irradiance_geometric(
+                    channels, 90 - zenith, sun_azimuth, azimuth, overhangs[element.identifier]
+                )
+            else:
+                from .overhang import shade_irradiance as shade_overhang
+
+                channels = shade_overhang(channels, 90 - zenith, overhangs[element.identifier])
         poa = channels["poa_global"]
         if element_irradiance is not None and role != "WINDOW":
             element_irradiance[element.identifier] = poa
         if role == "WINDOW":
             if settings.window_optics == WindowOptics.CONSTANT_SHGC:
-                solar += (
-                    poa
-                    * element.area_m2
-                    * element.construction.shgc
-                    * spec.facade.solar_shading_factor
+                factor = (
+                    element.area_m2 * element.construction.shgc * spec.facade.solar_shading_factor
                 )
+                solar += poa * factor
+                # A constant SHGC cannot separate transmission from absorption,
+                # so the beam share carries the whole beam heat gain. A provider
+                # without a beam channel leaves it all area weighted.
+                solar_beam += channels.get("poa_direct", 0.0) * factor
             else:
                 glazing = (element.construction.u_value, element.construction.shgc)
                 optics = optical_models[glazing]
@@ -1453,6 +1511,7 @@ def _prepare_radiation(
                 diffuse = sky + reflected
                 area, shade = element.area_m2, spec.facade.solar_shading_factor
                 transmitted = (beam * bt + diffuse * dt) * area * shade
+                solar_beam += beam * bt * area * shade
                 absorbed = (beam * ba + diffuse * da) * optics.inward_fraction * area * shade
                 solar += transmitted + absorbed
                 radiation_hourly["window_incident_beam_w"] += beam * area
@@ -1515,7 +1574,7 @@ def _prepare_radiation(
         radiation_hourly["sky_radiation_loss_w"] = np.full(
             len(axis), model.calc_sky_radiation_loss()
         )
-    return solar, opaque, radiation_hourly, times, context_shading, overhang_shading
+    return solar, solar_beam, opaque, radiation_hourly, times, context_shading, overhang_shading
 
 
 @dataclass(frozen=True)
@@ -1804,6 +1863,7 @@ def _domain_forcing(
     month_hours,
     aggregate_split,
     annual,
+    solar_beam=None,
 ):
     """Pack immutable hourly forcing and thermostat availability limits."""
     data = preparation.data
@@ -1847,6 +1907,7 @@ def _domain_forcing(
         aggregate_split,
         preparation.settings.heat_recovery == HeatRecovery.WHEN_BENEFICIAL,
         float(airflow.sensible_recovery_effectiveness),
+        None if solar_beam is None else _immutable_series(solar_beam),
     )
     heating_limits_w = np.where(heating_on != 0.0, np.inf, 0.0)
     cooling_limits_w = (
@@ -1920,7 +1981,15 @@ def _prepare_domain(preparation, *, domain=None):
     )
     iso52016_model = settings.thermal_model == ThermalModel.ISO52016_1
     element_irradiance = {} if iso52016_model else None
-    solar, opaque, radiation_hourly, times, context_shading, overhang_shading = _prepare_radiation(
+    (
+        solar,
+        solar_beam,
+        opaque,
+        radiation_hourly,
+        times,
+        context_shading,
+        overhang_shading,
+    ) = _prepare_radiation(
         preparation, model, scope.elements, attic, areas, optical_models, element_irradiance
     )
     model.t_m = model.t_air = model.t_s = float(heat_set[0])
@@ -1966,6 +2035,7 @@ def _prepare_domain(preparation, *, domain=None):
         _month_hours(ground, times),
         gain_reduction["aggregate_split_applied"],
         annual,
+        solar_beam=solar_beam,
     )
     iso52016_inputs = None
     if iso52016_model:

@@ -1,0 +1,75 @@
+name: ASHRAE 140
+# Runs the Standard 140-2020 Section 5.2 cases on both RC models and fails when
+# a model misses an Addendum b acceptance criterion. Pull requests run the same
+# job in Development checks (ci.yml); this workflow runs it after a push to dev
+# or main, and its status on dev is the README badge.
+'on':
+  push:
+    branches:
+    - dev
+    - main
+    paths:
+    - 'src/**'
+    - 'rust/**'
+    - 'benchmarks/bestest/**'
+    - '.github/workflows/ashrae140.yml'
+  workflow_call: null
+  workflow_dispatch: null
+permissions:
+  contents: read
+concurrency:
+  group: ashrae140-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+env:
+  # Models that must meet every acceptance criterion.
+  GATED_MODELS: iso13790_5r1c iso52016_1
+  DENVER_EPW_ZIP: https://energyplus-weather.s3.amazonaws.com/north_and_central_america_wmo_region_4/USA/CO/USA_CO_Denver.Intl.AP.725650_TMY3/USA_CO_Denver.Intl.AP.725650_TMY3.zip
+jobs:
+  ashrae140:
+    name: ASHRAE 140 Section 5.2
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/checkout@v4
+      with:
+        repository: SB-Chalmers/epsm_data
+        ssh-key: ${{ secrets.EPSM_DATA_DEPLOY_KEY }}
+        persist-credentials: false
+        path: .ci/epsm_data
+    - uses: actions/checkout@v4
+      with:
+        repository: SB-Chalmers/epsm_core
+        ssh-key: ${{ secrets.EPSM_CORE_DEPLOY_KEY }}
+        persist-credentials: false
+        path: .ci/epsm_core
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+        cache: pip
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: Swatinem/rust-cache@v2
+    - name: Build wheel and install the platform
+      run: |
+        python -m pip install build
+        python -m build --wheel
+        python -m pip install .ci/epsm_data .ci/epsm_core "$(ls dist/epsm_rc-*.whl)[platform]"
+    - name: Download the Standard 140-2020 Denver TMY3 weather
+      run: |
+        mkdir -p "$RUNNER_TEMP/weather"
+        curl -sSfL -o "$RUNNER_TEMP/weather/denver.zip" "$DENVER_EPW_ZIP"
+        unzip -q -o "$RUNNER_TEMP/weather/denver.zip" -d "$RUNNER_TEMP/weather"
+    - name: Run the cases and apply the acceptance criteria
+      run: |
+        python benchmarks/bestest/ashrae140.py \
+          --epw "$RUNNER_TEMP/weather/USA_CO_Denver.Intl.AP.725650_TMY3.epw" \
+          --output outputs/ashrae140 --check $GATED_MODELS
+    - name: Write the results table to the job summary
+      if: always()
+      continue-on-error: true
+      run: cat outputs/ashrae140/ashrae140.md >> "$GITHUB_STEP_SUMMARY"
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: ashrae140-results
+        path: outputs/ashrae140

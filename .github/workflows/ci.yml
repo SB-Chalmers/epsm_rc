@@ -54,3 +54,7 @@ jobs:
     - name: Run offline development checks
       run: |
         python -m pytest -q tests/unit/test_iso13790.py tests/unit/test_iso13790_compliance.py tests/unit/test_iso13790_physics.py tests/unit/test_heating.py tests/unit/test_heat_pump.py tests/unit/test_standalone_readiness.py tests/unit/test_native_kernels.py
+  ashrae140:
+    name: ASHRAE 140
+    uses: ./.github/workflows/ashrae140.yml
+    secrets: inherit
